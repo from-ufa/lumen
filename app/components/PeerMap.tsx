@@ -26,12 +26,13 @@ function escapeHtml(s: string): string {
 
 type PeerMapState = "connected" | "reachable" | "stale";
 
-/** DivIcon — connected (bright cyan), reachable (soft), stale (slate), boom (orange). */
+/** DivIcon — linked cyan, online blue, offline red, boom orange. */
 function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
-  let color = "#64748B";
+  // Offline (known, not answering) — red so status is obvious
+  let color = "#F87171";
   let size = 10;
-  let opacity = 0.5;
-  let glow = "0 0 4px rgba(0,0,0,0.5)";
+  let opacity = 0.72;
+  let glow = "0 0 6px rgba(248,113,113,0.45)";
 
   if (isBoom) {
     color = "#FF7A3D";
@@ -46,7 +47,7 @@ function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
   } else if (state === "reachable") {
     color = "#38BDF8";
     size = 11;
-    opacity = 0.72;
+    opacity = 0.78;
     glow = "0 0 8px rgba(56,189,248,0.45)";
   }
 
@@ -113,26 +114,34 @@ function peerPopupHtml(
   const state = m.state || "stale";
   const statusColor =
     state === "connected"
-      ? "#10B981"
+      ? "#00E5FF"
       : state === "reachable"
         ? "#38BDF8"
-        : "#64748B";
+        : "#F87171";
   const statusLabel =
     state === "connected"
-      ? "CONNECTED"
+      ? "ONLINE · MY PEER"
       : state === "reachable"
-        ? "NETWORK · LIVE"
-        : "NETWORK · STALE";
+        ? "ONLINE"
+        : "OFFLINE";
   const title = escapeHtml(m.name || (isMe ? "Ergo node" : "Peer"));
   const addr = escapeHtml(m.ip) + (m.port ? `:${escapeHtml(m.port)}` : "");
   const roleColor = isMe
     ? "#FF7A3D"
     : state === "connected"
       ? "#00E5FF"
-      : "#A0A0B0";
+      : state === "reachable"
+        ? "#38BDF8"
+        : "#F87171";
   return `<div class="aether-peer-popup" style="min-width:180px;max-width:260px;font-size:12px;line-height:1.4;color:#E8E8F0">
     <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.15em;color:${roleColor};margin-bottom:6px">${
-      isMe ? "YOUR NODE" : state === "connected" ? "YOUR PEER" : "NETWORK NODE"
+      isMe
+        ? "YOUR NODE"
+        : state === "connected"
+          ? "MY PEER"
+          : state === "reachable"
+            ? "ONLINE NODE"
+            : "OFFLINE NODE"
     }</div>
     <div style="font-weight:600;font-size:14px;color:#fff;word-break:break-all">${title}</div>
     <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all;margin-top:6px;color:#E8E8F0">${addr}</div>
@@ -190,12 +199,18 @@ function ClusteredPeersLayer({
         zIndexOffset: state === "connected" ? 500 : 0,
       });
 
+      const statusTip =
+        state === "connected"
+          ? "MY PEER"
+          : state === "reachable"
+            ? "ONLINE"
+            : "OFFLINE";
       const tip =
         `${m.name || m.ip}` +
         (m.city || m.country
           ? ` · ${[m.city, m.country].filter(Boolean).join(", ")}`
           : "") +
-        (state === "connected" ? " · LINKED" : "");
+        ` · ${statusTip}`;
 
       marker.bindTooltip(tip, {
         direction: "top",
@@ -1136,6 +1151,17 @@ export default function PeerMap({
     [signalLinks]
   );
 
+  /** Clear counts for the map legend card */
+  const mapStats = useMemo(() => {
+    const onMap = data?.networkMapped ?? data?.mapped ?? 0;
+    const myPeers = data?.connectedMapped ?? signalLinks.length;
+    const onlineOther = data?.reachableMapped ?? 0;
+    // My peers are online too
+    const online = myPeers + onlineOther;
+    const offline = Math.max(0, onMap - online);
+    return { onMap, myPeers, online, onlineOther, offline };
+  }, [data, signalLinks.length]);
+
   const fireBoom = useCallback(
     (height: number, source: PeerMapMarker | null) => {
       if (!source) return;
@@ -1317,43 +1343,82 @@ export default function PeerMap({
 
       {/* ── Desktop: full HUD on map ── */}
       <div className="hidden md:flex absolute top-4 left-4 right-4 z-[40] flex-wrap items-start justify-between gap-3 pointer-events-none">
-        <div className="glass rounded-2xl px-4 py-3 border border-white/10 pointer-events-auto">
-          <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[3px] mb-1">
+        <div className="glass rounded-2xl px-4 py-3.5 border border-white/10 pointer-events-auto max-w-[320px]">
+          <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[3px] mb-2.5">
             <Globe2 className="w-3.5 h-3.5" /> ERGO NETWORK MAP
           </div>
-          <div className="text-sm text-white flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span>
-              <span className="font-mono text-[#E8E8F0] text-lg tabular-nums">
-                {data?.networkMapped ?? data?.mapped ?? "—"}
-              </span>
-              <span className="text-[#A0A0B0] text-[10px] ml-1.5 tracking-wider">
-                KNOWN
-              </span>
-            </span>
-            <span>
-              <span className="font-mono text-[#38BDF8] text-lg tabular-nums">
-                {data?.reachableMapped ?? "—"}
-              </span>
-              <span className="text-[#A0A0B0] text-[10px] ml-1.5 tracking-wider">
-                LIVE
-              </span>
-            </span>
-            <span>
-              <span className="font-mono text-[#00E5FF] text-lg tabular-nums">
-                {data?.connectedMapped ?? signalLinks.length ?? "—"}
-              </span>
-              <span className="text-[#A0A0B0] text-[10px] ml-1.5 tracking-wider">
-                LINKED
-              </span>
-            </span>
+
+          {/* Numbers */}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-3">
+            <div>
+              <div className="font-mono text-xl tabular-nums text-white leading-none">
+                {mapStats.onMap}
+              </div>
+              <div className="text-[10px] text-[#A0A0B0] mt-0.5">
+                nodes on map
+              </div>
+            </div>
+            <div>
+              <div className="font-mono text-xl tabular-nums text-[#00E5FF] leading-none">
+                {mapStats.myPeers}
+              </div>
+              <div className="text-[10px] text-[#A0A0B0] mt-0.5">
+                my peers · lines
+              </div>
+            </div>
+            <div>
+              <div className="font-mono text-xl tabular-nums text-[#38BDF8] leading-none">
+                {mapStats.online}
+              </div>
+              <div className="text-[10px] text-[#A0A0B0] mt-0.5">online</div>
+            </div>
+            <div>
+              <div className="font-mono text-xl tabular-nums text-[#F87171] leading-none">
+                {mapStats.offline}
+              </div>
+              <div className="text-[10px] text-[#A0A0B0] mt-0.5">offline</div>
+            </div>
           </div>
-          <div className="text-[10px] text-[#A0A0B0] mt-1.5 font-mono leading-relaxed max-w-[280px]">
-            {signalLinks.length} signal lines to your peers
-            <br />
-            <span className="opacity-70">
-              KNOWN = catalog w/ geo (many offline) · LIVE ≈ port open · LINKED
-              = your connections
-            </span>
+
+          {/* Simple legend */}
+          <div className="border-t border-white/10 pt-2.5 space-y-1.5 text-[11px] leading-snug">
+            <div className="flex items-start gap-2">
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#FF7A3D] shrink-0 shadow-[0_0_6px_rgba(255,122,61,0.7)]" />
+              <span>
+                <span className="text-white font-medium">You</span>
+                <span className="text-[#A0A0B0]"> — this node</span>
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#00E5FF] shrink-0 shadow-[0_0_6px_rgba(0,229,255,0.7)]" />
+              <span>
+                <span className="text-white font-medium">My peer</span>
+                <span className="text-[#A0A0B0]">
+                  {" "}
+                  — online & linked to you (cyan lines)
+                </span>
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#38BDF8] shrink-0" />
+              <span>
+                <span className="text-white font-medium">Online</span>
+                <span className="text-[#A0A0B0]">
+                  {" "}
+                  — up in the network, not your peer
+                </span>
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#F87171] shrink-0" />
+              <span>
+                <span className="text-white font-medium">Offline</span>
+                <span className="text-[#A0A0B0]">
+                  {" "}
+                  — known before, not answering now
+                </span>
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1398,13 +1463,27 @@ export default function PeerMap({
           >
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="font-mono text-[10px] tracking-[2px] text-[#00E5FF] mb-1 flex items-center gap-1">
+                <div
+                  className="font-mono text-[10px] tracking-[2px] mb-1 flex items-center gap-1"
+                  style={{
+                    color:
+                      selected.id === "me"
+                        ? "#FF7A3D"
+                        : selected.state === "connected"
+                          ? "#00E5FF"
+                          : selected.state === "reachable"
+                            ? "#38BDF8"
+                            : "#F87171",
+                  }}
+                >
                   <MapPin className="w-3 h-3" />{" "}
                   {selected.id === "me"
                     ? "YOUR NODE"
                     : selected.state === "connected"
-                      ? "YOUR PEER"
-                      : "NETWORK"}
+                      ? "MY PEER"
+                      : selected.state === "reachable"
+                        ? "ONLINE"
+                        : "OFFLINE"}
                 </div>
                 <div className="font-semibold text-sm break-all">
                   {selected.name}
@@ -1419,18 +1498,28 @@ export default function PeerMap({
                     .join(", ") || "Unknown location"}
                 </div>
                 <div className="text-[10px] font-mono text-[#A0A0B0] mt-1">
-                  {selected.connectionType || "—"}
                   {selected.id !== "me" && (
                     <>
-                      {" · "}
                       {selected.state === "connected" ? (
-                        <span className="text-[#10B981]">CONNECTED</span>
+                        <span className="text-[#00E5FF]">
+                          Online · linked to you
+                        </span>
                       ) : selected.state === "reachable" ? (
-                        <span className="text-[#38BDF8]">LIVE</span>
+                        <span className="text-[#38BDF8]">
+                          Online · not your peer
+                        </span>
                       ) : (
-                        <span className="text-[#64748B]">STALE</span>
+                        <span className="text-[#F87171]">
+                          Offline · not answering
+                        </span>
                       )}
+                      {selected.connectionType
+                        ? ` · ${selected.connectionType}`
+                        : ""}
                     </>
+                  )}
+                  {selected.id === "me" && (
+                    <span className="text-[#FF7A3D]">This is your node</span>
                   )}
                 </div>
               </div>
@@ -1446,32 +1535,104 @@ export default function PeerMap({
         )}
       </AnimatePresence>
 
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[40] glass rounded-2xl px-4 py-2 text-[10px] font-mono tracking-widest border border-white/10 hidden md:flex items-center gap-4 text-[#A0A0B0]">
+      {/* Compact color key — detail is in the top-left card */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[40] glass rounded-2xl px-4 py-2 text-[10px] font-mono tracking-wider border border-white/10 hidden md:flex items-center gap-3.5 text-[#A0A0B0]">
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" /> YOU
+          <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" /> You
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF]" /> LINKED
+          <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF]" /> My peer
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" /> LIVE
+          <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" /> Online
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#64748B]" /> STALE
+          <span className="w-2.5 h-2.5 rounded-full bg-[#F87171]" /> Offline
         </span>
-        <span className="opacity-60">lines = your connections</span>
       </div>
     </div>
 
-    {/* ── Mobile: Top Regions + selected peer UNDER the map (no center overlap) ── */}
+    {/* ── Mobile: legend + regions + selected peer UNDER the map ── */}
     <div className="md:hidden mt-3 space-y-2.5">
+      <div className="glass rounded-2xl px-4 py-3 border border-white/10">
+        <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[2px] mb-2">
+          <Globe2 className="w-3.5 h-3.5" /> MAP LEGEND
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-center mb-3">
+          <div className="rounded-xl bg-white/5 px-2 py-2">
+            <div className="font-mono text-lg tabular-nums text-white">
+              {mapStats.onMap}
+            </div>
+            <div className="text-[10px] text-[#A0A0B0]">on map</div>
+          </div>
+          <div className="rounded-xl bg-white/5 px-2 py-2">
+            <div className="font-mono text-lg tabular-nums text-[#00E5FF]">
+              {mapStats.myPeers}
+            </div>
+            <div className="text-[10px] text-[#A0A0B0]">my peers</div>
+          </div>
+          <div className="rounded-xl bg-white/5 px-2 py-2">
+            <div className="font-mono text-lg tabular-nums text-[#38BDF8]">
+              {mapStats.online}
+            </div>
+            <div className="text-[10px] text-[#A0A0B0]">online</div>
+          </div>
+          <div className="rounded-xl bg-white/5 px-2 py-2">
+            <div className="font-mono text-lg tabular-nums text-[#F87171]">
+              {mapStats.offline}
+            </div>
+            <div className="text-[10px] text-[#A0A0B0]">offline</div>
+          </div>
+        </div>
+        <div className="space-y-1.5 text-[11px] text-[#A0A0B0]">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#FF7A3D]" />
+            <span>
+              <span className="text-white">You</span> — this node
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
+            <span>
+              <span className="text-white">My peer</span> — linked (cyan lines)
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#38BDF8]" />
+            <span>
+              <span className="text-white">Online</span> — up, not your peer
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#F87171]" />
+            <span>
+              <span className="text-white">Offline</span> — not answering
+            </span>
+          </div>
+        </div>
+      </div>
       {topRegionsBlock}
       {selected && (
         <div className="glass rounded-2xl px-4 py-3 border border-white/10">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="font-mono text-[10px] tracking-[2px] text-[#00E5FF] mb-1 flex items-center gap-1">
-                <MapPin className="w-3 h-3" /> PEER
+              <div
+                className="font-mono text-[10px] tracking-[2px] mb-1 flex items-center gap-1"
+                style={{
+                  color:
+                    selected.state === "connected"
+                      ? "#00E5FF"
+                      : selected.state === "reachable"
+                        ? "#38BDF8"
+                        : "#F87171",
+                }}
+              >
+                <MapPin className="w-3 h-3" />{" "}
+                {selected.state === "connected"
+                  ? "MY PEER"
+                  : selected.state === "reachable"
+                    ? "ONLINE"
+                    : "OFFLINE"}
               </div>
               <div className="font-semibold text-sm break-all">{selected.name}</div>
               <div className="font-mono text-xs text-[#A0A0B0] mt-1 break-all">
