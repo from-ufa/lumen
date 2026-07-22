@@ -533,11 +533,11 @@ function SignalLinesLayer({
     svgEl.appendChild(g);
 
     const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-    // Unique filter id per mount (avoid collisions if effect re-runs)
+    // Soft, low-energy glow — airy, not neon billboard
     const filterId = `aether-signal-glow-${Date.now().toString(36)}`;
     defs.innerHTML = `
-      <filter id="${filterId}" x="-80%" y="-80%" width="260%" height="260%">
-        <feGaussianBlur stdDeviation="2.2" result="b"/>
+      <filter id="${filterId}" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="1.1" result="b"/>
         <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
       </filter>
     `;
@@ -561,8 +561,8 @@ function SignalLinesLayer({
         "path"
       );
       pathGlow.setAttribute("fill", "none");
-      pathGlow.setAttribute("stroke", "rgba(0,229,255,0.28)");
-      pathGlow.setAttribute("stroke-width", "4");
+      pathGlow.setAttribute("stroke", "rgba(0,229,255,0.10)");
+      pathGlow.setAttribute("stroke-width", "1.6");
       pathGlow.setAttribute("stroke-linecap", "round");
       pathGlow.setAttribute("filter", `url(#${filterId})`);
       pathGlow.setAttribute("class", "aether-signal-glow");
@@ -572,24 +572,24 @@ function SignalLinesLayer({
         "path"
       );
       pathCore.setAttribute("fill", "none");
-      pathCore.setAttribute("stroke", "rgba(0,245,255,0.85)");
-      pathCore.setAttribute("stroke-width", "1.6");
+      pathCore.setAttribute("stroke", "rgba(0,229,255,0.32)");
+      pathCore.setAttribute("stroke-width", "0.7");
       pathCore.setAttribute("stroke-linecap", "round");
       pathCore.setAttribute("class", "aether-signal-core");
-      pathCore.style.strokeDasharray = "4 9";
-      pathCore.style.animation = `aether-signal-dash ${2.2 + (i % 5) * 0.12}s linear infinite`;
+      pathCore.style.strokeDasharray = "3 11";
+      pathCore.style.animation = `aether-signal-dash ${3.2 + (i % 5) * 0.2}s linear infinite`;
 
       const packet = document.createElementNS(
         "http://www.w3.org/2000/svg",
         "circle"
       );
-      packet.setAttribute("r", "3.2");
-      packet.setAttribute("fill", "#FFFFFF");
-      packet.setAttribute("stroke", "rgba(0,229,255,0.95)");
-      packet.setAttribute("stroke-width", "1.2");
+      packet.setAttribute("r", "1.6");
+      packet.setAttribute("fill", "rgba(224,251,255,0.75)");
+      packet.setAttribute("stroke", "rgba(0,229,255,0.35)");
+      packet.setAttribute("stroke-width", "0.5");
       packet.setAttribute(
         "style",
-        "filter:drop-shadow(0 0 6px rgba(0,229,255,1))"
+        "filter:drop-shadow(0 0 2.5px rgba(0,229,255,0.55))"
       );
       packet.setAttribute("class", "aether-signal-packet");
 
@@ -604,7 +604,7 @@ function SignalLinesLayer({
         toLat: link.toLat,
         toLon: link.toLon,
         phase: (i * 0.17) % 1,
-        speed: 0.22 + (i % 7) * 0.014,
+        speed: 0.14 + (i % 7) * 0.01,
       });
     }
 
@@ -687,7 +687,7 @@ function SignalLinesLayer({
           d.packet.setAttribute("cy", String(p.y));
           const edge = Math.min(d.phase, 1 - d.phase);
           const op = edge < 0.08 ? edge / 0.08 : 1;
-          d.packet.setAttribute("opacity", String(0.45 + 0.55 * op));
+          d.packet.setAttribute("opacity", String(0.25 + 0.5 * op));
         }
       }
       raf = requestAnimationFrame(tick);
