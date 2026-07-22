@@ -508,14 +508,12 @@ function SignalLinesLayer({
     if (!meNode || !linkList.length) return;
     // linksKey pins rebuilds to meaningful geometry changes
 
-    let pane = map.getPane("aether-signals");
-    if (!pane) {
-      pane = map.createPane("aether-signals");
-      pane.style.zIndex = "350";
-      pane.style.pointerEvents = "none";
+    // SVG sits on the map *container* (not a CRS pane) so we can use
+    // latLngToContainerPoint without fighting Leaflet's pane transforms.
+    const host = map.getContainer();
+    if (getComputedStyle(host).position === "static") {
+      host.style.position = "relative";
     }
-
-    // Custom SVG overlay in map overlay space (layer points)
     const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svgEl.setAttribute("class", "aether-signal-svg");
     svgEl.style.position = "absolute";
@@ -526,7 +524,7 @@ function SignalLinesLayer({
     svgEl.style.overflow = "visible";
     svgEl.style.pointerEvents = "none";
     svgEl.style.zIndex = "350";
-    pane.appendChild(svgEl);
+    host.appendChild(svgEl);
 
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.setAttribute("class", "aether-signal-layer");
