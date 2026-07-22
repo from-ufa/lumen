@@ -391,9 +391,17 @@ body {
   z-index: 550 !important;
   pointer-events: none !important;
 }
+/* Ride Leaflet zoom CSS transform — avoid paint thrash mid-anim */
+.leaflet-zoom-anim .leaflet-aetherSignals-pane {
+  will-change: transform;
+}
 .aether-signal-svg {
   overflow: visible !important;
   pointer-events: none !important;
+}
+.aether-signal-core,
+.aether-signal-glow {
+  vector-effect: non-scaling-stroke;
 }
 .aether-signal-core {
   opacity: 1;

@@ -577,10 +577,11 @@ function MapResizeGuard() {
 /**
  * Animated signal arcs: YOU → each currently connected peer.
  *
- * Must live in a Leaflet pane above tiles (z=200) and ideally under/near
- * markers (z=600). Sibling SVG on the container with z-index 350 was
- * completely hidden under .leaflet-pane { z-index: 400 } — only flashing
- * during zoom compositing.
+ * Smoothness rules (same as Leaflet.SVG / Path):
+ * - Geometry lives in the map pane → CSS transform owns pan/zoom animation.
+ * - Never reproject while `map._animatingZoom` (that double-transforms and jitters).
+ * - Packets use *cached* SVG endpoints from the last reproject, not live
+ *   latLngToContainerPoint every frame.
  */
 function SignalLinesLayer({
   me,
@@ -604,7 +605,6 @@ function SignalLinesLayer({
     if (!pane) {
       pane = map.createPane("aetherSignals");
     }
-    // Above tiles (200) + default overlay (400), below markers (600)
     pane.style.zIndex = "550";
     pane.style.pointerEvents = "none";
 
@@ -615,6 +615,8 @@ function SignalLinesLayer({
     svgEl.style.top = "0";
     svgEl.style.overflow = "visible";
     svgEl.style.pointerEvents = "none";
+    // Keep stroke width stable while the pane is CSS-scaled mid-zoom
+    svgEl.style.vectorEffect = "non-scaling-stroke";
     pane.appendChild(svgEl);
 
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -622,7 +624,6 @@ function SignalLinesLayer({
     svgEl.appendChild(g);
 
     const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-    // Soft, low-energy glow — airy, not neon billboard
     const filterId = `aether-signal-glow-${Date.now().toString(36)}`;
     defs.innerHTML = `
       <filter id="${filterId}" x="-60%" y="-60%" width="220%" height="220%">
@@ -640,6 +641,11 @@ function SignalLinesLayer({
       toLon: number;
       phase: number;
       speed: number;
+      /** Cached SVG-local endpoints from last reproject */
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
     };
     const drawn: Drawn[] = [];
 
@@ -653,6 +659,7 @@ function SignalLinesLayer({
       pathGlow.setAttribute("stroke", "rgba(0,229,255,0.10)");
       pathGlow.setAttribute("stroke-width", "1.6");
       pathGlow.setAttribute("stroke-linecap", "round");
+      pathGlow.setAttribute("vector-effect", "non-scaling-stroke");
       pathGlow.setAttribute("filter", `url(#${filterId})`);
       pathGlow.setAttribute("class", "aether-signal-glow");
 
@@ -664,6 +671,7 @@ function SignalLinesLayer({
       pathCore.setAttribute("stroke", "rgba(0,229,255,0.32)");
       pathCore.setAttribute("stroke-width", "0.7");
       pathCore.setAttribute("stroke-linecap", "round");
+      pathCore.setAttribute("vector-effect", "non-scaling-stroke");
       pathCore.setAttribute("class", "aether-signal-core");
       pathCore.style.strokeDasharray = "3 11";
       pathCore.style.animation = `aether-signal-dash ${3.2 + (i % 5) * 0.2}s linear infinite`;
@@ -676,6 +684,7 @@ function SignalLinesLayer({
       packet.setAttribute("fill", "rgba(224,251,255,0.75)");
       packet.setAttribute("stroke", "rgba(0,229,255,0.35)");
       packet.setAttribute("stroke-width", "0.5");
+      packet.setAttribute("vector-effect", "non-scaling-stroke");
       packet.setAttribute(
         "style",
         "filter:drop-shadow(0 0 2.5px rgba(0,229,255,0.55))"
@@ -694,24 +703,28 @@ function SignalLinesLayer({
         toLon: link.toLon,
         phase: (i * 0.17) % 1,
         speed: 0.14 + (i % 7) * 0.01,
+        x1: 0,
+        y1: 0,
+        x2: 0,
+        y2: 0,
       });
     }
 
-    const curveD = (
-      x1: number,
-      y1: number,
-      x2: number,
-      y2: number
-    ): string => {
+    const curveGeom = (x1: number, y1: number, x2: number, y2: number) => {
       const mx = (x1 + x2) / 2;
       const my = (y1 + y2) / 2;
       const dx = x2 - x1;
       const dy = y2 - y1;
       const len = Math.hypot(dx, dy) || 1;
-      const offset = Math.min(90, Math.max(18, len * 0.12));
+      // Arc bulge in *screen-ish* px; clamp so zoom-out stays subtle
+      const offset = Math.min(48, Math.max(10, len * 0.1));
       const cx = mx - (dy / len) * offset;
       const cy = my + (dx / len) * offset;
-      return `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`;
+      return {
+        d: `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`,
+        cx,
+        cy,
+      };
     };
 
     const pointOnQuad = (
@@ -721,14 +734,7 @@ function SignalLinesLayer({
       y2: number,
       t: number
     ): { x: number; y: number } => {
-      const mx = (x1 + x2) / 2;
-      const my = (y1 + y2) / 2;
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const len = Math.hypot(dx, dy) || 1;
-      const offset = Math.min(90, Math.max(18, len * 0.12));
-      const cx = mx - (dy / len) * offset;
-      const cy = my + (dx / len) * offset;
+      const { cx, cy } = curveGeom(x1, y1, x2, y2);
       const u = 1 - t;
       return {
         x: u * u * x1 + 2 * u * t * cx + t * t * x2,
@@ -736,11 +742,17 @@ function SignalLinesLayer({
       };
     };
 
+    const isZoomAnimating = () =>
+      Boolean((map as unknown as { _animatingZoom?: boolean })._animatingZoom);
+
     /**
-     * Leaflet overlay pattern: pin SVG to viewport top-left in *layer*
-     * coordinates, draw with points relative to that origin (= container pts).
+     * Same strategy as L.SVG._update:
+     * pin container to layer top-left of viewport; paths in local (container) space.
+     * Skip entirely while Leaflet is CSS-scaling the map pane for zoom.
      */
-    const redraw = () => {
+    const reproject = () => {
+      if (isZoomAnimating()) return;
+
       const size = map.getSize();
       const topLeft = map.containerPointToLayerPoint([0, 0]);
       L.DomUtil.setPosition(svgEl as unknown as HTMLElement, topLeft);
@@ -748,13 +760,34 @@ function SignalLinesLayer({
       svgEl.setAttribute("height", String(size.y));
       svgEl.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
 
-      const origin = map.latLngToContainerPoint([meNode.lat, meNode.lon]);
+      // layer − topLeft ≡ container point (stable when not mid-zoom-anim)
+      const meLayer = map.latLngToLayerPoint([meNode.lat, meNode.lon]);
+      const ox = meLayer.x - topLeft.x;
+      const oy = meLayer.y - topLeft.y;
+
       for (const d of drawn) {
-        const dest = map.latLngToContainerPoint([d.toLat, d.toLon]);
-        const path = curveD(origin.x, origin.y, dest.x, dest.y);
-        d.pathGlow.setAttribute("d", path);
-        d.pathCore.setAttribute("d", path);
+        const dest = map.latLngToLayerPoint([d.toLat, d.toLon]);
+        const x2 = dest.x - topLeft.x;
+        const y2 = dest.y - topLeft.y;
+        d.x1 = ox;
+        d.y1 = oy;
+        d.x2 = x2;
+        d.y2 = y2;
+        const { d: pathD } = curveGeom(ox, oy, x2, y2);
+        d.pathGlow.setAttribute("d", pathD);
+        d.pathCore.setAttribute("d", pathD);
       }
+    };
+
+    /** Pan without zoom: only re-pin SVG origin (cheap); skip mid zoom-anim. */
+    const onMove = () => {
+      if (isZoomAnimating()) return;
+      reproject();
+    };
+
+    const onZoomEnd = () => {
+      // After CSS zoom transform resets, reproject at the new scale once
+      reproject();
     };
 
     let raf = 0;
@@ -766,12 +799,12 @@ function SignalLinesLayer({
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (!reduceMotion) {
-        const origin = map.latLngToContainerPoint([meNode.lat, meNode.lon]);
+
+      // Freeze packets during zoom anim — pane CSS transform moves them with lines
+      if (!reduceMotion && !isZoomAnimating()) {
         for (const d of drawn) {
           d.phase = (d.phase + d.speed * dt) % 1;
-          const dest = map.latLngToContainerPoint([d.toLat, d.toLon]);
-          const p = pointOnQuad(origin.x, origin.y, dest.x, dest.y, d.phase);
+          const p = pointOnQuad(d.x1, d.y1, d.x2, d.y2, d.phase);
           d.packet.setAttribute("cx", String(p.x));
           d.packet.setAttribute("cy", String(p.y));
           const edge = Math.min(d.phase, 1 - d.phase);
@@ -782,14 +815,22 @@ function SignalLinesLayer({
       raf = requestAnimationFrame(tick);
     };
 
-    redraw();
-    // zoom/move/viewreset keep arcs glued to markers while the map transforms
-    map.on("zoom viewreset move zoomend moveend resize", redraw);
+    reproject();
+    // Do NOT listen to "zoom" — that fights Leaflet's animated CSS transform.
+    map.on("move", onMove);
+    map.on("moveend", reproject);
+    map.on("zoomend", onZoomEnd);
+    map.on("viewreset", reproject);
+    map.on("resize", reproject);
     raf = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(raf);
-      map.off("zoom viewreset move zoomend moveend resize", redraw);
+      map.off("move", onMove);
+      map.off("moveend", reproject);
+      map.off("zoomend", onZoomEnd);
+      map.off("viewreset", reproject);
+      map.off("resize", reproject);
       try {
         svgEl.remove();
       } catch {
@@ -1188,6 +1229,9 @@ export default function PeerMap({
             maxZoom={MAP_MAX_ZOOM}
             zoomSnap={0.25}
             zoomDelta={0.5}
+            zoomAnimation={true}
+            markerZoomAnimation={true}
+            fadeAnimation={true}
             className="h-full w-full aether-map"
             style={{
               background: "#0A0A0F",
