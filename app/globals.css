@@ -386,11 +386,20 @@ body {
     stroke-dashoffset: -60;
   }
 }
+.leaflet-aetherSignals-pane,
+.leaflet-pane.leaflet-aetherSignals-pane {
+  z-index: 550 !important;
+  pointer-events: none !important;
+}
+.aether-signal-svg {
+  overflow: visible !important;
+  pointer-events: none !important;
+}
 .aether-signal-core {
-  opacity: 0.85;
+  opacity: 1;
 }
 .aether-signal-glow {
-  opacity: 0.9;
+  opacity: 1;
 }
 .aether-signal-packet {
   pointer-events: none;
@@ -398,6 +407,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .aether-signal-core {
     animation: none !important;
+    stroke-dasharray: none !important;
   }
   .aether-signal-packet {
     display: none;
@@ -440,8 +450,11 @@ body {
 .aether-map .leaflet-overlay-pane,
 .aether-map .leaflet-tooltip-pane,
 .aether-map .leaflet-popup-pane {
-  z-index: auto;
+  /* keep Leaflet pane stacking (do NOT force z-index:auto — it hid signal lines) */
   pointer-events: auto !important;
+}
+.aether-map .leaflet-aetherSignals-pane {
+  pointer-events: none !important;
 }
 .aether-map .leaflet-marker-icon,
 .aether-map .leaflet-interactive {

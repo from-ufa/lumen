@@ -487,7 +487,11 @@ function MapResizeGuard() {
 
 /**
  * Animated signal arcs: YOU → each currently connected peer.
- * SVG pane under markers; soft glow stroke + traveling packet.
+ *
+ * Must live in a Leaflet pane above tiles (z=200) and ideally under/near
+ * markers (z=600). Sibling SVG on the container with z-index 350 was
+ * completely hidden under .leaflet-pane { z-index: 400 } — only flashing
+ * during zoom compositing.
  */
 function SignalLinesLayer({
   me,
@@ -506,34 +510,34 @@ function SignalLinesLayer({
     const meNode = me;
     const linkList = linksRef.current;
     if (!meNode || !linkList.length) return;
-    // linksKey pins rebuilds to meaningful geometry changes
 
-    // SVG sits on the map *container* (not a CRS pane) so we can use
-    // latLngToContainerPoint without fighting Leaflet's pane transforms.
-    const host = map.getContainer();
-    if (getComputedStyle(host).position === "static") {
-      host.style.position = "relative";
+    let pane = map.getPane("aetherSignals");
+    if (!pane) {
+      pane = map.createPane("aetherSignals");
     }
+    // Above tiles (200) + default overlay (400), below markers (600)
+    pane.style.zIndex = "550";
+    pane.style.pointerEvents = "none";
+
     const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svgEl.setAttribute("class", "aether-signal-svg");
     svgEl.style.position = "absolute";
-    svgEl.style.top = "0";
     svgEl.style.left = "0";
-    svgEl.style.width = "100%";
-    svgEl.style.height = "100%";
+    svgEl.style.top = "0";
     svgEl.style.overflow = "visible";
     svgEl.style.pointerEvents = "none";
-    svgEl.style.zIndex = "350";
-    host.appendChild(svgEl);
+    pane.appendChild(svgEl);
 
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.setAttribute("class", "aether-signal-layer");
     svgEl.appendChild(g);
 
     const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    // Unique filter id per mount (avoid collisions if effect re-runs)
+    const filterId = `aether-signal-glow-${Date.now().toString(36)}`;
     defs.innerHTML = `
-      <filter id="aether-signal-glow" x="-50%" y="-50%" width="200%" height="200%">
-        <feGaussianBlur stdDeviation="1.6" result="b"/>
+      <filter id="${filterId}" x="-80%" y="-80%" width="260%" height="260%">
+        <feGaussianBlur stdDeviation="2.2" result="b"/>
         <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
       </filter>
     `;
@@ -557,10 +561,10 @@ function SignalLinesLayer({
         "path"
       );
       pathGlow.setAttribute("fill", "none");
-      pathGlow.setAttribute("stroke", "rgba(0,229,255,0.14)");
-      pathGlow.setAttribute("stroke-width", "3.5");
+      pathGlow.setAttribute("stroke", "rgba(0,229,255,0.28)");
+      pathGlow.setAttribute("stroke-width", "4");
       pathGlow.setAttribute("stroke-linecap", "round");
-      pathGlow.setAttribute("filter", "url(#aether-signal-glow)");
+      pathGlow.setAttribute("filter", `url(#${filterId})`);
       pathGlow.setAttribute("class", "aether-signal-glow");
 
       const pathCore = document.createElementNS(
@@ -568,22 +572,24 @@ function SignalLinesLayer({
         "path"
       );
       pathCore.setAttribute("fill", "none");
-      pathCore.setAttribute("stroke", "rgba(0,229,255,0.55)");
-      pathCore.setAttribute("stroke-width", "1.15");
+      pathCore.setAttribute("stroke", "rgba(0,245,255,0.85)");
+      pathCore.setAttribute("stroke-width", "1.6");
       pathCore.setAttribute("stroke-linecap", "round");
       pathCore.setAttribute("class", "aether-signal-core");
-      pathCore.style.strokeDasharray = "5 10";
-      pathCore.style.animation = `aether-signal-dash ${2.4 + (i % 5) * 0.15}s linear infinite`;
+      pathCore.style.strokeDasharray = "4 9";
+      pathCore.style.animation = `aether-signal-dash ${2.2 + (i % 5) * 0.12}s linear infinite`;
 
       const packet = document.createElementNS(
         "http://www.w3.org/2000/svg",
         "circle"
       );
-      packet.setAttribute("r", "2.4");
-      packet.setAttribute("fill", "#E0FBFF");
+      packet.setAttribute("r", "3.2");
+      packet.setAttribute("fill", "#FFFFFF");
+      packet.setAttribute("stroke", "rgba(0,229,255,0.95)");
+      packet.setAttribute("stroke-width", "1.2");
       packet.setAttribute(
         "style",
-        "filter:drop-shadow(0 0 4px rgba(0,229,255,0.95))"
+        "filter:drop-shadow(0 0 6px rgba(0,229,255,1))"
       );
       packet.setAttribute("class", "aether-signal-packet");
 
@@ -598,7 +604,7 @@ function SignalLinesLayer({
         toLat: link.toLat,
         toLon: link.toLon,
         phase: (i * 0.17) % 1,
-        speed: 0.18 + (i % 7) * 0.012,
+        speed: 0.22 + (i % 7) * 0.014,
       });
     }
 
@@ -641,20 +647,21 @@ function SignalLinesLayer({
       };
     };
 
-    /** Convert latlng → SVG coords (container pixels relative to map). */
-    const toSvgPoint = (lat: number, lon: number) => {
-      const p = map.latLngToContainerPoint([lat, lon]);
-      return { x: p.x, y: p.y };
-    };
-
+    /**
+     * Leaflet overlay pattern: pin SVG to viewport top-left in *layer*
+     * coordinates, draw with points relative to that origin (= container pts).
+     */
     const redraw = () => {
       const size = map.getSize();
+      const topLeft = map.containerPointToLayerPoint([0, 0]);
+      L.DomUtil.setPosition(svgEl as unknown as HTMLElement, topLeft);
       svgEl.setAttribute("width", String(size.x));
       svgEl.setAttribute("height", String(size.y));
       svgEl.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
-      const origin = toSvgPoint(meNode.lat, meNode.lon);
+
+      const origin = map.latLngToContainerPoint([meNode.lat, meNode.lon]);
       for (const d of drawn) {
-        const dest = toSvgPoint(d.toLat, d.toLon);
+        const dest = map.latLngToContainerPoint([d.toLat, d.toLon]);
         const path = curveD(origin.x, origin.y, dest.x, dest.y);
         d.pathGlow.setAttribute("d", path);
         d.pathCore.setAttribute("d", path);
@@ -671,22 +678,23 @@ function SignalLinesLayer({
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       if (!reduceMotion) {
-        const origin = toSvgPoint(meNode.lat, meNode.lon);
+        const origin = map.latLngToContainerPoint([meNode.lat, meNode.lon]);
         for (const d of drawn) {
           d.phase = (d.phase + d.speed * dt) % 1;
-          const dest = toSvgPoint(d.toLat, d.toLon);
+          const dest = map.latLngToContainerPoint([d.toLat, d.toLon]);
           const p = pointOnQuad(origin.x, origin.y, dest.x, dest.y, d.phase);
           d.packet.setAttribute("cx", String(p.x));
           d.packet.setAttribute("cy", String(p.y));
           const edge = Math.min(d.phase, 1 - d.phase);
           const op = edge < 0.08 ? edge / 0.08 : 1;
-          d.packet.setAttribute("opacity", String(0.35 + 0.65 * op));
+          d.packet.setAttribute("opacity", String(0.45 + 0.55 * op));
         }
       }
       raf = requestAnimationFrame(tick);
     };
 
     redraw();
+    // zoom/move/viewreset keep arcs glued to markers while the map transforms
     map.on("zoom viewreset move zoomend moveend resize", redraw);
     raf = requestAnimationFrame(tick);
 
@@ -987,11 +995,11 @@ export default function PeerMap({
   // Stable list reference for native layer (rebuild when ids/geo change)
   const peerMarkers = data?.markers ?? EMPTY_MARKERS;
   const signalLinks = useMemo(() => data?.links ?? [], [data?.links]);
-  // Stable identity for SignalLinesLayer effect (avoid redraw every parent render)
+  // Stable identity: IPs only (coords can jitter slightly; geometry updates via redraw)
   const signalLinksKey = useMemo(
     () =>
       signalLinks
-        .map((l) => `${l.toIp}:${l.toLat.toFixed(3)}:${l.toLon.toFixed(3)}`)
+        .map((l) => l.toIp)
         .sort()
         .join("|"),
     [signalLinks]
@@ -1181,7 +1189,7 @@ export default function PeerMap({
                 {data?.networkMapped ?? data?.mapped ?? "—"}
               </span>
               <span className="text-[#A0A0B0] text-[10px] ml-1.5 tracking-wider">
-                NETWORK
+                KNOWN
               </span>
             </span>
             <span>
@@ -1201,12 +1209,13 @@ export default function PeerMap({
               </span>
             </span>
           </div>
-          <div className="text-[10px] text-[#A0A0B0] mt-1.5 font-mono">
-            {signalLinks.length} signal lines · {data?.totalPeers ?? "—"}{" "}
-            connected peers
-            {(data?.unmapped ?? 0) > 0
-              ? ` · ${data!.unmapped} no public IP`
-              : ""}
+          <div className="text-[10px] text-[#A0A0B0] mt-1.5 font-mono leading-relaxed max-w-[280px]">
+            {signalLinks.length} signal lines to your peers
+            <br />
+            <span className="opacity-70">
+              KNOWN = catalog w/ geo (many offline) · LIVE ≈ port open · LINKED
+              = your connections
+            </span>
           </div>
         </div>
 
