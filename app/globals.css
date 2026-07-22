@@ -379,6 +379,31 @@ body {
 .aether-boom-flight {
   will-change: left, top, opacity, transform;
 }
+
+/* ── Signal arcs (YOU → connected peers) ── */
+@keyframes aether-signal-dash {
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+.aether-signal-core {
+  opacity: 0.85;
+}
+.aether-signal-glow {
+  opacity: 0.9;
+}
+.aether-signal-packet {
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aether-signal-core {
+    animation: none !important;
+  }
+  .aether-signal-packet {
+    display: none;
+  }
+}
+
 .aether-boom-notice {
   min-width: 160px;
   max-width: min(70vw, 220px);

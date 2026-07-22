@@ -24,17 +24,33 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** DivIcon for a single peer — cyan when active, slate when stale, orange when boom source.
- *  Hit box is larger than the visible dot so hover/click works reliably with clusters. */
-function peerDivIcon(active: boolean, isBoom: boolean): L.DivIcon {
-  const color = isBoom ? "#FF7A3D" : active ? "#00E5FF" : "#64748B";
-  const size = isBoom ? 16 : active ? 13 : 11;
+type PeerMapState = "connected" | "reachable" | "stale";
+
+/** DivIcon — connected (bright cyan), reachable (soft), stale (slate), boom (orange). */
+function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
+  let color = "#64748B";
+  let size = 10;
+  let opacity = 0.5;
+  let glow = "0 0 4px rgba(0,0,0,0.5)";
+
+  if (isBoom) {
+    color = "#FF7A3D";
+    size = 16;
+    opacity = 0.95;
+    glow = "0 0 14px rgba(255,122,61,0.85)";
+  } else if (state === "connected") {
+    color = "#00E5FF";
+    size = 13;
+    opacity = 0.96;
+    glow = "0 0 12px rgba(0,229,255,0.85)";
+  } else if (state === "reachable") {
+    color = "#38BDF8";
+    size = 11;
+    opacity = 0.72;
+    glow = "0 0 8px rgba(56,189,248,0.45)";
+  }
+
   const hit = 28;
-  const glow = isBoom
-    ? "0 0 14px rgba(255,122,61,0.85)"
-    : active
-      ? "0 0 10px rgba(0,229,255,0.7)"
-      : "0 0 4px rgba(0,0,0,0.5)";
   return L.divIcon({
     className: "aether-peer-marker",
     html: `<div class="aether-peer-hit" style="
@@ -46,7 +62,7 @@ function peerDivIcon(active: boolean, isBoom: boolean): L.DivIcon {
       background:${color};
       border:2px solid rgba(10,10,15,0.9);
       box-shadow:${glow};
-      opacity:${active || isBoom ? 0.95 : 0.6};
+      opacity:${opacity};
       pointer-events:none;
     "></div></div>`,
     iconSize: [hit, hit],
@@ -88,19 +104,35 @@ function peerPopupHtml(
     city?: string;
     country?: string;
     connectionType?: string;
+    state?: PeerMapState;
   },
-  active: boolean,
   isMe = false
 ): string {
   const loc =
     [m.city, m.country].filter(Boolean).join(", ") || "Unknown location";
-  const statusColor = active ? "#10B981" : "#F59E0B";
-  const statusLabel = active ? "ACTIVE" : "STALE";
+  const state = m.state || "stale";
+  const statusColor =
+    state === "connected"
+      ? "#10B981"
+      : state === "reachable"
+        ? "#38BDF8"
+        : "#64748B";
+  const statusLabel =
+    state === "connected"
+      ? "CONNECTED"
+      : state === "reachable"
+        ? "NETWORK · LIVE"
+        : "NETWORK · STALE";
   const title = escapeHtml(m.name || (isMe ? "Ergo node" : "Peer"));
   const addr = escapeHtml(m.ip) + (m.port ? `:${escapeHtml(m.port)}` : "");
+  const roleColor = isMe
+    ? "#FF7A3D"
+    : state === "connected"
+      ? "#00E5FF"
+      : "#A0A0B0";
   return `<div class="aether-peer-popup" style="min-width:180px;max-width:260px;font-size:12px;line-height:1.4;color:#E8E8F0">
-    <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.15em;color:#00E5FF;margin-bottom:6px">${
-      isMe ? "YOUR NODE" : "PEER"
+    <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.15em;color:${roleColor};margin-bottom:6px">${
+      isMe ? "YOUR NODE" : state === "connected" ? "YOUR PEER" : "NETWORK NODE"
     }</div>
     <div style="font-weight:600;font-size:14px;color:#fff;word-break:break-all">${title}</div>
     <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all;margin-top:6px;color:#E8E8F0">${addr}</div>
@@ -148,20 +180,22 @@ function ClusteredPeersLayer({
     });
 
     for (const m of markers) {
-      const active = isActive(m.lastMessage);
+      const state: PeerMapState = m.state || "stale";
       const isBoom = boomIps.has(m.ip);
       const marker = L.marker([m.lat, m.lon], {
-        icon: peerDivIcon(active, isBoom),
+        icon: peerDivIcon(state, isBoom),
         riseOnHover: true,
         keyboard: true,
         title: m.name || m.ip,
+        zIndexOffset: state === "connected" ? 500 : 0,
       });
 
       const tip =
         `${m.name || m.ip}` +
         (m.city || m.country
           ? ` · ${[m.city, m.country].filter(Boolean).join(", ")}`
-          : "");
+          : "") +
+        (state === "connected" ? " · LINKED" : "");
 
       marker.bindTooltip(tip, {
         direction: "top",
@@ -171,7 +205,7 @@ function ClusteredPeersLayer({
         className: "aether-map-tooltip",
       });
 
-      marker.bindPopup(peerPopupHtml(m, active, false), {
+      marker.bindPopup(peerPopupHtml(m, false), {
         maxWidth: 300,
         className: "aether-map-popup",
         autoPan: true,
@@ -228,7 +262,7 @@ function MeMarkerLayer({
       className: "aether-map-tooltip",
     });
 
-    marker.bindPopup(peerPopupHtml(me, true, true), {
+    marker.bindPopup(peerPopupHtml({ ...me, state: "connected" }, true), {
       maxWidth: 300,
       className: "aether-map-popup",
       autoPan: true,
@@ -313,15 +347,32 @@ type PeerMapMarker = {
   country: string;
   city: string;
   jittered: boolean;
+  state?: PeerMapState;
+  source?: string;
+};
+
+type PeerLink = {
+  toIp: string;
+  toLat: number;
+  toLon: number;
+  connectionType: string;
+  lastMessage: number;
+  name: string;
 };
 
 type MapPayload = {
   markers: PeerMapMarker[];
   me: PeerMapMarker | null;
+  links?: PeerLink[];
   totalPeers: number;
   mapped: number;
+  networkTotal?: number;
+  networkMapped?: number;
+  connectedMapped?: number;
+  reachableMapped?: number;
   unmapped: number;
   countries: Record<string, number>;
+  catalogUpdatedAt?: number | null;
   generatedAt: number;
 };
 
@@ -430,6 +481,228 @@ function MapResizeGuard() {
       window.clearTimeout(t2);
     };
   }, [map]);
+
+  return null;
+}
+
+/**
+ * Animated signal arcs: YOU → each currently connected peer.
+ * SVG pane under markers; soft glow stroke + traveling packet.
+ */
+function SignalLinesLayer({
+  me,
+  links,
+  linksKey,
+}: {
+  me: PeerMapMarker | null | undefined;
+  links: PeerLink[];
+  linksKey: string;
+}) {
+  const map = useMap();
+  const linksRef = useRef(links);
+  linksRef.current = links;
+
+  useEffect(() => {
+    const meNode = me;
+    const linkList = linksRef.current;
+    if (!meNode || !linkList.length) return;
+    // linksKey pins rebuilds to meaningful geometry changes
+
+    let pane = map.getPane("aether-signals");
+    if (!pane) {
+      pane = map.createPane("aether-signals");
+      pane.style.zIndex = "350";
+      pane.style.pointerEvents = "none";
+    }
+
+    // Custom SVG overlay in map overlay space (layer points)
+    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svgEl.setAttribute("class", "aether-signal-svg");
+    svgEl.style.position = "absolute";
+    svgEl.style.top = "0";
+    svgEl.style.left = "0";
+    svgEl.style.width = "100%";
+    svgEl.style.height = "100%";
+    svgEl.style.overflow = "visible";
+    svgEl.style.pointerEvents = "none";
+    svgEl.style.zIndex = "350";
+    pane.appendChild(svgEl);
+
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute("class", "aether-signal-layer");
+    svgEl.appendChild(g);
+
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    defs.innerHTML = `
+      <filter id="aether-signal-glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="1.6" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    `;
+    g.appendChild(defs);
+
+    type Drawn = {
+      pathGlow: SVGPathElement;
+      pathCore: SVGPathElement;
+      packet: SVGCircleElement;
+      toLat: number;
+      toLon: number;
+      phase: number;
+      speed: number;
+    };
+    const drawn: Drawn[] = [];
+
+    for (let i = 0; i < linkList.length; i++) {
+      const link = linkList[i];
+      const pathGlow = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path"
+      );
+      pathGlow.setAttribute("fill", "none");
+      pathGlow.setAttribute("stroke", "rgba(0,229,255,0.14)");
+      pathGlow.setAttribute("stroke-width", "3.5");
+      pathGlow.setAttribute("stroke-linecap", "round");
+      pathGlow.setAttribute("filter", "url(#aether-signal-glow)");
+      pathGlow.setAttribute("class", "aether-signal-glow");
+
+      const pathCore = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path"
+      );
+      pathCore.setAttribute("fill", "none");
+      pathCore.setAttribute("stroke", "rgba(0,229,255,0.55)");
+      pathCore.setAttribute("stroke-width", "1.15");
+      pathCore.setAttribute("stroke-linecap", "round");
+      pathCore.setAttribute("class", "aether-signal-core");
+      pathCore.style.strokeDasharray = "5 10";
+      pathCore.style.animation = `aether-signal-dash ${2.4 + (i % 5) * 0.15}s linear infinite`;
+
+      const packet = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle"
+      );
+      packet.setAttribute("r", "2.4");
+      packet.setAttribute("fill", "#E0FBFF");
+      packet.setAttribute(
+        "style",
+        "filter:drop-shadow(0 0 4px rgba(0,229,255,0.95))"
+      );
+      packet.setAttribute("class", "aether-signal-packet");
+
+      g.appendChild(pathGlow);
+      g.appendChild(pathCore);
+      g.appendChild(packet);
+
+      drawn.push({
+        pathGlow,
+        pathCore,
+        packet,
+        toLat: link.toLat,
+        toLon: link.toLon,
+        phase: (i * 0.17) % 1,
+        speed: 0.18 + (i % 7) * 0.012,
+      });
+    }
+
+    const curveD = (
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number
+    ): string => {
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const offset = Math.min(90, Math.max(18, len * 0.12));
+      const cx = mx - (dy / len) * offset;
+      const cy = my + (dx / len) * offset;
+      return `M ${x1} ${y1} Q ${cx} ${cy} ${x2} ${y2}`;
+    };
+
+    const pointOnQuad = (
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number,
+      t: number
+    ): { x: number; y: number } => {
+      const mx = (x1 + x2) / 2;
+      const my = (y1 + y2) / 2;
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const offset = Math.min(90, Math.max(18, len * 0.12));
+      const cx = mx - (dy / len) * offset;
+      const cy = my + (dx / len) * offset;
+      const u = 1 - t;
+      return {
+        x: u * u * x1 + 2 * u * t * cx + t * t * x2,
+        y: u * u * y1 + 2 * u * t * cy + t * t * y2,
+      };
+    };
+
+    /** Convert latlng → SVG coords (container pixels relative to map). */
+    const toSvgPoint = (lat: number, lon: number) => {
+      const p = map.latLngToContainerPoint([lat, lon]);
+      return { x: p.x, y: p.y };
+    };
+
+    const redraw = () => {
+      const size = map.getSize();
+      svgEl.setAttribute("width", String(size.x));
+      svgEl.setAttribute("height", String(size.y));
+      svgEl.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
+      const origin = toSvgPoint(meNode.lat, meNode.lon);
+      for (const d of drawn) {
+        const dest = toSvgPoint(d.toLat, d.toLon);
+        const path = curveD(origin.x, origin.y, dest.x, dest.y);
+        d.pathGlow.setAttribute("d", path);
+        d.pathCore.setAttribute("d", path);
+      }
+    };
+
+    let raf = 0;
+    let last = performance.now();
+    const reduceMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (!reduceMotion) {
+        const origin = toSvgPoint(meNode.lat, meNode.lon);
+        for (const d of drawn) {
+          d.phase = (d.phase + d.speed * dt) % 1;
+          const dest = toSvgPoint(d.toLat, d.toLon);
+          const p = pointOnQuad(origin.x, origin.y, dest.x, dest.y, d.phase);
+          d.packet.setAttribute("cx", String(p.x));
+          d.packet.setAttribute("cy", String(p.y));
+          const edge = Math.min(d.phase, 1 - d.phase);
+          const op = edge < 0.08 ? edge / 0.08 : 1;
+          d.packet.setAttribute("opacity", String(0.35 + 0.65 * op));
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    redraw();
+    map.on("zoom viewreset move zoomend moveend resize", redraw);
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      map.off("zoom viewreset move zoomend moveend resize", redraw);
+      try {
+        svgEl.remove();
+      } catch {
+        /* ignore */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- linksKey captures links geometry
+  }, [map, me?.lat, me?.lon, me?.ip, linksKey]);
 
   return null;
 }
@@ -653,9 +926,10 @@ function pickBoomSource(
   me: PeerMapMarker | null
 ): PeerMapMarker | null {
   if (!markers.length) return me;
-  // Freshest lastMessage among mapped peers = best "live signal" proxy
-  // (Ergo REST does not expose which peer mined / first-relayed the block)
-  const sorted = [...markers].sort(
+  // Prefer currently connected peers (our live links); then freshest lastMessage
+  const connected = markers.filter((m) => m.state === "connected");
+  const pool = connected.length ? connected : markers;
+  const sorted = [...pool].sort(
     (a, b) => peerLastMs(b.lastMessage) - peerLastMs(a.lastMessage)
   );
   const fresh = sorted.find((m) => isActive(m.lastMessage)) || sorted[0];
@@ -714,6 +988,16 @@ export default function PeerMap({
 
   // Stable list reference for native layer (rebuild when ids/geo change)
   const peerMarkers = data?.markers ?? EMPTY_MARKERS;
+  const signalLinks = useMemo(() => data?.links ?? [], [data?.links]);
+  // Stable identity for SignalLinesLayer effect (avoid redraw every parent render)
+  const signalLinksKey = useMemo(
+    () =>
+      signalLinks
+        .map((l) => `${l.toIp}:${l.toLat.toFixed(3)}:${l.toLon.toFixed(3)}`)
+        .sort()
+        .join("|"),
+    [signalLinks]
+  );
 
   const fireBoom = useCallback(
     (height: number, source: PeerMapMarker | null) => {
@@ -829,6 +1113,13 @@ export default function PeerMap({
             <MapResizeGuard />
             <DefaultView me={data?.me} viewToken={viewToken} />
 
+            {/* YOU → connected peers: thin arcs + flying signal packets */}
+            <SignalLinesLayer
+              me={data?.me}
+              links={signalLinks}
+              linksKey={signalLinksKey}
+            />
+
             {/* Native Leaflet cluster + bindPopup/bindTooltip (reliable) */}
             <ClusteredPeersLayer
               markers={peerMarkers}
@@ -847,7 +1138,7 @@ export default function PeerMap({
 
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center text-[#A0A0B0] font-mono text-xs tracking-[3px]">
-            LOCATING PEERS…
+            MAPPING NETWORK…
           </div>
         )}
         {isError && (
@@ -884,21 +1175,41 @@ export default function PeerMap({
       <div className="hidden md:flex absolute top-4 left-4 right-4 z-[40] flex-wrap items-start justify-between gap-3 pointer-events-none">
         <div className="glass rounded-2xl px-4 py-3 border border-white/10 pointer-events-auto">
           <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[3px] mb-1">
-            <Globe2 className="w-3.5 h-3.5" /> PEER WORLD MAP
+            <Globe2 className="w-3.5 h-3.5" /> ERGO NETWORK MAP
           </div>
-          <div className="text-sm text-white">
-            <span className="font-mono text-[#00E5FF] text-lg tabular-nums">
-              {data?.mapped ?? "—"}
+          <div className="text-sm text-white flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span>
+              <span className="font-mono text-[#E8E8F0] text-lg tabular-nums">
+                {data?.networkMapped ?? data?.mapped ?? "—"}
+              </span>
+              <span className="text-[#A0A0B0] text-[10px] ml-1.5 tracking-wider">
+                NETWORK
+              </span>
             </span>
-            <span className="text-[#A0A0B0] text-xs ml-2">
-              mapped / {data?.totalPeers ?? "—"} peers
+            <span>
+              <span className="font-mono text-[#38BDF8] text-lg tabular-nums">
+                {data?.reachableMapped ?? "—"}
+              </span>
+              <span className="text-[#A0A0B0] text-[10px] ml-1.5 tracking-wider">
+                LIVE
+              </span>
+            </span>
+            <span>
+              <span className="font-mono text-[#00E5FF] text-lg tabular-nums">
+                {data?.connectedMapped ?? signalLinks.length ?? "—"}
+              </span>
+              <span className="text-[#A0A0B0] text-[10px] ml-1.5 tracking-wider">
+                LINKED
+              </span>
             </span>
           </div>
-          {(data?.unmapped ?? 0) > 0 && (
-            <div className="text-[10px] text-[#A0A0B0] mt-1 font-mono">
-              {data!.unmapped} without public IP (incoming / private)
-            </div>
-          )}
+          <div className="text-[10px] text-[#A0A0B0] mt-1.5 font-mono">
+            {signalLinks.length} signal lines · {data?.totalPeers ?? "—"}{" "}
+            connected peers
+            {(data?.unmapped ?? 0) > 0
+              ? ` · ${data!.unmapped} no public IP`
+              : ""}
+          </div>
         </div>
 
         {!hideControls && (
@@ -943,7 +1254,12 @@ export default function PeerMap({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="font-mono text-[10px] tracking-[2px] text-[#00E5FF] mb-1 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" /> PEER
+                  <MapPin className="w-3 h-3" />{" "}
+                  {selected.id === "me"
+                    ? "YOUR NODE"
+                    : selected.state === "connected"
+                      ? "YOUR PEER"
+                      : "NETWORK"}
                 </div>
                 <div className="font-semibold text-sm break-all">
                   {selected.name}
@@ -958,14 +1274,16 @@ export default function PeerMap({
                     .join(", ") || "Unknown location"}
                 </div>
                 <div className="text-[10px] font-mono text-[#A0A0B0] mt-1">
-                  {selected.connectionType}
+                  {selected.connectionType || "—"}
                   {selected.id !== "me" && (
                     <>
                       {" · "}
-                      {isActive(selected.lastMessage) ? (
-                        <span className="text-[#10B981]">ACTIVE</span>
+                      {selected.state === "connected" ? (
+                        <span className="text-[#10B981]">CONNECTED</span>
+                      ) : selected.state === "reachable" ? (
+                        <span className="text-[#38BDF8]">LIVE</span>
                       ) : (
-                        <span className="text-[#F59E0B]">STALE</span>
+                        <span className="text-[#64748B]">STALE</span>
                       )}
                     </>
                   )}
@@ -988,12 +1306,15 @@ export default function PeerMap({
           <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" /> YOU
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF]" /> ACTIVE
+          <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF]" /> LINKED
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" /> LIVE
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#64748B]" /> STALE
         </span>
-        <span className="opacity-60">NEW BLOCK → BOOM @ hottest peer</span>
+        <span className="opacity-60">lines = your connections</span>
       </div>
     </div>
 

@@ -16,7 +16,9 @@
 | **systemd** | `aether.service` (enabled), bind **`0.0.0.0:3000`** |
 | **Auth gate** | `proxy.ts` (Next 16 Node network proxy; not deprecated middleware) |
 | **Связанная дока сервера** | `/root/SERVER.md` |
-| **Снимок handoff** | **2026-07-20 ~23:46 EEST** |
+| **Снимок handoff** | **2026-07-22** (network map + signal lines) |
+| **Network crawler** | `scripts/crawl-network.mjs` + `aether-crawl.timer` (every 12m) |
+| **Catalog** | `/home/aether/data/network-catalog.json` (gitignored) |
 
 ---
 
@@ -114,12 +116,12 @@ Basic Auth: любой user + пароль из .aether-public-password
 │   ├── globals.css
 │   ├── api/
 │   │   ├── node/[...path]/route.ts
-│   │   ├── peers/map/route.ts
+│   │   ├── peers/map/route.ts   ← network catalog + links + live connected
 │   │   ├── public-status/route.ts
 │   │   └── public-password/route.ts
 │   ├── components/
 │   │   ├── Constellation3D.tsx
-│   │   ├── PeerMap.tsx      ← clusters, boom flight, popups (native Leaflet)
+│   │   ├── PeerMap.tsx      ← network markers, signal arcs, boom, clusters
 │   │   ├── ShareCard.tsx
 │   │   ├── ConnectionSettings.tsx
 │   │   ├── BlocksTimeline.tsx
@@ -128,6 +130,11 @@ Basic Auth: любой user + пароль из .aether-public-password
 │   │   └── Providers.tsx
 │   ├── lib/ blocks.ts, explorer.ts
 │   └── types/ergo.ts
+├── lib/
+│   ├── public-password.ts
+│   └── network-peers.ts     ← catalog load/merge/geo helpers
+├── scripts/crawl-network.mjs  ← local + REST fan-out + TCP probe
+├── data/network-catalog.json  ← generated (not in git)
 └── public/icons/            ← icon-192, icon-512, apple-touch
 ```
 
@@ -141,12 +148,15 @@ Basic Auth: любой user + пароль из .aether-public-password
 
 ### View modes
 1. **3D CONSTELLATION** — R3F; mobile: BOOM left + FOCUS right on canvas; toggle under viz on mobile.  
-2. **WORLD MAP** — Leaflet CARTO dark + **markercluster** (native `L.markerClusterGroup`):
-   - Default camera: `setView(Your Node | Europe, zoom 2.5)` — no aggressive fitBounds (no black side bars).
+2. **WORLD MAP** — Leaflet CARTO dark + **markercluster** + **network catalog**:
+   - Shows **all known network nodes** (catalog), not only connected peers.
+   - Marker states: **LINKED** (connected to you, bright cyan) · **LIVE** (TCP reachable) · **STALE** (known, offline).
+   - **Signal lines:** thin arcs YOU → each linked peer with flying packet animation.
+   - Default camera: `setView(Your Node | Europe, zoom 2.5)` — no aggressive fitBounds.
    - Refresh: refetch peers + reset to default view.
-   - Peers: bindTooltip + bindPopup (HTML); Your Node outside cluster.
-   - **Boom (new block):** 3 long pulse rings on hottest peer + notice starts at top of map and **flies down** to peer (~3.75s). No bottom plaque, no sonner for boom.
+   - **Boom (new block):** 3 pulses on hottest **connected** peer + flying notice (~3.75s).
    - Top Regions under map on mobile / overlay on desktop.
+   - HUD: `NETWORK · LIVE · LINKED` counts from `/api/peers/map`.
 
 ### Metrics / lists
 - Equal two-column grid: **Recent Blocks** | **Mempool Flow**.
@@ -220,25 +230,49 @@ html-to-image · qrcode.react · date-fns
 
 ---
 
-## 10. Ограничения / TODO
+## 10. Network crawler
 
-- ~40–50% peers без public IP → не на карте  
-- Boom peer = hottest `lastMessage`, не miner  
+| | |
+|--|--|
+| Script | `npm run crawl:network` → `scripts/crawl-network.mjs` |
+| Sources | local `/peers/all` + `/peers/connected`, REST fan-out (`restApiUrl`), TCP :9030 probe |
+| Output | `data/network-catalog.json` |
+| Timer | `aether-crawl.timer` every **12 min** (`Nice=15`) |
+| Map API | loads catalog; overlays live connected → `state` + `links[]` |
+| Fallback | if catalog missing/stale (>45m) → inline local harvest |
+
+```bash
+cd /home/aether && npm run crawl:network
+systemctl status aether-crawl.timer
+journalctl -u aether-crawl.service -n 30 --no-pager
+curl -s http://127.0.0.1:3000/api/peers/map | jq '{networkMapped,connectedMapped,links:(.links|length)}'
+```
+
+Not a full Scorex P2P crawler (Phase B later if needed). Does **not** depend on ergonodes.net.
+
+---
+
+## 11. Ограничения / TODO
+
+- Peers without public IP still unmapped (NAT / empty address)  
+- Boom peer = hottest connected `lastMessage`, not miner  
+- TCP open ≠ full Ergo handshake (reachable ≈ port open)  
 - CARTO tiles = исходящий HTTPS из **браузера**  
 - systemd leftover next-server on restart (unit всё равно active)  
 - PWA без service worker  
-- Optional: heatmap, oracle metrics UI, lines you→peer  
+- Optional: heatmap, oracle metrics UI, full P2P handshake crawler  
 - Server security (mnemonics → EnvironmentFile) — `SERVER.md`
 
 ---
 
-## 11. Чеклист для нового чата
+## 12. Чеклист для нового чата
 
 ```text
 Проект: Aether — Ergo node visualizer
 Путь: /home/aether
 Дока: /home/aether/AETHER.md + /root/SERVER.md
 Прод: aether.service, 0.0.0.0:3000, proxy.ts auth, password file .aether-public-password
+Crawler: aether-crawl.timer → data/network-catalog.json
 Стек: Next 16 + React 19 + R3F 9 + Leaflet cluster + geoip-lite
 Не трогать: ergonode, oracle-core, oracle-core-usd без просьбы
 Доступ: ssh -L 3000:127.0.0.1:3000 root@80.209.232.82 -N
@@ -247,7 +281,7 @@ Public: http://80.209.232.82:3000 + Basic/password
 
 ---
 
-## 12. История сессий
+## 13. История сессий
 
 ### 2026-07-18 → 2026-07-19
 Прототип → deploy `/home/aether`, proxy, 3D + map + boom, SigmaSpace, real metrics, handoff MD.
@@ -263,32 +297,38 @@ Public: http://80.209.232.82:3000 + Basic/password
 8. Boom redesign: 3 pulses + flying notice top→peer (no bottom plaque)  
 9. Equal Blocks/Mempool panels; colored TX dots; block click → modal only  
 
+### 2026-07-22 — Network map + signal lines
+1. **Network Indexer** crawler: local `/peers/all` + REST fan-out + TCP probe  
+2. Catalog `data/network-catalog.json` + `aether-crawl.timer` (12m)  
+3. `/api/peers/map` serves full network markers + `links[]` for connected  
+4. Map UI: NETWORK/LIVE/LINKED states + animated YOU→peer signal arcs  
+5. ~437 mapped network nodes, ~62 signal lines (live snapshot)
+
 Исходный idea chat:  
 https://grok.com/share/bGVnYWN5_01882487-4c5e-4e7e-88cf-7d67479d1387  
 
 ---
 
-## 13. Dev loop
+## 14. Dev loop
 
 ```bash
 cd /home/aether
+npm run crawl:network   # optional refresh catalog
 npm run build && systemctl restart aether
-systemctl is-active aether ergonode oracle-core oracle-core-usd
+systemctl is-active aether ergonode oracle-core oracle-core-usd aether-crawl.timer
 ```
 
 ---
 
-## 14. Снимок на handoff (2026-07-20 ~23:46 EEST)
+## 15. Снимок (2026-07-22)
 
 | | |
 |--|--|
-| aether | **active**, HTTP **200**, `0.0.0.0:3000` |
-| publicMode | **true** (password file set, chmod 600) |
-| ergonode | active — mainnet **6.0.2**, height **~1833426**, peers **~118** |
-| oracles XAU/USD | active |
-| monitor / balance timers | active |
-
-**Aether work for this evening is closed.** Next touch may be Telegram notifications only (`SERVER.md` / monitor scripts) — not Aether UI unless asked.
+| aether | **active**, map API **networkMapped ~437**, **links ~62** |
+| crawler catalog | **~442** nodes, **~110** reachable (TCP) |
+| publicMode | **true** |
+| ergonode | active — mainnet **6.0.2** |
+| aether-crawl.timer | enabled, every 12m |
 
 ---
 

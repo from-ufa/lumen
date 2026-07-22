@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
-    "lint": "eslint"
+    "lint": "eslint",
+    "crawl:network": "node scripts/crawl-network.mjs"
   },
   "dependencies": {
     "@react-three/drei": "9.121.1",

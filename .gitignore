@@ -56,3 +56,9 @@ next-env.d.ts
 .cache/
 tmp/
 temp/
+
+# Network crawler catalog (regenerated)
+/data/
+data/network-catalog.json
+data/network-catalog.json.tmp
+
