@@ -175,9 +175,7 @@ function ClusteredPeersLayer({
       maxClusterRadius: 56,
       disableClusteringAtZoom: 10,
       spiderfyDistanceMultiplier: 1.4,
-      // CSS cluster morph fights map zoom and looks like "jank"
-      animate: false,
-      animateAddingMarkers: false,
+      animate: true,
       iconCreateFunction: createClusterIcon,
     });
 
@@ -406,15 +404,15 @@ function isActive(lm: number) {
   return Date.now() - peerLastMs(lm) < 180_000;
 }
 
-/** Integer zooms only — fractional zoom + CSS zoomAnimation = map-wide jitter. */
-const MAP_MIN_ZOOM = 2;
+const MAP_MIN_ZOOM = 1.5;
 const MAP_MAX_ZOOM = 12;
 /** Fallback zoom if we only know YOU / Europe */
-const DEFAULT_ZOOM = 2;
+const DEFAULT_ZOOM = 2.2;
 /** Cap so a tight peer cluster doesn't zoom in too hard on refresh */
-const FIT_MAX_ZOOM = 4;
+const FIT_MAX_ZOOM = 4.25;
 /** Fallback when Your Node geo is unknown */
 const EUROPE_CENTER: [number, number] = [48.5, 15];
+
 
 /**
  * Build LatLngBounds from me + markers, ignoring broken coords.
@@ -580,8 +578,11 @@ function MapResizeGuard() {
 /**
  * Animated signal arcs: YOU → each currently connected peer.
  *
- * Map uses zoomAnimation=false (integer zoom). Geometry is container-space SVG
- * reprojected on move/zoomend only — no mid-frame CSS zoom fight.
+ * Smoothness rules (same as Leaflet.SVG / Path):
+ * - Geometry lives in the map pane → CSS transform owns pan/zoom animation.
+ * - Never reproject while `map._animatingZoom` (that double-transforms and jitters).
+ * - Packets use *cached* SVG endpoints from the last reproject, not live
+ *   latLngToContainerPoint every frame.
  */
 function SignalLinesLayer({
   me,
@@ -601,8 +602,6 @@ function SignalLinesLayer({
     const linkList = linksRef.current;
     if (!meNode || !linkList.length) return;
 
-    // Inside map pane, under markers (z 600). Safe because zoomAnimation=false
-    // (no CSS scale mid-zoom to fight against).
     let pane = map.getPane("aetherSignals");
     if (!pane) {
       pane = map.createPane("aetherSignals");
@@ -617,6 +616,8 @@ function SignalLinesLayer({
     svgEl.style.top = "0";
     svgEl.style.overflow = "visible";
     svgEl.style.pointerEvents = "none";
+    // Keep stroke width stable while the pane is CSS-scaled mid-zoom
+    svgEl.style.vectorEffect = "non-scaling-stroke";
     pane.appendChild(svgEl);
 
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
@@ -641,6 +642,7 @@ function SignalLinesLayer({
       toLon: number;
       phase: number;
       speed: number;
+      /** Cached SVG-local endpoints from last reproject */
       x1: number;
       y1: number;
       x2: number;
@@ -658,6 +660,7 @@ function SignalLinesLayer({
       pathGlow.setAttribute("stroke", "rgba(0,229,255,0.10)");
       pathGlow.setAttribute("stroke-width", "1.6");
       pathGlow.setAttribute("stroke-linecap", "round");
+      pathGlow.setAttribute("vector-effect", "non-scaling-stroke");
       pathGlow.setAttribute("filter", `url(#${filterId})`);
       pathGlow.setAttribute("class", "aether-signal-glow");
 
@@ -669,6 +672,7 @@ function SignalLinesLayer({
       pathCore.setAttribute("stroke", "rgba(0,229,255,0.32)");
       pathCore.setAttribute("stroke-width", "0.7");
       pathCore.setAttribute("stroke-linecap", "round");
+      pathCore.setAttribute("vector-effect", "non-scaling-stroke");
       pathCore.setAttribute("class", "aether-signal-core");
       pathCore.style.strokeDasharray = "3 11";
       pathCore.style.animation = `aether-signal-dash ${3.2 + (i % 5) * 0.2}s linear infinite`;
@@ -681,6 +685,7 @@ function SignalLinesLayer({
       packet.setAttribute("fill", "rgba(224,251,255,0.75)");
       packet.setAttribute("stroke", "rgba(0,229,255,0.35)");
       packet.setAttribute("stroke-width", "0.5");
+      packet.setAttribute("vector-effect", "non-scaling-stroke");
       packet.setAttribute(
         "style",
         "filter:drop-shadow(0 0 2.5px rgba(0,229,255,0.55))"
@@ -712,6 +717,7 @@ function SignalLinesLayer({
       const dx = x2 - x1;
       const dy = y2 - y1;
       const len = Math.hypot(dx, dy) || 1;
+      // Arc bulge in *screen-ish* px; clamp so zoom-out stays subtle
       const offset = Math.min(48, Math.max(10, len * 0.1));
       const cx = mx - (dy / len) * offset;
       const cy = my + (dx / len) * offset;
@@ -737,7 +743,17 @@ function SignalLinesLayer({
       };
     };
 
+    const isZoomAnimating = () =>
+      Boolean((map as unknown as { _animatingZoom?: boolean })._animatingZoom);
+
+    /**
+     * Same strategy as L.SVG._update:
+     * pin container to layer top-left of viewport; paths in local (container) space.
+     * Skip entirely while Leaflet is CSS-scaling the map pane for zoom.
+     */
     const reproject = () => {
+      if (isZoomAnimating()) return;
+
       const size = map.getSize();
       const topLeft = map.containerPointToLayerPoint([0, 0]);
       L.DomUtil.setPosition(svgEl as unknown as HTMLElement, topLeft);
@@ -745,9 +761,11 @@ function SignalLinesLayer({
       svgEl.setAttribute("height", String(size.y));
       svgEl.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
 
+      // layer − topLeft ≡ container point (stable when not mid-zoom-anim)
       const meLayer = map.latLngToLayerPoint([meNode.lat, meNode.lon]);
       const ox = meLayer.x - topLeft.x;
       const oy = meLayer.y - topLeft.y;
+
       for (const d of drawn) {
         const dest = map.latLngToLayerPoint([d.toLat, d.toLon]);
         const x2 = dest.x - topLeft.x;
@@ -762,14 +780,15 @@ function SignalLinesLayer({
       }
     };
 
-    // rAF-throttle pan updates — one reproject per frame max
-    let moveRaf = 0;
+    /** Pan without zoom: only re-pin SVG origin (cheap); skip mid zoom-anim. */
     const onMove = () => {
-      if (moveRaf) return;
-      moveRaf = requestAnimationFrame(() => {
-        moveRaf = 0;
-        reproject();
-      });
+      if (isZoomAnimating()) return;
+      reproject();
+    };
+
+    const onZoomEnd = () => {
+      // After CSS zoom transform resets, reproject at the new scale once
+      reproject();
     };
 
     let raf = 0;
@@ -781,7 +800,9 @@ function SignalLinesLayer({
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (!reduceMotion) {
+
+      // Freeze packets during zoom anim — pane CSS transform moves them with lines
+      if (!reduceMotion && !isZoomAnimating()) {
         for (const d of drawn) {
           d.phase = (d.phase + d.speed * dt) % 1;
           const p = pointOnQuad(d.x1, d.y1, d.x2, d.y2, d.phase);
@@ -796,19 +817,19 @@ function SignalLinesLayer({
     };
 
     reproject();
+    // Do NOT listen to "zoom" — that fights Leaflet's animated CSS transform.
     map.on("move", onMove);
     map.on("moveend", reproject);
-    map.on("zoomend", reproject);
+    map.on("zoomend", onZoomEnd);
     map.on("viewreset", reproject);
     map.on("resize", reproject);
     raf = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(raf);
-      if (moveRaf) cancelAnimationFrame(moveRaf);
       map.off("move", onMove);
       map.off("moveend", reproject);
-      map.off("zoomend", reproject);
+      map.off("zoomend", onZoomEnd);
       map.off("viewreset", reproject);
       map.off("resize", reproject);
       try {
@@ -1207,12 +1228,10 @@ export default function PeerMap({
             zoom={DEFAULT_ZOOM}
             minZoom={MAP_MIN_ZOOM}
             maxZoom={MAP_MAX_ZOOM}
-            // Integer zoom + no CSS zoom anim = no map-wide "swim"/jitter
-            zoomSnap={1}
-            zoomDelta={1}
-            wheelPxPerZoomLevel={80}
-            zoomAnimation={false}
-            markerZoomAnimation={false}
+            zoomSnap={0.25}
+            zoomDelta={0.5}
+            zoomAnimation={true}
+            markerZoomAnimation={true}
             fadeAnimation={true}
             className="h-full w-full aether-map"
             style={{
@@ -1230,9 +1249,6 @@ export default function PeerMap({
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
               subdomains="abcd"
               maxZoom={MAP_MAX_ZOOM}
-              updateWhenZooming={false}
-              updateWhenIdle={true}
-              keepBuffer={2}
             />
             <MapResizeGuard />
             <DefaultView
