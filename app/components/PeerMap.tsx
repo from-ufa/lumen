@@ -406,49 +406,138 @@ function isActive(lm: number) {
 
 const MAP_MIN_ZOOM = 1.5;
 const MAP_MAX_ZOOM = 12;
-/** Comfortable world view that fills a wide container (no black side bars) */
-const DEFAULT_ZOOM = 2.5;
+/** Fallback zoom if we only know YOU / Europe */
+const DEFAULT_ZOOM = 2.2;
+/** Cap so a tight peer cluster doesn't zoom in too hard on refresh */
+const FIT_MAX_ZOOM = 4.25;
 /** Fallback when Your Node geo is unknown */
 const EUROPE_CENTER: [number, number] = [48.5, 15];
 
 /**
- * Default / Refresh camera: setView on Your Node (or Europe) at fixed zoom.
- * Avoids fitBounds black bars from extreme zoom-out + aspect ratio.
+ * Build LatLngBounds from me + markers, ignoring broken coords.
+ * Prefer LINKED + LIVE for a tighter “active network” frame; if too few,
+ * fall back to all known markers so the full catalog is in view.
+ */
+function boundsForMapView(
+  me: { lat: number; lon: number } | null | undefined,
+  markers: PeerMapMarker[]
+): L.LatLngBounds | null {
+  const pts: L.LatLngExpression[] = [];
+  const push = (lat?: number, lon?: number) => {
+    if (
+      lat == null ||
+      lon == null ||
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon) ||
+      Math.abs(lat) > 85 ||
+      Math.abs(lon) > 180
+    ) {
+      return;
+    }
+    pts.push([lat, lon]);
+  };
+
+  if (me) push(me.lat, me.lon);
+
+  const linkedOrLive = markers.filter(
+    (m) => m.state === "connected" || m.state === "reachable"
+  );
+  const pool =
+    linkedOrLive.length >= 3 ? linkedOrLive : markers.length ? markers : [];
+
+  for (const m of pool) push(m.lat, m.lon);
+
+  // Always include YOU even if pool was empty of others
+  if (pts.length === 0 && me) push(me.lat, me.lon);
+  if (pts.length === 0) return null;
+  if (pts.length === 1) {
+    const [lat, lon] = pts[0] as [number, number];
+    // Tiny pad so fitBounds still works with one point
+    return L.latLngBounds(
+      [lat - 12, lon - 24],
+      [lat + 12, lon + 24]
+    );
+  }
+  return L.latLngBounds(pts);
+}
+
+/**
+ * Default / Refresh camera: fit the active network (or all known nodes)
+ * into the visible canvas with HUD padding — not just center on YOU.
  */
 function DefaultView({
   me,
+  markers,
   viewToken,
 }: {
   me: { lat: number; lon: number } | null | undefined;
+  markers: PeerMapMarker[];
   /** Bump to re-apply (Refresh). 0 = initial. */
   viewToken: number;
 }) {
   const map = useMap();
   const initialDone = useRef(false);
+  /** True once we fitted with at least one network marker (not only YOU). */
+  const fittedWithMarkers = useRef(false);
   const lastToken = useRef(0);
 
   useEffect(() => {
     const forced = viewToken > 0 && viewToken !== lastToken.current;
-    if (initialDone.current && !forced) return;
+    const hasMarkers = markers.length > 0;
 
-    const center: [number, number] =
-      me && Number.isFinite(me.lat) && Number.isFinite(me.lon)
-        ? [me.lat, me.lon]
-        : EUROPE_CENTER;
+    // Still loading — wait for me or markers before first frame
+    if (!initialDone.current && !hasMarkers && !me) return;
 
-    map.invalidateSize({ animate: false });
-    map.setView(center, DEFAULT_ZOOM, {
-      animate: forced,
-      duration: forced ? 0.45 : 0,
-    });
-    // Second invalidate after layout settles (aether-viz height / flex)
-    requestAnimationFrame(() => {
+    // After first frame: only re-fit on Refresh, or one upgrade when markers arrive
+    if (initialDone.current && !forced) {
+      if (!(hasMarkers && !fittedWithMarkers.current)) return;
+    }
+
+    const apply = () => {
       map.invalidateSize({ animate: false });
-    });
+      const bounds = boundsForMapView(me, markers);
+      const size = map.getSize();
+      // HUD: top chips / buttons, bottom legend — keep nodes inside safe area
+      const padTop = Math.max(64, Math.round(size.y * 0.12));
+      const padBottom = Math.max(88, Math.round(size.y * 0.16));
+      const padX = Math.max(32, Math.round(size.x * 0.07));
+
+      if (bounds && bounds.isValid()) {
+        map.fitBounds(bounds, {
+          paddingTopLeft: L.point(padX, padTop),
+          paddingBottomRight: L.point(padX, padBottom),
+          maxZoom: FIT_MAX_ZOOM,
+          animate: forced,
+          duration: forced ? 0.55 : 0,
+        });
+        if (map.getZoom() < MAP_MIN_ZOOM) {
+          map.setZoom(MAP_MIN_ZOOM, { animate: false });
+        }
+      } else {
+        const center: [number, number] =
+          me && Number.isFinite(me.lat) && Number.isFinite(me.lon)
+            ? [me.lat, me.lon]
+            : EUROPE_CENTER;
+        map.setView(center, DEFAULT_ZOOM, {
+          animate: forced,
+          duration: forced ? 0.45 : 0,
+        });
+      }
+
+      requestAnimationFrame(() => {
+        map.invalidateSize({ animate: false });
+      });
+    };
+
+    apply();
+    const t = window.setTimeout(apply, forced ? 40 : 100);
 
     initialDone.current = true;
+    if (hasMarkers) fittedWithMarkers.current = true;
     lastToken.current = viewToken;
-  }, [map, me, viewToken]);
+
+    return () => window.clearTimeout(t);
+  }, [map, me, markers, viewToken]);
 
   return null;
 }
@@ -1117,7 +1206,11 @@ export default function PeerMap({
               maxZoom={MAP_MAX_ZOOM}
             />
             <MapResizeGuard />
-            <DefaultView me={data?.me} viewToken={viewToken} />
+            <DefaultView
+              me={data?.me}
+              markers={peerMarkers}
+              viewToken={viewToken}
+            />
 
             {/* YOU → connected peers: thin arcs + flying signal packets */}
             <SignalLinesLayer
