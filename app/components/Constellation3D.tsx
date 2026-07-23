@@ -159,7 +159,37 @@ function Atmosphere({
   return <mesh geometry={GEO_ATMOS} scale={scale} material={mat} />;
 }
 
-/* ─── Sun: bright textured body + soft glow (no scene lights) ───────────── */
+/* ─── Living sun corona (soft fresnel breath, no hard rings) ─────────────── */
+
+const coronaVertex = /* glsl */ `
+  varying vec3 vNormalW;
+  varying vec3 vViewW;
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    vViewW = normalize(cameraPosition - world.xyz);
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+const coronaFragment = /* glsl */ `
+  uniform vec3 uColor;
+  uniform float uIntensity;
+  uniform float uPower;
+  uniform float uPulse;
+  varying vec3 vNormalW;
+  varying vec3 vViewW;
+  void main() {
+    float ndv = max(dot(normalize(vNormalW), normalize(vViewW)), 0.0);
+    // Soft limb glow — falls off smoothly, never a hard edge
+    float rim = pow(1.0 - ndv, uPower);
+    float body = pow(1.0 - ndv, uPower * 0.45) * 0.12;
+    float a = (rim * 0.75 + body) * uIntensity * uPulse;
+    // warm core → softer outer
+    vec3 col = mix(uColor * 1.15, uColor * 0.75, rim);
+    gl_FragColor = vec4(col, a);
+  }
+`;
 
 function Sun({
   height,
@@ -170,16 +200,79 @@ function Sun({
   map: THREE.Texture;
 }) {
   const bodyRef = useRef<THREE.Mesh>(null!);
-  const glowRef = useRef<THREE.Mesh>(null!);
+  const coronaNearRef = useRef<THREE.Mesh>(null!);
+  const coronaFarRef = useRef<THREE.Mesh>(null!);
+  const breathRef = useRef(1);
+
+  const coronaNearMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: coronaVertex,
+        fragmentShader: coronaFragment,
+        uniforms: {
+          uColor: { value: new THREE.Color("#ffb050") },
+          uIntensity: { value: 1.05 },
+          uPower: { value: 2.4 },
+          uPulse: { value: 1 },
+        },
+        transparent: true,
+        depthWrite: false,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+      }),
+    []
+  );
+
+  const coronaFarMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: coronaVertex,
+        fragmentShader: coronaFragment,
+        uniforms: {
+          uColor: { value: new THREE.Color("#ffcc80") },
+          uIntensity: { value: 0.55 },
+          uPower: { value: 3.1 },
+          uPulse: { value: 1 },
+        },
+        transparent: true,
+        depthWrite: false,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+      }),
+    []
+  );
+
+  useEffect(
+    () => () => {
+      coronaNearMat.dispose();
+      coronaFarMat.dispose();
+    },
+    [coronaNearMat, coronaFarMat]
+  );
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    if (bodyRef.current) bodyRef.current.rotation.y = t * 0.018;
-    if (glowRef.current) {
-      const s = 2.55 + Math.sin(t * 0.5) * 0.06;
-      glowRef.current.scale.setScalar(s);
-      const mat = glowRef.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = 0.22 + Math.sin(t * 0.6) * 0.04;
+    if (bodyRef.current) bodyRef.current.rotation.y = t * 0.022;
+
+    // Living multi-harmonic breath — slow, organic, never snappy
+    const breath =
+      1.0 +
+      Math.sin(t * 0.55) * 0.07 +
+      Math.sin(t * 0.31 + 1.2) * 0.045 +
+      Math.sin(t * 0.17 + 0.4) * 0.025;
+    breathRef.current = breath;
+
+    const pulseNear = breath;
+    const pulseFar = 0.92 + (breath - 1.0) * 1.35;
+
+    coronaNearMat.uniforms.uPulse.value = pulseNear;
+    coronaFarMat.uniforms.uPulse.value = Math.max(0.75, pulseFar);
+
+    if (coronaNearRef.current) {
+      coronaNearRef.current.scale.setScalar(2.35 * (0.97 + (breath - 1) * 0.55));
+    }
+    if (coronaFarRef.current) {
+      coronaFarRef.current.scale.setScalar(3.15 * (0.98 + (breath - 1) * 0.7));
     }
   });
 
@@ -187,31 +280,12 @@ function Sun({
 
   return (
     <group>
-      {/* Soft warm halo — not a hard ring, just glow */}
-      <mesh ref={glowRef} geometry={GEO_LO} scale={2.55}>
-        <meshBasicMaterial
-          color="#ff9a30"
-          transparent
-          opacity={0.22}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          side={THREE.BackSide}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh geometry={GEO_LO} scale={3.2}>
-        <meshBasicMaterial
-          color="#ffb060"
-          transparent
-          opacity={0.08}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          side={THREE.BackSide}
-          toneMapped={false}
-        />
-      </mesh>
+      {/* Outer soft corona — diffuse haze */}
+      <mesh ref={coronaFarRef} geometry={GEO_ATMOS} scale={3.15} material={coronaFarMat} />
+      {/* Inner living corona */}
+      <mesh ref={coronaNearRef} geometry={GEO_ATMOS} scale={2.35} material={coronaNearMat} />
 
-      {/* Photosphere — always has map (file or procedural) */}
+      {/* Photosphere */}
       <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R}>
         <meshBasicMaterial map={map} toneMapped={false} />
       </mesh>
@@ -294,7 +368,8 @@ function PeerPlanet({
     return a + t * (b - a);
   }, [address, arch.sizeMul]);
 
-  const spin = useMemo(() => 0.02 + seededFloat(address, "spin") * 0.06, [address]);
+  // ~3× previous spin / drift speeds
+  const spin = useMemo(() => 0.06 + seededFloat(address, "spin") * 0.18, [address]);
   const tilt = useMemo(() => (seededFloat(address, "tilt") - 0.5) * 0.4, [address]);
   const ringTilt = useMemo(
     () => 0.35 + seededFloat(address, "ringtilt") * 0.25,
@@ -313,9 +388,9 @@ function PeerPlanet({
       const hoverBoost = hovered ? 1.06 : 1;
       const flash = boom > 0 ? 1 + boom * 0.04 : 1;
       groupRef.current.scale.setScalar(hoverBoost * flash);
-      groupRef.current.position.x = position.x + Math.sin(t * 0.08 + phase) * 0.02;
-      groupRef.current.position.y = position.y + Math.cos(t * 0.07 + phase) * 0.015;
-      groupRef.current.position.z = position.z + Math.sin(t * 0.06 + phase) * 0.02;
+      groupRef.current.position.x = position.x + Math.sin(t * 0.24 + phase) * 0.02;
+      groupRef.current.position.y = position.y + Math.cos(t * 0.21 + phase) * 0.015;
+      groupRef.current.position.z = position.z + Math.sin(t * 0.18 + phase) * 0.02;
     }
   });
 
