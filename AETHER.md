@@ -304,6 +304,15 @@ Public: http://80.209.232.82:3000 + Basic/password
 4. Map UI: NETWORK/LIVE/LINKED states + animated YOU→peer signal arcs  
 5. ~437 mapped network nodes, ~62 signal lines (live snapshot)
 
+### 2026-07-23 — 3D constellation (planets / sun / orbit / music)
+1. **Real planets** — textures in `public/planets/` (Solar System Scope + three.js Earth/Moon)  
+   + procedural canvas fallback so no white spheres (`app/lib/planet-textures.ts`)  
+2. **Sun** at center: photosphere shader + multi-harmonic **physical** pulse (body scale + noisy corona)  
+3. **Galaxy orbit**: whole peer system rotates around sun; UI **AUTO ORBIT** + **GALAXY SPEED** slider (0.25–5×), keys `[` `]`  
+4. **Music**: panel MUSIC + key `M`; plays `public/audio/stay.mp3` if present (licensed by operator);  
+   else original Web Audio space pad. Interstellar *Stay* is **not** redistributed (copyright).  
+5. GitHub: `from-ufa/aether` main — latest `e502a7c` (+ handoff update)
+
 Исходный idea chat:  
 https://grok.com/share/bGVnYWN5_01882487-4c5e-4e7e-88cf-7d67479d1387  
 
@@ -320,15 +329,16 @@ systemctl is-active aether ergonode oracle-core oracle-core-usd aether-crawl.tim
 
 ---
 
-## 15. Снимок (2026-07-22)
+## 15. Снимок (2026-07-23 ~14:00)
 
 | | |
 |--|--|
-| aether | **active**, map API **networkMapped ~437**, **links ~62** |
-| crawler catalog | **~442** nodes, **~110** reachable (TCP) |
-| publicMode | **true** |
-| ergonode | active — mainnet **6.0.2** |
-| aether-crawl.timer | enabled, every 12m |
+| aether | **active**, HTTP **200**, publicMode **true** |
+| ergonode | active — mainnet **6.0.2**, height **~1835293**, peers **~114** |
+| oracles | oracle-core + oracle-core-usd **active** |
+| aether-crawl.timer | **active**, catalog fresh |
+| load | **~0.1** (idle) · RAM **4/16 GiB** used · disk **40%** |
+| git | `main` = `origin/main` (clean) |
 
 ---
 
