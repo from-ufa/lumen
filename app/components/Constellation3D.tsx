@@ -11,11 +11,11 @@ import {
   PLANET_ARCHETYPES,
   kindFromAddress,
   seededFloat,
-  loadAllPlanetMaps,
-  loadSunMap,
-  loadRingMap,
-  preloadSolarAssets,
-  PlanetMaps,
+  preloadAllTextures,
+  getTextureAtlas,
+  getPlanetTexture,
+  getSunTexture,
+  getRingTexture,
 } from "../lib/planet-textures";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -159,42 +159,64 @@ function Atmosphere({
   return <mesh geometry={GEO_ATMOS} scale={scale} material={mat} />;
 }
 
-/* ─── Sun: bright self-lit object only (no lights for the scene) ─────────── */
+/* ─── Sun: bright textured body + soft glow (no scene lights) ───────────── */
 
-function Sun({ height }: { isOnline: boolean; height: number }) {
+function Sun({
+  height,
+  map,
+}: {
+  isOnline: boolean;
+  height: number;
+  map: THREE.Texture;
+}) {
   const bodyRef = useRef<THREE.Mesh>(null!);
-  const [map, setMap] = useState<THREE.Texture | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    loadSunMap()
-      .then((t) => {
-        if (alive) setMap(t);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const glowRef = useRef<THREE.Mesh>(null!);
 
   useFrame((state) => {
-    if (bodyRef.current) bodyRef.current.rotation.y = state.clock.elapsedTime * 0.018;
+    const t = state.clock.elapsedTime;
+    if (bodyRef.current) bodyRef.current.rotation.y = t * 0.018;
+    if (glowRef.current) {
+      const s = 2.55 + Math.sin(t * 0.5) * 0.06;
+      glowRef.current.scale.setScalar(s);
+      const mat = glowRef.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.22 + Math.sin(t * 0.6) * 0.04;
+    }
   });
 
-  const SUN_R = 2.0;
+  const SUN_R = 2.05;
 
   return (
     <group>
-      {/* Self-lit only — never a PointLight / DirectionalLight source */}
-      <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R}>
-        {map ? (
-          <meshBasicMaterial map={map} color="#fff2d0" toneMapped={false} />
-        ) : (
-          <meshBasicMaterial color="#ffb040" toneMapped={false} />
-        )}
+      {/* Soft warm halo — not a hard ring, just glow */}
+      <mesh ref={glowRef} geometry={GEO_LO} scale={2.55}>
+        <meshBasicMaterial
+          color="#ff9a30"
+          transparent
+          opacity={0.22}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          side={THREE.BackSide}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh geometry={GEO_LO} scale={3.2}>
+        <meshBasicMaterial
+          color="#ffb060"
+          transparent
+          opacity={0.08}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          side={THREE.BackSide}
+          toneMapped={false}
+        />
       </mesh>
 
-      <Html position={[0, -2.9, 0]} style={{ pointerEvents: "none" }} center>
+      {/* Photosphere — always has map (file or procedural) */}
+      <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R}>
+        <meshBasicMaterial map={map} toneMapped={false} />
+      </mesh>
+
+      <Html position={[0, -2.95, 0]} style={{ pointerEvents: "none" }} center>
         <div className="text-center select-none">
           <div className="text-[#E8C48A]/90 text-[10px] font-mono tracking-[0.28em] uppercase">
             Your Node
@@ -217,10 +239,8 @@ function SaturnRings({
 }: {
   scale?: number;
   tilt?: number;
-  ringMap: THREE.Texture | null;
+  ringMap: THREE.Texture;
 }) {
-  if (!ringMap) return null;
-
   return (
     <mesh
       rotation={[Math.PI / 2 + tilt, 0.05, 0.1]}
@@ -228,7 +248,6 @@ function SaturnRings({
       geometry={GEO_RING}
       renderOrder={2}
     >
-      {/* Unlit so rings stay visible regardless of scene lights */}
       <meshBasicMaterial
         map={ringMap}
         transparent
@@ -242,20 +261,7 @@ function SaturnRings({
   );
 }
 
-/* Fallback solid colors while a map is still loading (never plain black) */
-const KIND_FALLBACK: Record<PlanetKind, string> = {
-  earthlike: "#2a6a9a",
-  mars: "#b06040",
-  mercury: "#8a8580",
-  venus: "#c8a870",
-  jupiter: "#c4a070",
-  saturn: "#d4c090",
-  neptune: "#3a6aaa",
-  uranus: "#70b0a8",
-  moon: "#9a9690",
-};
-
-/* ─── Peer planet — unlit textured surface (always readable) ────────────── */
+/* ─── Peer planet — always textured (file or procedural) ────────────────── */
 
 function PeerPlanet({
   peer,
@@ -263,7 +269,7 @@ function PeerPlanet({
   index,
   onHover,
   propagationStart,
-  maps,
+  map,
   ringMap,
 }: {
   peer: Peer;
@@ -271,8 +277,8 @@ function PeerPlanet({
   index: number;
   onHover: PeerHoverFn;
   propagationStart: number;
-  maps: PlanetMaps | null;
-  ringMap: THREE.Texture | null;
+  map: THREE.Texture;
+  ringMap: THREE.Texture;
 }) {
   const groupRef = useRef<THREE.Group>(null!);
   const bodyRef = useRef<THREE.Mesh>(null!);
@@ -325,9 +331,9 @@ function PeerPlanet({
     document.body.style.cursor = "default";
   };
 
-  // meshBasicMaterial = full texture from every angle (no dark hemisphere)
-  // slight brightness tint for active/stale; never dark
-  const tint = isActive ? (hovered ? 1.08 : 1.0) : 0.82;
+  // Never multiply map by a Color — that caused washed-out / white look.
+  // Stale peers get a slight darkening via material color only as gray multiplier < 1.
+  const colorMul = isActive ? (hovered ? 1.05 : 1.0) : 0.78;
 
   return (
     <group ref={groupRef} position={position} rotation={[tilt, 0, tilt * 0.35]}>
@@ -339,21 +345,13 @@ function PeerPlanet({
         onPointerOut={handleOut}
         onClick={() => onHover(peer, position)}
       >
-        {maps?.map ? (
-          <meshBasicMaterial
-            map={maps.map}
-            color={new THREE.Color(tint, tint, tint)}
-            toneMapped={false}
-          />
-        ) : (
-          <meshBasicMaterial
-            color={KIND_FALLBACK[kind]}
-            toneMapped={false}
-          />
-        )}
+        <meshBasicMaterial
+          map={map}
+          color={new THREE.Color(colorMul, colorMul, colorMul)}
+          toneMapped={false}
+        />
       </mesh>
 
-      {/* Very thin limb haze — low so it doesn't hide texture */}
       <Atmosphere
         color={arch.atmosphere}
         scale={size * 1.05}
@@ -644,25 +642,28 @@ function ConstellationWorld({
 }) {
   const controlsRef = useRef<any>(null);
   const { gl } = useThree();
-  const [atlas, setAtlas] = useState<Partial<Record<PlanetKind, PlanetMaps | null>>>({});
-  const [ringMap, setRingMap] = useState<THREE.Texture | null>(null);
+  // Built on client only (canvas textures need document)
+  const [atlas, setAtlas] = useState<ReturnType<typeof getTextureAtlas> | null>(
+    null
+  );
+  const [texTick, setTexTick] = useState(0);
 
   useEffect(() => {
-    gl.toneMapping = THREE.NoToneMapping; // keep planet colors true-to-texture
+    gl.toneMapping = THREE.NoToneMapping;
     gl.toneMappingExposure = 1;
     gl.outputColorSpace = THREE.SRGBColorSpace;
-    preloadSolarAssets();
 
     let alive = true;
-    (async () => {
-      const [all, ring] = await Promise.all([
-        loadAllPlanetMaps(),
-        loadRingMap().catch(() => null),
-      ]);
+    // 1) procedural bases immediately (never white)
+    const initial = getTextureAtlas();
+    setAtlas(initial);
+    // 2) upgrade to /public/planets files when available
+    preloadAllTextures().then((result) => {
       if (!alive) return;
-      setAtlas(all);
-      setRingMap(ring);
-    })();
+      setAtlas(getTextureAtlas());
+      setTexTick((n) => n + 1);
+      console.info("[Aether] texture preload done", result.status);
+    });
     return () => {
       alive = false;
     };
@@ -724,7 +725,13 @@ function ConstellationWorld({
         speed={0.12}
       />
 
-      <Sun isOnline={isOnline} height={myNodeHeight} />
+      {atlas && (
+        <Sun
+          isOnline={isOnline}
+          height={myNodeHeight}
+          map={atlas.sun}
+        />
+      )}
       <BoomWave active={isPropagating} startMs={propagationStart} />
 
       {ends.length > 0 && (
@@ -742,18 +749,19 @@ function ConstellationWorld({
         </>
       )}
 
-      {peerData.map(({ peer, position, kind }, index) => (
-        <PeerPlanet
-          key={peer.address || `peer-${index}`}
-          peer={peer}
-          position={position}
-          index={index}
-          onHover={onPeerHover}
-          propagationStart={propagationStart}
-          maps={atlas[kind] ?? null}
-          ringMap={ringMap}
-        />
-      ))}
+      {atlas &&
+        peerData.map(({ peer, position, kind }, index) => (
+          <PeerPlanet
+            key={`${peer.address || `peer-${index}`}-${texTick}`}
+            peer={peer}
+            position={position}
+            index={index}
+            onHover={onPeerHover}
+            propagationStart={propagationStart}
+            map={atlas.planets[kind] ?? getPlanetTexture(kind)}
+            ringMap={atlas.ring ?? getRingTexture()}
+          />
+        ))}
 
       {particles.map((p) => (
         <TravelingParticle
