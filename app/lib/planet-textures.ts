@@ -196,10 +196,12 @@ const pending = new Map<string, Promise<THREE.Texture>>();
 function configureMap(tex: THREE.Texture, isColor = true) {
   if (isColor) tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
-  tex.wrapS = THREE.RepeatWrapping;
+  // Equirect planet maps: clamp U/V — repeat can tear poles / show seams as "blank"
+  tex.wrapS = THREE.ClampToEdgeWrapping;
   tex.wrapT = THREE.ClampToEdgeWrapping;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
   tex.needsUpdate = true;
   return tex;
 }
@@ -238,35 +240,67 @@ export interface PlanetMaps {
 }
 
 const mapsCache = new Map<PlanetKind, Promise<PlanetMaps>>();
+/** Resolved maps only — never stores failures */
+const mapsReady = new Map<PlanetKind, PlanetMaps>();
+
+export function getPlanetMapsSync(kind: PlanetKind): PlanetMaps | null {
+  return mapsReady.get(kind) ?? null;
+}
 
 export function loadPlanetMaps(kind: PlanetKind): Promise<PlanetMaps> {
+  const ready = mapsReady.get(kind);
+  if (ready) return Promise.resolve(ready);
+
   const existing = mapsCache.get(kind);
   if (existing) return existing;
 
   const arch = PLANET_ARCHETYPES[kind];
   const promise = (async () => {
-    const map = await loadTexture(arch.mapUrl, true);
-    let normalMap: THREE.Texture | undefined;
-    let specularMap: THREE.Texture | undefined;
-    if (arch.normalUrl) {
-      try {
-        normalMap = await loadTexture(arch.normalUrl, false);
-      } catch {
-        /* optional */
+    try {
+      const map = await loadTexture(arch.mapUrl, true);
+      let normalMap: THREE.Texture | undefined;
+      let specularMap: THREE.Texture | undefined;
+      if (arch.normalUrl) {
+        try {
+          normalMap = await loadTexture(arch.normalUrl, false);
+        } catch {
+          /* optional */
+        }
       }
-    }
-    if (arch.specularUrl) {
-      try {
-        specularMap = await loadTexture(arch.specularUrl, false);
-      } catch {
-        /* optional */
+      if (arch.specularUrl) {
+        try {
+          specularMap = await loadTexture(arch.specularUrl, false);
+        } catch {
+          /* optional */
+        }
       }
+      const pack = { map, normalMap, specularMap };
+      mapsReady.set(kind, pack);
+      return pack;
+    } catch (err) {
+      mapsCache.delete(kind);
+      throw err;
     }
-    return { map, normalMap, specularMap };
   })();
 
   mapsCache.set(kind, promise);
   return promise;
+}
+
+/** Load every planet type; resolves when all succeed (or best-effort). */
+export async function loadAllPlanetMaps(): Promise<Record<PlanetKind, PlanetMaps | null>> {
+  const kinds = Object.keys(PLANET_ARCHETYPES) as PlanetKind[];
+  const out = {} as Record<PlanetKind, PlanetMaps | null>;
+  await Promise.all(
+    kinds.map(async (k) => {
+      try {
+        out[k] = await loadPlanetMaps(k);
+      } catch {
+        out[k] = null;
+      }
+    })
+  );
+  return out;
 }
 
 export function loadSunMap(): Promise<THREE.Texture> {
