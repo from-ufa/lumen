@@ -17,6 +17,11 @@ import {
   getSunTexture,
   getRingTexture,
 } from "../lib/planet-textures";
+import {
+  createAmbienceController,
+  type AmbienceController,
+  type AmbienceMode,
+} from "../lib/space-ambience";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -997,6 +1002,7 @@ function Scene({
   hideControls = false,
 }: ConstellationProps) {
   const controlsApiRef = useRef<ControlsApi | null>(null);
+  const ambienceRef = useRef<AmbienceController | null>(null);
   const [hoveredPeer, setHoveredPeer] = useState<Peer | null>(null);
   const [hoveredPos, setHoveredPos] = useState<THREE.Vector3 | null>(null);
   const [isAutoOrbit, setIsAutoOrbit] = useState(true);
@@ -1007,6 +1013,51 @@ function Scene({
   const [particles, setParticles] = useState<
     Array<{ id: number; start: THREE.Vector3; end: THREE.Vector3 }>
   >([]);
+  const [musicOn, setMusicOn] = useState(false);
+  const [musicVol, setMusicVol] = useState(0.4);
+  const [musicMode, setMusicMode] = useState<AmbienceMode>("off");
+  const [musicBusy, setMusicBusy] = useState(false);
+
+  // Ambient music — user gesture required by browsers to start
+  useEffect(() => {
+    const ctrl = createAmbienceController();
+    ambienceRef.current = ctrl;
+    ctrl.setVolume(musicVol);
+    return () => {
+      ctrl.dispose();
+      ambienceRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const toggleMusic = async () => {
+    const ctrl = ambienceRef.current;
+    if (!ctrl || musicBusy) return;
+    setMusicBusy(true);
+    try {
+      if (ctrl.isPlaying()) {
+        ctrl.pause();
+        setMusicOn(false);
+        setMusicMode("off");
+      } else {
+        await ctrl.play();
+        setMusicOn(true);
+        setMusicMode(ctrl.getMode());
+      }
+    } catch (err) {
+      console.warn("[Aether] music play failed", err);
+      setMusicOn(false);
+      setMusicMode("off");
+    } finally {
+      setMusicBusy(false);
+    }
+  };
+
+  const onMusicVolChange = (v: number) => {
+    const clamped = Math.min(1, Math.max(0, v));
+    setMusicVol(clamped);
+    ambienceRef.current?.setVolume(clamped);
+  };
 
   const peerData = useMemo(() => {
     return peers.map((peer, index) => ({
@@ -1088,6 +1139,7 @@ function Scene({
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key.toLowerCase() === "f") focusOnMyNode();
       if (e.key.toLowerCase() === "o") toggleAutoOrbit();
+      if (e.key.toLowerCase() === "m") void toggleMusic();
       if (e.key === "[" || e.key === "-") onOrbitSpeedChange(orbitSpeed - 0.25);
       if (e.key === "]" || e.key === "=" || e.key === "+")
         onOrbitSpeedChange(orbitSpeed + 0.25);
@@ -1096,7 +1148,7 @@ function Scene({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onSimulateBlock, triggerBlockPropagation, orbitSpeed]);
+  }, [onSimulateBlock, triggerBlockPropagation, orbitSpeed, musicOn, musicBusy]);
 
   return (
     <>
@@ -1189,6 +1241,56 @@ function Scene({
                 <span>0.25×</span>
                 <span>[ ] keys</span>
                 <span>5×</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Music / ambience */}
+          <div className="glass rounded-xl border border-white/10 px-4 py-3 space-y-2.5">
+            <button
+              type="button"
+              onClick={() => void toggleMusic()}
+              disabled={musicBusy}
+              className="w-full flex items-center gap-2 text-xs font-mono tracking-widest transition-all active:scale-[0.985] disabled:opacity-50"
+            >
+              <span className={musicOn ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>
+                {musicOn ? "♪" : "♩"}
+              </span>
+              <span className="text-[#E8E8F0]">
+                {musicBusy
+                  ? "LOADING…"
+                  : musicOn
+                    ? "MUSIC ON"
+                    : "MUSIC OFF"}
+              </span>
+            </button>
+            <div
+              className={`space-y-1.5 transition-opacity ${
+                musicOn ? "opacity-100" : "opacity-40"
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px] font-mono tracking-wider text-[#A0A0B0]">
+                <span>VOLUME</span>
+                <span className="text-[#E8C48A]">
+                  {Math.round(musicVol * 100)}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={musicVol}
+                onChange={(e) => onMusicVolChange(parseFloat(e.target.value))}
+                className="w-full h-1.5 appearance-none rounded-full bg-white/10 accent-[#E8C48A] cursor-pointer"
+                aria-label="Music volume"
+              />
+              <div className="text-[9px] font-mono text-[#A0A0B0]/55 leading-relaxed">
+                {musicMode === "file"
+                  ? "Playing /audio/stay.* (your file)"
+                  : musicMode === "synth"
+                    ? "Aether space pad · M to toggle"
+                    : "Press MUSIC or M · place stay.mp3 in /public/audio for your track"}
               </div>
             </div>
           </div>
