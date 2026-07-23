@@ -82,7 +82,6 @@ const GEO_LO = new THREE.SphereGeometry(1, 24, 24);
 const GEO_ATMOS = new THREE.SphereGeometry(1, 48, 48);
 const GEO_RING = new THREE.RingGeometry(1.45, 2.35, 128);
 const GEO_PARTICLE = new THREE.SphereGeometry(1, 10, 10);
-const GEO_CORONA = new THREE.SphereGeometry(1, 64, 64);
 
 // Ring UVs: map radial to U for saturn ring strip
 (() => {
@@ -160,64 +159,9 @@ function Atmosphere({
   return <mesh geometry={GEO_ATMOS} scale={scale} material={mat} />;
 }
 
-/* ─── Realistic Sun (photosphere + corona) ──────────────────────────────── */
+/* ─── Sun: plain photosphere only (no corona, no lights) ────────────────── */
 
-const sunVertex = /* glsl */ `
-  varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vView;
-  void main() {
-    vUv = uv;
-    vec4 world = modelMatrix * vec4(position, 1.0);
-    vNormal = normalize(mat3(modelMatrix) * normal);
-    vView = normalize(cameraPosition - world.xyz);
-    gl_Position = projectionMatrix * viewMatrix * world;
-  }
-`;
-
-const sunFragment = /* glsl */ `
-  uniform sampler2D uMap;
-  uniform float uTime;
-  varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vView;
-  void main() {
-    // Slow granular drift
-    vec2 uv = vUv + vec2(uTime * 0.003, 0.0);
-    vec3 tex = texture2D(uMap, uv).rgb;
-
-    // Photosphere limb darkening (approx. solar)
-    float mu = max(dot(normalize(vNormal), normalize(vView)), 0.0);
-    float limb = 0.45 + 0.55 * pow(mu, 0.55);
-
-    // Warm photosphere bias (NASA-like yellow-white core)
-    vec3 photosphere = tex * vec3(1.08, 0.96, 0.82);
-    photosphere *= limb;
-
-    // Slight hot core
-    photosphere += vec3(0.12, 0.07, 0.02) * pow(mu, 2.0);
-
-    gl_FragColor = vec4(photosphere, 1.0);
-  }
-`;
-
-const coronaFragment = /* glsl */ `
-  uniform float uIntensity;
-  uniform vec3 uColor;
-  varying vec3 vNormal;
-  varying vec3 vView;
-  void main() {
-    float mu = max(dot(normalize(vNormal), normalize(vView)), 0.0);
-    // Soft inverse falloff — extended corona
-    float rim = pow(1.0 - mu, 2.8);
-    float core = pow(1.0 - mu, 1.2) * 0.15;
-    float a = (rim * 0.55 + core) * uIntensity;
-    gl_FragColor = vec4(uColor, a);
-  }
-`;
-
-function Sun({ isOnline, height }: { isOnline: boolean; height: number }) {
-  const groupRef = useRef<THREE.Group>(null!);
+function Sun({ height }: { isOnline: boolean; height: number }) {
   const bodyRef = useRef<THREE.Mesh>(null!);
   const [map, setMap] = useState<THREE.Texture | null>(null);
 
@@ -233,116 +177,24 @@ function Sun({ isOnline, height }: { isOnline: boolean; height: number }) {
     };
   }, []);
 
-  const sunMat = useMemo(() => {
-    if (!map) return null;
-    return new THREE.ShaderMaterial({
-      vertexShader: sunVertex,
-      fragmentShader: sunFragment,
-      uniforms: {
-        uMap: { value: map },
-        uTime: { value: 0 },
-      },
-    });
-  }, [map]);
-
-  const coronaMat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        vertexShader: sunVertex,
-        fragmentShader: coronaFragment,
-        uniforms: {
-          uIntensity: { value: 1 },
-          uColor: { value: new THREE.Color("#ffd9a0") },
-        },
-        transparent: true,
-        depthWrite: false,
-        side: THREE.BackSide,
-        blending: THREE.AdditiveBlending,
-      }),
-    []
-  );
-
-  const coronaOuterMat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        vertexShader: sunVertex,
-        fragmentShader: coronaFragment,
-        uniforms: {
-          uIntensity: { value: 0.55 },
-          uColor: { value: new THREE.Color("#ffe8c8") },
-        },
-        transparent: true,
-        depthWrite: false,
-        side: THREE.BackSide,
-        blending: THREE.AdditiveBlending,
-      }),
-    []
-  );
-
-  useEffect(
-    () => () => {
-      sunMat?.dispose();
-      coronaMat.dispose();
-      coronaOuterMat.dispose();
-    },
-    [sunMat, coronaMat, coronaOuterMat]
-  );
-
   useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (sunMat) sunMat.uniforms.uTime.value = t;
-    if (bodyRef.current) bodyRef.current.rotation.y = t * 0.018;
-    if (groupRef.current && isOnline) {
-      // imperceptible breathing of corona scale
-      const b = 1 + Math.sin(t * 0.35) * 0.008;
-      groupRef.current.scale.setScalar(b);
-    }
-    // gentle corona pulse (intensity)
-    const pulse = 0.92 + Math.sin(t * 0.4) * 0.08;
-    coronaMat.uniforms.uIntensity.value = pulse;
-    coronaOuterMat.uniforms.uIntensity.value = 0.5 + Math.sin(t * 0.28) * 0.06;
+    if (bodyRef.current) bodyRef.current.rotation.y = state.clock.elapsedTime * 0.018;
   });
 
-  const SUN_R = 2.15;
+  const SUN_R = 2.0;
 
   return (
-    <group ref={groupRef}>
-      {/* Real light source of the system — warm solar spectrum */}
-      <pointLight
-        color="#fff4e0"
-        intensity={3.8}
-        distance={0}
-        decay={0.9}
-        castShadow={false}
-      />
-      <pointLight color="#ffcc88" intensity={1.1} distance={80} decay={2} />
-
-      {/* Photosphere */}
-      {sunMat ? (
-        <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R} material={sunMat} />
-      ) : (
-        <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R}>
-          <meshBasicMaterial color="#f0c070" />
-        </mesh>
-      )}
-
-      {/* Inner corona */}
-      <mesh geometry={GEO_CORONA} scale={SUN_R * 1.28} material={coronaMat} />
-      {/* Outer soft corona */}
-      <mesh geometry={GEO_CORONA} scale={SUN_R * 1.85} material={coronaOuterMat} />
-      {/* Faint far halo */}
-      <mesh geometry={GEO_LO} scale={SUN_R * 2.6}>
-        <meshBasicMaterial
-          color="#ffefd0"
-          transparent
-          opacity={0.04}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          side={THREE.BackSide}
-        />
+    <group>
+      {/* Just the sun sphere — texture only, no corona rings, no light emission */}
+      <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R}>
+        {map ? (
+          <meshBasicMaterial map={map} toneMapped={false} />
+        ) : (
+          <meshBasicMaterial color="#f0c070" toneMapped={false} />
+        )}
       </mesh>
 
-      <Html position={[0, -3.55, 0]} style={{ pointerEvents: "none" }} center>
+      <Html position={[0, -2.9, 0]} style={{ pointerEvents: "none" }} center>
         <div className="text-center select-none">
           <div className="text-[#E8C48A]/90 text-[10px] font-mono tracking-[0.28em] uppercase">
             Your Node
@@ -479,8 +331,8 @@ function PeerPlanet({
     document.body.style.cursor = "default";
   };
 
-  // Soft desaturate for stale peers (still photoreal, not gray plastic)
-  const colorMul = isActive ? farFade : farFade * 0.75;
+  // Keep surfaces readable; mild dim for stale / far worlds only
+  const colorMul = isActive ? Math.max(0.92, farFade) : Math.max(0.75, farFade * 0.9);
 
   return (
     <group ref={groupRef} position={position} rotation={[tilt, 0, tilt * 0.35]}>
@@ -497,19 +349,15 @@ function PeerPlanet({
             map={maps.map}
             normalMap={maps.normalMap}
             normalScale={
-              maps.normalMap ? new THREE.Vector2(0.65, 0.65) : undefined
+              maps.normalMap ? new THREE.Vector2(0.55, 0.55) : undefined
             }
-            roughness={arch.roughness}
-            metalness={arch.metalness}
+            roughness={Math.min(0.95, arch.roughness + 0.08)}
+            metalness={Math.min(arch.metalness, 0.05)}
             color={new THREE.Color(colorMul, colorMul, colorMul)}
-            envMapIntensity={0.12}
+            envMapIntensity={0.05}
           />
         ) : (
-          <meshStandardMaterial
-            color="#3a3a42"
-            roughness={0.9}
-            metalness={0.05}
-          />
+          <meshStandardMaterial color="#6a6a78" roughness={0.85} metalness={0.02} />
         )}
       </mesh>
 
@@ -745,16 +593,18 @@ function BoomWave({ active, startMs }: { active: boolean; startMs: number }) {
   );
 }
 
-/* ─── Scene lights: sun is primary; ambient is starlight only ───────────── */
+/* ─── Scene lights: even studio lighting so all planet surfaces read ───── */
 
 function SceneLights() {
   return (
     <>
-      {/* Cosmic background fill — very low, like starlight */}
-      <ambientLight intensity={0.06} color="#c8d0e0" />
-      <hemisphereLight args={["#1a2030", "#050508", 0.12]} />
-      {/* Soft fill opposite the main view so dark sides aren't pure black */}
-      <directionalLight position={[-40, -15, -25]} intensity={0.08} color="#8090b0" />
+      {/* Strong ambient so no planet is a black silhouette */}
+      <ambientLight intensity={0.72} color="#f0f2f8" />
+      <hemisphereLight args={["#d8e0f0", "#2a2a35", 0.55]} />
+      {/* Key + fill + rim — flat enough to show full texture detail */}
+      <directionalLight position={[30, 40, 20]} intensity={1.35} color="#ffffff" />
+      <directionalLight position={[-35, 10, -25]} intensity={0.75} color="#e8ecf5" />
+      <directionalLight position={[10, -25, 35]} intensity={0.45} color="#d0d8e8" />
     </>
   );
 }
@@ -791,7 +641,7 @@ function ConstellationWorld({
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = 0.95;
+    gl.toneMappingExposure = 1.25;
     gl.outputColorSpace = THREE.SRGBColorSpace;
     preloadSolarAssets();
   }, [gl]);
@@ -835,7 +685,8 @@ function ConstellationWorld({
   return (
     <>
       <color attach="background" args={["#010104"]} />
-      <fog attach="fog" args={["#010104", 48, 95]} />
+      {/* Soft distance fade only — don't swallow planet detail */}
+      <fog attach="fog" args={["#010104", 70, 130]} />
 
       <SceneLights />
 
