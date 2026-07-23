@@ -16,7 +16,7 @@
 | **systemd** | `aether.service` (enabled), bind **`0.0.0.0:3000`** |
 | **Auth gate** | `proxy.ts` (Next 16 Node network proxy; not deprecated middleware) |
 | **Связанная дока сервера** | `/root/SERVER.md` |
-| **Снимок handoff** | **2026-07-22** (network map + signal lines) |
+| **Снимок handoff** | **2026-07-23** (3D planets + galaxy orbit + music) |
 | **Network crawler** | `scripts/crawl-network.mjs` + `aether-crawl.timer` (every 12m) |
 | **Catalog** | `/home/aether/data/network-catalog.json` (gitignored) |
 
