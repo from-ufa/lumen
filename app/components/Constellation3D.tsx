@@ -11,9 +11,11 @@ import {
   PLANET_ARCHETYPES,
   kindFromAddress,
   seededFloat,
-  getPlanetTextures,
-  getRingTexture,
-  getHomePlanetTextures,
+  loadPlanetMaps,
+  loadSunMap,
+  loadRingMap,
+  preloadSolarAssets,
+  PlanetMaps,
 } from "../lib/planet-textures";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
@@ -60,46 +62,48 @@ function boomEnvelope(propagationStart: number): number {
 
 function getDeterministicPosition(address: string, index: number): THREE.Vector3 {
   const seed = hashString(address) + index * 37;
-  const radius = 12 + (seed % 18);
+  // Wider orbits so sun reads as a star and planets get a real terminator
+  const radius = 14 + (seed % 22);
   const phi = ((seed % 360) / 360) * Math.PI * 2;
   const theta = (((seed * 7) % 180) / 180) * Math.PI - Math.PI / 2;
 
   return new THREE.Vector3(
     radius * Math.cos(phi) * Math.cos(theta),
-    radius * Math.sin(theta) * 0.55,
+    radius * Math.sin(theta) * 0.48,
     radius * Math.sin(phi) * Math.cos(theta)
   );
 }
 
 // Shared geometries
+const GEO_SUN = new THREE.SphereGeometry(1, 96, 96);
 const GEO_HI = new THREE.SphereGeometry(1, 64, 64);
-const GEO_MD = new THREE.SphereGeometry(1, 32, 32);
+const GEO_MD = new THREE.SphereGeometry(1, 48, 48);
 const GEO_LO = new THREE.SphereGeometry(1, 24, 24);
-const GEO_ATMOS = new THREE.SphereGeometry(1, 32, 32);
-const GEO_RING = new THREE.RingGeometry(1.35, 2.15, 96);
+const GEO_ATMOS = new THREE.SphereGeometry(1, 48, 48);
+const GEO_RING = new THREE.RingGeometry(1.45, 2.35, 128);
 const GEO_PARTICLE = new THREE.SphereGeometry(1, 10, 10);
+const GEO_CORONA = new THREE.SphereGeometry(1, 64, 64);
 
-// Flip ring UVs so texture maps radially (u along ring width)
+// Ring UVs: map radial to U for saturn ring strip
 (() => {
   const uv = GEO_RING.attributes.uv;
   for (let i = 0; i < uv.count; i++) {
     const u = uv.getX(i);
     const v = uv.getY(i);
-    // RingGeometry: u around, v radial — we want radial as U for our texture
     uv.setXY(i, v, u);
   }
   uv.needsUpdate = true;
 })();
 
-/* ─── Atmosphere (Fresnel limb) ──────────────────────────────────────────── */
+/* ─── Subtle natural atmosphere (not neon) ──────────────────────────────── */
 
 const atmosVertex = /* glsl */ `
-  varying vec3 vNormal;
-  varying vec3 vView;
+  varying vec3 vNormalW;
+  varying vec3 vViewW;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
-    vNormal = normalize(mat3(modelMatrix) * normal);
-    vView = normalize(cameraPosition - world.xyz);
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    vViewW = normalize(cameraPosition - world.xyz);
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
@@ -108,20 +112,24 @@ const atmosFragment = /* glsl */ `
   uniform vec3 uColor;
   uniform float uIntensity;
   uniform float uPower;
-  varying vec3 vNormal;
-  varying vec3 vView;
+  varying vec3 vNormalW;
+  varying vec3 vViewW;
   void main() {
-    float fresnel = pow(1.0 - max(dot(normalize(vNormal), normalize(vView)), 0.0), uPower);
+    float ndv = max(dot(normalize(vNormalW), normalize(vViewW)), 0.0);
+    // Thin limb haze — physically soft, low intensity
+    float fresnel = pow(1.0 - ndv, uPower);
     float alpha = fresnel * uIntensity;
-    gl_FragColor = vec4(uColor, alpha);
+    // desaturate slightly so it never reads as "glow stick"
+    vec3 col = mix(uColor, vec3(0.85, 0.88, 0.95), 0.25);
+    gl_FragColor = vec4(col, alpha);
   }
 `;
 
 function Atmosphere({
   color,
-  scale = 1.08,
-  intensity = 0.85,
-  power = 2.6,
+  scale = 1.06,
+  intensity = 0.35,
+  power = 3.2,
 }: {
   color: string;
   scale?: number;
@@ -141,96 +149,205 @@ function Atmosphere({
         transparent: true,
         depthWrite: false,
         side: THREE.BackSide,
-        blending: THREE.AdditiveBlending,
+        blending: THREE.NormalBlending,
       }),
     [color, intensity, power]
   );
 
   useEffect(() => () => mat.dispose(), [mat]);
 
+  if (intensity < 0.03) return null;
   return <mesh geometry={GEO_ATMOS} scale={scale} material={mat} />;
 }
 
-/* ─── Planet rings ──────────────────────────────────────────────────────── */
+/* ─── Realistic Sun (photosphere + corona) ──────────────────────────────── */
 
-function PlanetRings({
-  color,
-  seed,
-  scale = 1,
-  tilt = 0.35,
-}: {
-  color: string;
-  seed: number;
-  scale?: number;
-  tilt?: number;
-}) {
-  const tex = useMemo(() => getRingTexture(color, seed), [color, seed]);
-  return (
-    <mesh
-      rotation={[Math.PI / 2 + tilt, 0.15, 0.2]}
-      scale={scale}
-      geometry={GEO_RING}
-      renderOrder={1}
-    >
-      <meshBasicMaterial
-        map={tex}
-        transparent
-        opacity={0.9}
-        side={THREE.DoubleSide}
-        depthWrite={false}
-        alphaTest={0.02}
-      />
-    </mesh>
-  );
-}
+const sunVertex = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  void main() {
+    vUv = uv;
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    vView = normalize(cameraPosition - world.xyz);
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
 
-/* ─── Central home planet ───────────────────────────────────────────────── */
+const sunFragment = /* glsl */ `
+  uniform sampler2D uMap;
+  uniform float uTime;
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  void main() {
+    // Slow granular drift
+    vec2 uv = vUv + vec2(uTime * 0.003, 0.0);
+    vec3 tex = texture2D(uMap, uv).rgb;
 
-function HomePlanet({ isOnline, height }: { isOnline: boolean; height: number }) {
+    // Photosphere limb darkening (approx. solar)
+    float mu = max(dot(normalize(vNormal), normalize(vView)), 0.0);
+    float limb = 0.45 + 0.55 * pow(mu, 0.55);
+
+    // Warm photosphere bias (NASA-like yellow-white core)
+    vec3 photosphere = tex * vec3(1.08, 0.96, 0.82);
+    photosphere *= limb;
+
+    // Slight hot core
+    photosphere += vec3(0.12, 0.07, 0.02) * pow(mu, 2.0);
+
+    gl_FragColor = vec4(photosphere, 1.0);
+  }
+`;
+
+const coronaFragment = /* glsl */ `
+  uniform float uIntensity;
+  uniform vec3 uColor;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  void main() {
+    float mu = max(dot(normalize(vNormal), normalize(vView)), 0.0);
+    // Soft inverse falloff — extended corona
+    float rim = pow(1.0 - mu, 2.8);
+    float core = pow(1.0 - mu, 1.2) * 0.15;
+    float a = (rim * 0.55 + core) * uIntensity;
+    gl_FragColor = vec4(uColor, a);
+  }
+`;
+
+function Sun({ isOnline, height }: { isOnline: boolean; height: number }) {
   const groupRef = useRef<THREE.Group>(null!);
   const bodyRef = useRef<THREE.Mesh>(null!);
-  const tex = useMemo(() => getHomePlanetTextures(), []);
-  const arch = PLANET_ARCHETYPES.earthlike;
+  const [map, setMap] = useState<THREE.Texture | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    loadSunMap()
+      .then((t) => {
+        if (alive) setMap(t);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const sunMat = useMemo(() => {
+    if (!map) return null;
+    return new THREE.ShaderMaterial({
+      vertexShader: sunVertex,
+      fragmentShader: sunFragment,
+      uniforms: {
+        uMap: { value: map },
+        uTime: { value: 0 },
+      },
+    });
+  }, [map]);
+
+  const coronaMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: sunVertex,
+        fragmentShader: coronaFragment,
+        uniforms: {
+          uIntensity: { value: 1 },
+          uColor: { value: new THREE.Color("#ffd9a0") },
+        },
+        transparent: true,
+        depthWrite: false,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+      }),
+    []
+  );
+
+  const coronaOuterMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: sunVertex,
+        fragmentShader: coronaFragment,
+        uniforms: {
+          uIntensity: { value: 0.55 },
+          uColor: { value: new THREE.Color("#ffe8c8") },
+        },
+        transparent: true,
+        depthWrite: false,
+        side: THREE.BackSide,
+        blending: THREE.AdditiveBlending,
+      }),
+    []
+  );
+
+  useEffect(
+    () => () => {
+      sunMat?.dispose();
+      coronaMat.dispose();
+      coronaOuterMat.dispose();
+    },
+    [sunMat, coronaMat, coronaOuterMat]
+  );
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    if (bodyRef.current) {
-      bodyRef.current.rotation.y = t * 0.06;
-    }
+    if (sunMat) sunMat.uniforms.uTime.value = t;
+    if (bodyRef.current) bodyRef.current.rotation.y = t * 0.018;
     if (groupRef.current && isOnline) {
-      groupRef.current.rotation.y = t * 0.012;
+      // imperceptible breathing of corona scale
+      const b = 1 + Math.sin(t * 0.35) * 0.008;
+      groupRef.current.scale.setScalar(b);
     }
+    // gentle corona pulse (intensity)
+    const pulse = 0.92 + Math.sin(t * 0.4) * 0.08;
+    coronaMat.uniforms.uIntensity.value = pulse;
+    coronaOuterMat.uniforms.uIntensity.value = 0.5 + Math.sin(t * 0.28) * 0.06;
   });
+
+  const SUN_R = 2.15;
 
   return (
     <group ref={groupRef}>
-      {/* Soft fill light from planet */}
-      <pointLight color="#FF9A6A" intensity={1.4} distance={40} decay={2} />
-      <pointLight color="#88ccff" intensity={0.35} distance={30} decay={2} />
+      {/* Real light source of the system — warm solar spectrum */}
+      <pointLight
+        color="#fff4e0"
+        intensity={3.8}
+        distance={0}
+        decay={0.9}
+        castShadow={false}
+      />
+      <pointLight color="#ffcc88" intensity={1.1} distance={80} decay={2} />
 
-      <mesh ref={bodyRef} geometry={GEO_HI} scale={1.85} castShadow>
-        <meshStandardMaterial
-          map={tex.map}
-          bumpMap={tex.bumpMap}
-          bumpScale={arch.bumpScale * 1.4}
-          roughness={0.68}
-          metalness={0.06}
-          envMapIntensity={0.4}
+      {/* Photosphere */}
+      {sunMat ? (
+        <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R} material={sunMat} />
+      ) : (
+        <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R}>
+          <meshBasicMaterial color="#f0c070" />
+        </mesh>
+      )}
+
+      {/* Inner corona */}
+      <mesh geometry={GEO_CORONA} scale={SUN_R * 1.28} material={coronaMat} />
+      {/* Outer soft corona */}
+      <mesh geometry={GEO_CORONA} scale={SUN_R * 1.85} material={coronaOuterMat} />
+      {/* Faint far halo */}
+      <mesh geometry={GEO_LO} scale={SUN_R * 2.6}>
+        <meshBasicMaterial
+          color="#ffefd0"
+          transparent
+          opacity={0.04}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          side={THREE.BackSide}
         />
       </mesh>
 
-      <Atmosphere color="#7ec8ff" scale={2.05} intensity={1.05} power={2.4} />
-      <Atmosphere color="#FF7A3D" scale={2.18} intensity={0.28} power={3.2} />
-
-      <PlanetRings color="#e8d4c0" seed={4242} scale={1.85} tilt={0.42} />
-      <PlanetRings color="#a8c8e0" seed={4243} scale={1.72} tilt={0.42} />
-
-      <Html position={[0, -3.35, 0]} style={{ pointerEvents: "none" }} center>
+      <Html position={[0, -3.55, 0]} style={{ pointerEvents: "none" }} center>
         <div className="text-center select-none">
-          <div className="text-[#FF7A3D] text-[10px] font-mono tracking-[0.28em] uppercase opacity-90">
+          <div className="text-[#E8C48A]/90 text-[10px] font-mono tracking-[0.28em] uppercase">
             Your Node
           </div>
-          <div className="text-[#E8E8F0]/55 text-[10px] font-mono mt-0.5 tracking-wider">
+          <div className="text-[#E8E8F0]/45 text-[10px] font-mono mt-0.5 tracking-wider">
             {height > 0 ? height.toLocaleString() : "—"}
           </div>
         </div>
@@ -239,7 +356,46 @@ function HomePlanet({ isOnline, height }: { isOnline: boolean; height: number })
   );
 }
 
-/* ─── Peer planet ───────────────────────────────────────────────────────── */
+/* ─── Saturn-style rings ────────────────────────────────────────────────── */
+
+function SaturnRings({ scale = 1, tilt = 0.45 }: { scale?: number; tilt?: number }) {
+  const [map, setMap] = useState<THREE.Texture | null>(null);
+  useEffect(() => {
+    let alive = true;
+    loadRingMap()
+      .then((t) => {
+        if (alive) setMap(t);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!map) return null;
+
+  return (
+    <mesh
+      rotation={[Math.PI / 2 + tilt, 0.05, 0.1]}
+      scale={scale}
+      geometry={GEO_RING}
+      renderOrder={2}
+    >
+      <meshStandardMaterial
+        map={map}
+        transparent
+        opacity={0.92}
+        side={THREE.DoubleSide}
+        depthWrite={false}
+        roughness={0.85}
+        metalness={0.05}
+        alphaTest={0.04}
+      />
+    </mesh>
+  );
+}
+
+/* ─── Realistic peer planet ─────────────────────────────────────────────── */
 
 function PeerPlanet({
   peer,
@@ -257,6 +413,7 @@ function PeerPlanet({
   const groupRef = useRef<THREE.Group>(null!);
   const bodyRef = useRef<THREE.Mesh>(null!);
   const [hovered, setHovered] = useState(false);
+  const [maps, setMaps] = useState<PlanetMaps | null>(null);
 
   const address = peer.address || `peer-${index}`;
   const kind = useMemo(() => kindFromAddress(address), [address]);
@@ -268,39 +425,45 @@ function PeerPlanet({
     return a + t * (b - a);
   }, [address, arch.sizeMul]);
 
-  const hasRings = useMemo(
-    () => seededFloat(address, "rings") < arch.hasRingsChance,
-    [address, arch.hasRingsChance]
+  const spin = useMemo(() => 0.02 + seededFloat(address, "spin") * 0.06, [address]);
+  const tilt = useMemo(() => (seededFloat(address, "tilt") - 0.5) * 0.4, [address]);
+  const ringTilt = useMemo(
+    () => 0.35 + seededFloat(address, "ringtilt") * 0.25,
+    [address]
   );
 
-  const spin = useMemo(() => 0.04 + seededFloat(address, "spin") * 0.1, [address]);
-  const tilt = useMemo(() => (seededFloat(address, "tilt") - 0.5) * 0.5, [address]);
-  const texSeed = useMemo(() => hashString(address) % 97, [address]);
-
-  // Share texture per kind+bucket (not unique per peer) for performance
-  const tex = useMemo(
-    () => getPlanetTextures(kind, 256, Math.floor(texSeed / 12)),
-    [kind, texSeed]
-  );
+  useEffect(() => {
+    let alive = true;
+    loadPlanetMaps(kind)
+      .then((m) => {
+        if (alive) setMaps(m);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [kind]);
 
   const isActive = Date.now() - peerLastMs(peer.lastMessage) < 120_000;
+
+  // Distance-based atmospheric perspective (dim far worlds)
+  const dist = position.length();
+  const farFade = THREE.MathUtils.clamp(1.15 - dist / 55, 0.55, 1);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const phase = index * 0.37;
     const boom = boomEnvelope(propagationStart);
 
-    if (bodyRef.current) {
-      bodyRef.current.rotation.y = t * spin;
-    }
+    if (bodyRef.current) bodyRef.current.rotation.y = t * spin;
     if (groupRef.current) {
-      const hoverBoost = hovered ? 1.12 : 1;
-      const flash = boom > 0 ? 1 + boom * 0.08 : 1;
+      const hoverBoost = hovered ? 1.06 : 1;
+      const flash = boom > 0 ? 1 + boom * 0.04 : 1;
       groupRef.current.scale.setScalar(hoverBoost * flash);
-      // tiny idle drift
-      groupRef.current.position.x = position.x + Math.sin(t * 0.12 + phase) * 0.03;
-      groupRef.current.position.y = position.y + Math.cos(t * 0.1 + phase) * 0.025;
-      groupRef.current.position.z = position.z + Math.sin(t * 0.09 + phase) * 0.03;
+      // micro drift — calm, not floaty
+      groupRef.current.position.x = position.x + Math.sin(t * 0.08 + phase) * 0.02;
+      groupRef.current.position.y = position.y + Math.cos(t * 0.07 + phase) * 0.015;
+      groupRef.current.position.z = position.z + Math.sin(t * 0.06 + phase) * 0.02;
     }
   });
 
@@ -316,8 +479,11 @@ function PeerPlanet({
     document.body.style.cursor = "default";
   };
 
+  // Soft desaturate for stale peers (still photoreal, not gray plastic)
+  const colorMul = isActive ? farFade : farFade * 0.75;
+
   return (
-    <group ref={groupRef} position={position} rotation={[tilt, 0, tilt * 0.4]}>
+    <group ref={groupRef} position={position} rotation={[tilt, 0, tilt * 0.35]}>
       <mesh
         ref={bodyRef}
         geometry={GEO_MD}
@@ -326,37 +492,44 @@ function PeerPlanet({
         onPointerOut={handleOut}
         onClick={() => onHover(peer, position)}
       >
-        <meshStandardMaterial
-          map={tex.map}
-          bumpMap={tex.bumpMap}
-          bumpScale={arch.bumpScale}
-          roughness={isActive ? arch.roughness : Math.min(0.95, arch.roughness + 0.15)}
-          metalness={arch.metalness}
-          color={isActive ? "#ffffff" : "#8890a0"}
-          envMapIntensity={0.35}
-        />
+        {maps ? (
+          <meshStandardMaterial
+            map={maps.map}
+            normalMap={maps.normalMap}
+            normalScale={
+              maps.normalMap ? new THREE.Vector2(0.65, 0.65) : undefined
+            }
+            roughness={arch.roughness}
+            metalness={arch.metalness}
+            color={new THREE.Color(colorMul, colorMul, colorMul)}
+            envMapIntensity={0.12}
+          />
+        ) : (
+          <meshStandardMaterial
+            color="#3a3a42"
+            roughness={0.9}
+            metalness={0.05}
+          />
+        )}
       </mesh>
 
+      {/* Thin natural atmosphere only — no neon shell */}
       <Atmosphere
         color={arch.atmosphere}
-        scale={size * 1.1}
-        intensity={hovered ? 1.15 : isActive ? 0.8 : 0.4}
-        power={2.5}
+        scale={size * 1.055}
+        intensity={
+          (hovered ? arch.atmosphereIntensity * 1.15 : arch.atmosphereIntensity) *
+          (isActive ? 1 : 0.5)
+        }
+        power={3.4}
       />
 
-      {hasRings && (
-        <PlanetRings
-          color={arch.ringColor}
-          seed={texSeed + 3}
-          scale={size}
-          tilt={0.3 + seededFloat(address, "ringtilt") * 0.35}
-        />
-      )}
+      {arch.hasRings && <SaturnRings scale={size} tilt={ringTilt} />}
     </group>
   );
 }
 
-/* ─── Connection lines + signal packets ─────────────────────────────────── */
+/* ─── Connection lines (unchanged style — do not redesign) ──────────────── */
 
 function ConnectionLines({
   ends,
@@ -383,7 +556,6 @@ function ConnectionLines({
       pos[i * 6 + 5] = e.z;
 
       const active = activeFlags[i];
-      // very soft: warm core → cool peer
       const c0 = active ? [0.85, 0.42, 0.22] : [0.2, 0.22, 0.28];
       const c1 = active ? [0.15, 0.65, 0.85] : [0.18, 0.2, 0.25];
       for (let k = 0; k < 3; k++) {
@@ -513,7 +685,10 @@ function TravelingParticle({
 
   useFrame(() => {
     if (!meshRef.current || done.current) return;
-    const progress = Math.min((Date.now() - startTime.current) / 1000 / duration, 1);
+    const progress = Math.min(
+      (Date.now() - startTime.current) / 1000 / duration,
+      1
+    );
     if (progress >= 1) {
       done.current = true;
       onComplete();
@@ -553,13 +728,13 @@ function BoomWave({ active, startMs }: { active: boolean; startMs: number }) {
     meshRef.current.visible = true;
     const u = elapsed / 1.8;
     meshRef.current.scale.setScalar(1.5 + u * 26);
-    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = (1 - u) * 0.12;
+    (meshRef.current.material as THREE.MeshBasicMaterial).opacity = (1 - u) * 0.08;
   });
 
   return (
     <mesh ref={meshRef} geometry={GEO_LO} visible={false}>
       <meshBasicMaterial
-        color="#FF7A3D"
+        color="#ffd9a0"
         transparent
         opacity={0}
         blending={THREE.AdditiveBlending}
@@ -570,29 +745,21 @@ function BoomWave({ active, startMs }: { active: boolean; startMs: number }) {
   );
 }
 
-/* ─── Scene lighting (key + fill + rim for volume) ──────────────────────── */
+/* ─── Scene lights: sun is primary; ambient is starlight only ───────────── */
 
 function SceneLights() {
   return (
     <>
-      <ambientLight intensity={0.18} />
-      <hemisphereLight args={["#b8c8e0", "#0a0a12", 0.45]} />
-      {/* Key sun */}
-      <directionalLight
-        position={[40, 30, 20]}
-        intensity={1.65}
-        color="#fff5e8"
-        castShadow={false}
-      />
-      {/* Cool fill */}
-      <directionalLight position={[-25, -10, -30]} intensity={0.35} color="#6a8cff" />
-      {/* Rim */}
-      <directionalLight position={[0, -20, 40]} intensity={0.25} color="#ffb080" />
+      {/* Cosmic background fill — very low, like starlight */}
+      <ambientLight intensity={0.06} color="#c8d0e0" />
+      <hemisphereLight args={["#1a2030", "#050508", 0.12]} />
+      {/* Soft fill opposite the main view so dark sides aren't pure black */}
+      <directionalLight position={[-40, -15, -25]} intensity={0.08} color="#8090b0" />
     </>
   );
 }
 
-/* ─── World inside Canvas ───────────────────────────────────────────────── */
+/* ─── World ─────────────────────────────────────────────────────────────── */
 
 function ConstellationWorld({
   peers,
@@ -624,8 +791,9 @@ function ConstellationWorld({
 
   useEffect(() => {
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = 1.05;
+    gl.toneMappingExposure = 0.95;
     gl.outputColorSpace = THREE.SRGBColorSpace;
+    preloadSolarAssets();
   }, [gl]);
 
   const peerData = useMemo(() => {
@@ -647,7 +815,7 @@ function ConstellationWorld({
       focus: () => {
         if (!controlsRef.current) return;
         controlsRef.current.target.set(0, 0, 0);
-        controlsRef.current.object.position.set(0, 24, 38);
+        controlsRef.current.object.position.set(0, 22, 42);
         controlsRef.current.autoRotate = false;
         controlsRef.current.update();
       },
@@ -666,22 +834,23 @@ function ConstellationWorld({
 
   return (
     <>
-      <color attach="background" args={["#020208"]} />
-      <fog attach="fog" args={["#020208", 60, 130]} />
+      <color attach="background" args={["#010104"]} />
+      <fog attach="fog" args={["#010104", 48, 95]} />
 
       <SceneLights />
 
+      {/* Sparse, calm star field */}
       <Stars
-        radius={240}
-        depth={70}
-        count={1100}
-        factor={2.2}
+        radius={280}
+        depth={90}
+        count={1400}
+        factor={1.8}
         saturation={0}
         fade
-        speed={0.2}
+        speed={0.12}
       />
 
-      <HomePlanet isOnline={isOnline} height={myNodeHeight} />
+      <Sun isOnline={isOnline} height={myNodeHeight} />
       <BoomWave active={isPropagating} startMs={propagationStart} />
 
       {ends.length > 0 && (
@@ -725,14 +894,14 @@ function ConstellationWorld({
         enablePan
         enableZoom
         enableRotate
-        minDistance={10}
-        maxDistance={90}
+        minDistance={12}
+        maxDistance={100}
         autoRotate={autoOrbit}
-        autoRotateSpeed={0.08}
+        autoRotateSpeed={0.06}
         enableDamping
-        dampingFactor={0.08}
-        rotateSpeed={0.55}
-        zoomSpeed={0.7}
+        dampingFactor={0.07}
+        rotateSpeed={0.5}
+        zoomSpeed={0.65}
       />
     </>
   );
@@ -839,7 +1008,7 @@ function Scene({
   return (
     <>
       <Canvas
-        camera={{ position: [0, 24, 38], fov: 46 }}
+        camera={{ position: [0, 22, 42], fov: 42 }}
         className="!absolute !inset-0 !h-full !w-full"
         style={{ width: "100%", height: "100%", display: "block" }}
         resize={{ scroll: false, debounce: { scroll: 50, resize: 0 } }}
@@ -871,7 +1040,7 @@ function Scene({
             <button
               type="button"
               onClick={triggerBlockPropagation}
-              className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono tracking-wider border border-[#FF7A3D]/50 bg-[#0A0A0F]/90 text-[#FF7A3D] shadow-lg backdrop-blur-md active:scale-[0.97]"
+              className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono tracking-wider border border-[#E8C48A]/40 bg-[#0A0A0F]/90 text-[#E8C48A] shadow-lg backdrop-blur-md active:scale-[0.97]"
             >
               ✧ BOOM
             </button>
@@ -891,15 +1060,15 @@ function Scene({
           <button
             type="button"
             onClick={toggleAutoOrbit}
-            className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-[#FF7A3D]/40 flex items-center gap-2 transition-all active:scale-[0.985]"
+            className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-[#E8C48A]/40 flex items-center gap-2 transition-all active:scale-[0.985]"
           >
-            <span className={isAutoOrbit ? "text-[#FF7A3D]" : "text-[#A0A0B0]"}>◉</span>
+            <span className={isAutoOrbit ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>◉</span>
             {isAutoOrbit ? "AUTO ORBIT ON" : "AUTO ORBIT OFF"}
           </button>
           <button
             type="button"
             onClick={focusOnMyNode}
-            className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-[#00E5FF]/40 flex items-center gap-2 transition-all active:scale-[0.985]"
+            className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-white/30 flex items-center gap-2 transition-all active:scale-[0.985]"
           >
             FOCUS ON MY NODE
           </button>
@@ -907,7 +1076,7 @@ function Scene({
             <button
               type="button"
               onClick={triggerBlockPropagation}
-              className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-[2px] bg-[#FF7A3D]/10 border border-[#FF7A3D]/30 hover:bg-[#FF7A3D]/20 text-[#FF7A3D] flex items-center gap-2 transition-all active:scale-[0.985]"
+              className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-[2px] bg-[#E8C48A]/08 border border-[#E8C48A]/25 hover:bg-[#E8C48A]/14 text-[#E8C48A] flex items-center gap-2 transition-all active:scale-[0.985]"
             >
               ✧ SIMULATE BLOCK WAVE
             </button>
@@ -920,8 +1089,8 @@ function Scene({
           <div
             className="absolute z-30 pointer-events-none"
             style={{
-              left: `calc(50% + ${hoveredPos.x * 1.8}px)`,
-              top: `calc(45% - ${hoveredPos.y * 1.6}px)`,
+              left: `calc(50% + ${hoveredPos.x * 1.6}px)`,
+              top: `calc(45% - ${hoveredPos.y * 1.4}px)`,
             }}
           >
             <motion.div
@@ -930,8 +1099,8 @@ function Scene({
               exit={{ opacity: 0, y: 4, scale: 0.98 }}
               className="glass rounded-2xl px-5 py-4 text-sm min-w-[220px] border border-white/10"
             >
-              <div className="font-mono text-[#00E5FF] text-xs tracking-[2px] mb-1">
-                PEER PLANET
+              <div className="font-mono text-[#C8D0E0] text-xs tracking-[2px] mb-1">
+                PEER
               </div>
               <div className="font-mono text-white break-all text-[13px] leading-tight mb-1">
                 {hoveredPeer.name || hoveredPeer.address}
@@ -942,7 +1111,8 @@ function Scene({
                 </div>
               )}
               <div className="font-mono text-[10px] text-[#A0A0B0] mb-3 tracking-wider uppercase">
-                {kindFromAddress(hoveredPeer.address || "")} world
+                {PLANET_ARCHETYPES[kindFromAddress(hoveredPeer.address || "")].label}{" "}
+                world
               </div>
               <div className="flex justify-between text-xs">
                 <div>
@@ -979,10 +1149,11 @@ function Scene({
       <div className="hidden md:block absolute bottom-4 left-4 z-20 glass rounded-2xl px-4 py-3 text-[10px] font-mono tracking-widest border border-white/10">
         <div className="flex items-center gap-4 text-[#A0A0B0]">
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#FF7A3D]" /> YOUR PLANET
+            <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" /> YOUR NODE
+            (SUN)
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#67E8F9]" /> PEER WORLDS
+            <span className="inline-block w-2 h-2 rounded-full bg-[#8a9bb0]" /> PEER WORLDS
           </div>
         </div>
         <div className="text-[9px] text-[#A0A0B0]/60 mt-1.5">
@@ -996,17 +1167,17 @@ function Scene({
 export default function Constellation3D(props: ConstellationProps) {
   return (
     <div className="w-full">
-      <div className="canvas-container aether-viz relative w-full bg-[#020208] overflow-hidden">
+      <div className="canvas-container aether-viz relative w-full bg-[#010104] overflow-hidden">
         <div className="absolute inset-0 w-full h-full">
           <Scene {...props} />
         </div>
       </div>
       <div className="md:hidden mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[10px] font-mono tracking-wider text-[#A0A0B0]">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-[#FF7A3D]" /> YOU
+          <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" /> YOU
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-[#67E8F9]" /> PEERS
+          <span className="inline-block w-2 h-2 rounded-full bg-[#8a9bb0]" /> PEERS
         </span>
         <span className="opacity-50">Pinch · drag · B boom</span>
       </div>
@@ -1014,5 +1185,4 @@ export default function Constellation3D(props: ConstellationProps) {
   );
 }
 
-// silence unused import if tree-shaken oddly
 void (0 as unknown as PlanetKind);
