@@ -35,7 +35,11 @@ type PeerHoverFn = (peer: Peer | null, pos?: THREE.Vector3) => void;
 type ControlsApi = {
   focus: () => void;
   setAutoOrbit: (on: boolean) => void;
+  setOrbitSpeed: (speed: number) => void;
 };
+
+/** Base galaxy spin (rad/s at 1.0×). Visible without being frantic. */
+const GALAXY_BASE_SPEED = 0.12;
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -159,34 +163,114 @@ function Atmosphere({
   return <mesh geometry={GEO_ATMOS} scale={scale} material={mat} />;
 }
 
-/* ─── Living sun corona (soft fresnel breath, no hard rings) ─────────────── */
+/* ─── Real sun pulse: body expands, corona is volumetric + noisy ─────────── */
+
+const sunBodyVertex = /* glsl */ `
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  void main() {
+    vUv = uv;
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vNormal = normalize(mat3(modelMatrix) * normal);
+    vView = normalize(cameraPosition - world.xyz);
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+const sunBodyFragment = /* glsl */ `
+  uniform sampler2D uMap;
+  uniform float uTime;
+  uniform float uPulse; // 0.92–1.12 physical brightness + surface life
+  varying vec2 vUv;
+  varying vec3 vNormal;
+  varying vec3 vView;
+  void main() {
+    // Slow surface churn — living photosphere
+    vec2 uv = vUv + vec2(uTime * 0.008, uTime * 0.002);
+    vec3 tex = texture2D(uMap, uv).rgb;
+    float mu = max(dot(normalize(vNormal), normalize(vView)), 0.0);
+    float limb = 0.55 + 0.45 * pow(mu, 0.6);
+    // Peak of pulse = hotter core, not just brighter overlay
+    float heat = mix(0.88, 1.18, (uPulse - 0.92) / 0.2);
+    vec3 col = tex * vec3(1.05, 0.95, 0.78) * limb * heat;
+    col += vec3(0.15, 0.08, 0.02) * pow(mu, 2.0) * uPulse;
+    gl_FragColor = vec4(col, 1.0);
+  }
+`;
 
 const coronaVertex = /* glsl */ `
   varying vec3 vNormalW;
   varying vec3 vViewW;
+  varying vec3 vPos;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
+    vPos = position;
     vNormalW = normalize(mat3(modelMatrix) * normal);
     vViewW = normalize(cameraPosition - world.xyz);
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
 
+// Volumetric-ish corona: fresnel + radial falloff + cheap noise that breathes
 const coronaFragment = /* glsl */ `
   uniform vec3 uColor;
   uniform float uIntensity;
-  uniform float uPower;
-  uniform float uPulse;
+  uniform float uTime;
+  uniform float uPulse;   // physical expansion factor
+  uniform float uShell;   // 0 near / 1 far shell character
   varying vec3 vNormalW;
   varying vec3 vViewW;
+  varying vec3 vPos;
+
+  // 3D value noise (cheap)
+  float hash(vec3 p) {
+    p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+  float noise(vec3 x) {
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
+          mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+      mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+          mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y),
+      f.z
+    );
+  }
+
   void main() {
-    float ndv = max(dot(normalize(vNormalW), normalize(vViewW)), 0.0);
-    // Soft limb glow — falls off smoothly, never a hard edge
-    float rim = pow(1.0 - ndv, uPower);
-    float body = pow(1.0 - ndv, uPower * 0.45) * 0.12;
-    float a = (rim * 0.75 + body) * uIntensity * uPulse;
-    // warm core → softer outer
-    vec3 col = mix(uColor * 1.15, uColor * 0.75, rim);
+    vec3 N = normalize(vNormalW);
+    vec3 V = normalize(vViewW);
+    float ndv = max(dot(N, V), 0.0);
+
+    // Soft shell — thicker when pulse high (star expanding)
+    float power = mix(2.8, 2.1, (uPulse - 0.92) / 0.2);
+    float rim = pow(1.0 - ndv, power);
+
+    // Turbulent corona streamers (rotate slowly)
+    float ang = uTime * 0.15;
+    vec3 np = vPos * (2.2 - uShell * 0.6);
+    np.xz = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * np.xz;
+    float n = noise(np + vec3(0.0, uTime * 0.25, 0.0));
+    n += 0.5 * noise(np * 2.3 - uTime * 0.18);
+    n = smoothstep(0.25, 0.85, n);
+
+    // Real volume: density higher near surface, thins outward (uShell)
+    float density = rim * mix(0.9, 0.45, uShell);
+    density *= mix(0.55, 1.15, n);           // structure
+    density *= mix(0.75, 1.25, uPulse - 0.1); // brighter & denser at peak
+
+    float a = density * uIntensity;
+    a = clamp(a, 0.0, 0.85);
+
+    // Color shifts hotter (whiter-yellow) when expanded
+    vec3 hot = mix(uColor, vec3(1.0, 0.92, 0.7), 0.35 * (uPulse - 0.92) / 0.2);
+    vec3 col = mix(hot * 0.7, hot * 1.2, n * rim);
+
     gl_FragColor = vec4(col, a);
   }
 `;
@@ -199,10 +283,24 @@ function Sun({
   height: number;
   map: THREE.Texture;
 }) {
+  const groupRef = useRef<THREE.Group>(null!);
   const bodyRef = useRef<THREE.Mesh>(null!);
   const coronaNearRef = useRef<THREE.Mesh>(null!);
   const coronaFarRef = useRef<THREE.Mesh>(null!);
-  const breathRef = useRef(1);
+
+  const bodyMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        vertexShader: sunBodyVertex,
+        fragmentShader: sunBodyFragment,
+        uniforms: {
+          uMap: { value: map },
+          uTime: { value: 0 },
+          uPulse: { value: 1 },
+        },
+      }),
+    [map]
+  );
 
   const coronaNearMat = useMemo(
     () =>
@@ -210,10 +308,11 @@ function Sun({
         vertexShader: coronaVertex,
         fragmentShader: coronaFragment,
         uniforms: {
-          uColor: { value: new THREE.Color("#ffb050") },
-          uIntensity: { value: 1.05 },
-          uPower: { value: 2.4 },
+          uColor: { value: new THREE.Color("#ff9a3a") },
+          uIntensity: { value: 1.15 },
+          uTime: { value: 0 },
           uPulse: { value: 1 },
+          uShell: { value: 0.0 },
         },
         transparent: true,
         depthWrite: false,
@@ -229,10 +328,11 @@ function Sun({
         vertexShader: coronaVertex,
         fragmentShader: coronaFragment,
         uniforms: {
-          uColor: { value: new THREE.Color("#ffcc80") },
+          uColor: { value: new THREE.Color("#ffc878") },
           uIntensity: { value: 0.55 },
-          uPower: { value: 3.1 },
+          uTime: { value: 0 },
           uPulse: { value: 1 },
+          uShell: { value: 1.0 },
         },
         transparent: true,
         depthWrite: false,
@@ -244,53 +344,55 @@ function Sun({
 
   useEffect(
     () => () => {
+      bodyMat.dispose();
       coronaNearMat.dispose();
       coronaFarMat.dispose();
     },
-    [coronaNearMat, coronaFarMat]
+    [bodyMat, coronaNearMat, coronaFarMat]
   );
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    if (bodyRef.current) bodyRef.current.rotation.y = t * 0.022;
-
-    // Living multi-harmonic breath — slow, organic, never snappy
+    // Organic multi-harmonic heart of a star (period ~4–8s)
     const breath =
       1.0 +
-      Math.sin(t * 0.55) * 0.07 +
-      Math.sin(t * 0.31 + 1.2) * 0.045 +
-      Math.sin(t * 0.17 + 0.4) * 0.025;
-    breathRef.current = breath;
+      Math.sin(t * 0.72) * 0.055 +
+      Math.sin(t * 0.41 + 1.1) * 0.035 +
+      Math.sin(t * 0.23 + 0.6) * 0.02;
+    // Map to physical pulse 0.92–1.12
+    const pulse = 0.92 + (breath - 0.89) * 1.4;
+    const p = THREE.MathUtils.clamp(pulse, 0.92, 1.14);
 
-    const pulseNear = breath;
-    const pulseFar = 0.92 + (breath - 1.0) * 1.35;
-
-    coronaNearMat.uniforms.uPulse.value = pulseNear;
-    coronaFarMat.uniforms.uPulse.value = Math.max(0.75, pulseFar);
-
-    if (coronaNearRef.current) {
-      coronaNearRef.current.scale.setScalar(2.35 * (0.97 + (breath - 1) * 0.55));
+    if (bodyRef.current) {
+      bodyRef.current.rotation.y = t * 0.035;
+      // REAL expansion of the star body
+      bodyRef.current.scale.setScalar(2.05 * p);
     }
-    if (coronaFarRef.current) {
-      coronaFarRef.current.scale.setScalar(3.15 * (0.98 + (breath - 1) * 0.7));
-    }
+    bodyMat.uniforms.uTime.value = t;
+    bodyMat.uniforms.uPulse.value = p;
+
+    // Corona expands MORE than the body — true breathing envelope
+    const nearScale = 2.45 * (0.94 + (p - 0.92) * 2.4);
+    const farScale = 3.4 * (0.92 + (p - 0.92) * 3.2);
+    if (coronaNearRef.current) coronaNearRef.current.scale.setScalar(nearScale);
+    if (coronaFarRef.current) coronaFarRef.current.scale.setScalar(farScale);
+
+    coronaNearMat.uniforms.uTime.value = t;
+    coronaFarMat.uniforms.uTime.value = t;
+    coronaNearMat.uniforms.uPulse.value = p;
+    coronaFarMat.uniforms.uPulse.value = p;
+    // Density rides the same pulse
+    coronaNearMat.uniforms.uIntensity.value = 0.95 + (p - 0.92) * 2.2;
+    coronaFarMat.uniforms.uIntensity.value = 0.4 + (p - 0.92) * 1.6;
   });
 
-  const SUN_R = 2.05;
-
   return (
-    <group>
-      {/* Outer soft corona — diffuse haze */}
-      <mesh ref={coronaFarRef} geometry={GEO_ATMOS} scale={3.15} material={coronaFarMat} />
-      {/* Inner living corona */}
-      <mesh ref={coronaNearRef} geometry={GEO_ATMOS} scale={2.35} material={coronaNearMat} />
+    <group ref={groupRef}>
+      <mesh ref={coronaFarRef} geometry={GEO_ATMOS} material={coronaFarMat} />
+      <mesh ref={coronaNearRef} geometry={GEO_ATMOS} material={coronaNearMat} />
+      <mesh ref={bodyRef} geometry={GEO_SUN} material={bodyMat} />
 
-      {/* Photosphere */}
-      <mesh ref={bodyRef} geometry={GEO_SUN} scale={SUN_R}>
-        <meshBasicMaterial map={map} toneMapped={false} />
-      </mesh>
-
-      <Html position={[0, -2.95, 0]} style={{ pointerEvents: "none" }} center>
+      <Html position={[0, -3.15, 0]} style={{ pointerEvents: "none" }} center>
         <div className="text-center select-none">
           <div className="text-[#E8C48A]/90 text-[10px] font-mono tracking-[0.28em] uppercase">
             Your Node
@@ -368,8 +470,8 @@ function PeerPlanet({
     return a + t * (b - a);
   }, [address, arch.sizeMul]);
 
-  // ~3× previous spin / drift speeds
-  const spin = useMemo(() => 0.06 + seededFloat(address, "spin") * 0.18, [address]);
+  // Visible self-rotation (independent of galaxy orbit)
+  const spin = useMemo(() => 0.25 + seededFloat(address, "spin") * 0.55, [address]);
   const tilt = useMemo(() => (seededFloat(address, "tilt") - 0.5) * 0.4, [address]);
   const ringTilt = useMemo(
     () => 0.35 + seededFloat(address, "ringtilt") * 0.25,
@@ -700,6 +802,7 @@ function ConstellationWorld({
   particles,
   setParticles,
   autoOrbit,
+  orbitSpeed,
   controlsApiRef,
 }: {
   peers: Peer[];
@@ -713,15 +816,26 @@ function ConstellationWorld({
     React.SetStateAction<Array<{ id: number; start: THREE.Vector3; end: THREE.Vector3 }>>
   >;
   autoOrbit: boolean;
+  /** Multiplier 0.1–5 for galaxy spin */
+  orbitSpeed: number;
   controlsApiRef: React.MutableRefObject<ControlsApi | null>;
 }) {
   const controlsRef = useRef<any>(null);
+  const galaxyRef = useRef<THREE.Group>(null!);
+  const orbitOnRef = useRef(autoOrbit);
+  const orbitSpeedRef = useRef(orbitSpeed);
   const { gl } = useThree();
-  // Built on client only (canvas textures need document)
   const [atlas, setAtlas] = useState<ReturnType<typeof getTextureAtlas> | null>(
     null
   );
   const [texTick, setTexTick] = useState(0);
+
+  useEffect(() => {
+    orbitOnRef.current = autoOrbit;
+  }, [autoOrbit]);
+  useEffect(() => {
+    orbitSpeedRef.current = orbitSpeed;
+  }, [orbitSpeed]);
 
   useEffect(() => {
     gl.toneMapping = THREE.NoToneMapping;
@@ -729,10 +843,8 @@ function ConstellationWorld({
     gl.outputColorSpace = THREE.SRGBColorSpace;
 
     let alive = true;
-    // 1) procedural bases immediately (never white)
     const initial = getTextureAtlas();
     setAtlas(initial);
-    // 2) upgrade to /public/planets files when available
     preloadAllTextures().then((result) => {
       if (!alive) return;
       setAtlas(getTextureAtlas());
@@ -759,17 +871,29 @@ function ConstellationWorld({
   const ends = useMemo(() => peerData.map((p) => p.position), [peerData]);
   const activeFlags = useMemo(() => peerData.map((p) => p.isActive), [peerData]);
 
+  // Rotate the whole galaxy (planets + links) around the sun
+  useFrame((_, delta) => {
+    if (!galaxyRef.current) return;
+    if (!orbitOnRef.current) return;
+    const speed = GALAXY_BASE_SPEED * orbitSpeedRef.current;
+    galaxyRef.current.rotation.y += delta * speed;
+    // slight tilt drift so it feels spatial, not flat turntable
+    galaxyRef.current.rotation.x = Math.sin(galaxyRef.current.rotation.y * 0.35) * 0.04;
+  });
+
   useEffect(() => {
     controlsApiRef.current = {
       focus: () => {
         if (!controlsRef.current) return;
         controlsRef.current.target.set(0, 0, 0);
         controlsRef.current.object.position.set(0, 22, 42);
-        controlsRef.current.autoRotate = false;
         controlsRef.current.update();
       },
       setAutoOrbit: (on: boolean) => {
-        if (controlsRef.current) controlsRef.current.autoRotate = on;
+        orbitOnRef.current = on;
+      },
+      setOrbitSpeed: (speed: number) => {
+        orbitSpeedRef.current = speed;
       },
     };
     return () => {
@@ -777,19 +901,13 @@ function ConstellationWorld({
     };
   }, [controlsApiRef]);
 
-  useEffect(() => {
-    if (controlsRef.current) controlsRef.current.autoRotate = autoOrbit;
-  }, [autoOrbit]);
-
   return (
     <>
       <color attach="background" args={["#010104"]} />
-      {/* Soft distance fade only — don't swallow planet detail */}
       <fog attach="fog" args={["#010104", 70, 130]} />
 
       <SceneLights />
 
-      {/* Sparse, calm star field */}
       <Stars
         radius={280}
         depth={90}
@@ -800,53 +918,55 @@ function ConstellationWorld({
         speed={0.12}
       />
 
+      {/* Sun fixed at center — does not spin with galaxy */}
       {atlas && (
-        <Sun
-          isOnline={isOnline}
-          height={myNodeHeight}
-          map={atlas.sun}
-        />
+        <Sun isOnline={isOnline} height={myNodeHeight} map={atlas.sun} />
       )}
       <BoomWave active={isPropagating} startMs={propagationStart} />
 
-      {ends.length > 0 && (
-        <>
-          <ConnectionLines
-            ends={ends}
-            activeFlags={activeFlags}
-            propagationStart={propagationStart}
-          />
-          <SignalPackets
-            ends={ends}
-            activeFlags={activeFlags}
-            propagationStart={propagationStart}
-          />
-        </>
-      )}
+      {/* Entire peer system orbits as one galaxy */}
+      <group ref={galaxyRef}>
+        {ends.length > 0 && (
+          <>
+            <ConnectionLines
+              ends={ends}
+              activeFlags={activeFlags}
+              propagationStart={propagationStart}
+            />
+            <SignalPackets
+              ends={ends}
+              activeFlags={activeFlags}
+              propagationStart={propagationStart}
+            />
+          </>
+        )}
 
-      {atlas &&
-        peerData.map(({ peer, position, kind }, index) => (
-          <PeerPlanet
-            key={`${peer.address || `peer-${index}`}-${texTick}`}
-            peer={peer}
-            position={position}
-            index={index}
-            onHover={onPeerHover}
-            propagationStart={propagationStart}
-            map={atlas.planets[kind] ?? getPlanetTexture(kind)}
-            ringMap={atlas.ring ?? getRingTexture()}
+        {atlas &&
+          peerData.map(({ peer, position, kind }, index) => (
+            <PeerPlanet
+              key={`${peer.address || `peer-${index}`}-${texTick}`}
+              peer={peer}
+              position={position}
+              index={index}
+              onHover={onPeerHover}
+              propagationStart={propagationStart}
+              map={atlas.planets[kind] ?? getPlanetTexture(kind)}
+              ringMap={atlas.ring ?? getRingTexture()}
+            />
+          ))}
+
+        {particles.map((p) => (
+          <TravelingParticle
+            key={p.id}
+            start={p.start}
+            end={p.end}
+            duration={1.4}
+            onComplete={() =>
+              setParticles((prev) => prev.filter((x) => x.id !== p.id))
+            }
           />
         ))}
-
-      {particles.map((p) => (
-        <TravelingParticle
-          key={p.id}
-          start={p.start}
-          end={p.end}
-          duration={1.4}
-          onComplete={() => setParticles((prev) => prev.filter((x) => x.id !== p.id))}
-        />
-      ))}
+      </group>
 
       <OrbitControls
         ref={controlsRef}
@@ -855,8 +975,7 @@ function ConstellationWorld({
         enableRotate
         minDistance={12}
         maxDistance={100}
-        autoRotate={autoOrbit}
-        autoRotateSpeed={0.06}
+        autoRotate={false}
         enableDamping
         dampingFactor={0.07}
         rotateSpeed={0.5}
@@ -881,6 +1000,8 @@ function Scene({
   const [hoveredPeer, setHoveredPeer] = useState<Peer | null>(null);
   const [hoveredPos, setHoveredPos] = useState<THREE.Vector3 | null>(null);
   const [isAutoOrbit, setIsAutoOrbit] = useState(true);
+  /** Galaxy spin multiplier (0.25× – 5×) */
+  const [orbitSpeed, setOrbitSpeed] = useState(1.5);
   const [isPropagating, setIsPropagating] = useState(false);
   const [propagationStart, setPropagationStart] = useState(0);
   const [particles, setParticles] = useState<
@@ -951,18 +1072,31 @@ function Scene({
     });
   };
 
+  const onOrbitSpeedChange = (v: number) => {
+    const clamped = Math.min(5, Math.max(0.25, v));
+    setOrbitSpeed(clamped);
+    controlsApiRef.current?.setOrbitSpeed(clamped);
+  };
+
+  useEffect(() => {
+    controlsApiRef.current?.setOrbitSpeed(orbitSpeed);
+  }, [orbitSpeed]);
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key.toLowerCase() === "f") focusOnMyNode();
       if (e.key.toLowerCase() === "o") toggleAutoOrbit();
+      if (e.key === "[" || e.key === "-") onOrbitSpeedChange(orbitSpeed - 0.25);
+      if (e.key === "]" || e.key === "=" || e.key === "+")
+        onOrbitSpeedChange(orbitSpeed + 0.25);
       if (e.key.toLowerCase() === "b" && onSimulateBlock) triggerBlockPropagation();
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onSimulateBlock, triggerBlockPropagation]);
+  }, [onSimulateBlock, triggerBlockPropagation, orbitSpeed]);
 
   return (
     <>
@@ -989,6 +1123,7 @@ function Scene({
           particles={particles}
           setParticles={setParticles}
           autoOrbit={isAutoOrbit}
+          orbitSpeed={orbitSpeed}
           controlsApiRef={controlsApiRef}
         />
       </Canvas>
@@ -1015,15 +1150,49 @@ function Scene({
       )}
 
       {!hideControls && (
-        <div className="hidden md:flex absolute top-4 right-4 z-20 flex-col gap-2">
-          <button
-            type="button"
-            onClick={toggleAutoOrbit}
-            className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-[#E8C48A]/40 flex items-center gap-2 transition-all active:scale-[0.985]"
-          >
-            <span className={isAutoOrbit ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>◉</span>
-            {isAutoOrbit ? "AUTO ORBIT ON" : "AUTO ORBIT OFF"}
-          </button>
+        <div className="hidden md:flex absolute top-4 right-4 z-20 flex-col gap-2 min-w-[220px]">
+          {/* Auto orbit + galaxy speed */}
+          <div className="glass rounded-xl border border-white/10 px-4 py-3 space-y-2.5">
+            <button
+              type="button"
+              onClick={toggleAutoOrbit}
+              className="w-full flex items-center gap-2 text-xs font-mono tracking-widest transition-all active:scale-[0.985]"
+            >
+              <span className={isAutoOrbit ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>
+                ◉
+              </span>
+              <span className="text-[#E8E8F0]">
+                {isAutoOrbit ? "AUTO ORBIT ON" : "AUTO ORBIT OFF"}
+              </span>
+            </button>
+
+            <div
+              className={`space-y-1.5 transition-opacity ${
+                isAutoOrbit ? "opacity-100" : "opacity-40 pointer-events-none"
+              }`}
+            >
+              <div className="flex items-center justify-between text-[10px] font-mono tracking-wider text-[#A0A0B0]">
+                <span>GALAXY SPEED</span>
+                <span className="text-[#E8C48A]">{orbitSpeed.toFixed(2)}×</span>
+              </div>
+              <input
+                type="range"
+                min={0.25}
+                max={5}
+                step={0.05}
+                value={orbitSpeed}
+                onChange={(e) => onOrbitSpeedChange(parseFloat(e.target.value))}
+                className="w-full h-1.5 appearance-none rounded-full bg-white/10 accent-[#E8C48A] cursor-pointer"
+                aria-label="Galaxy orbit speed"
+              />
+              <div className="flex justify-between text-[9px] font-mono text-[#A0A0B0]/50">
+                <span>0.25×</span>
+                <span>[ ] keys</span>
+                <span>5×</span>
+              </div>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={focusOnMyNode}
