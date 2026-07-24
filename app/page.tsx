@@ -663,13 +663,15 @@ export default function LumenDashboard() {
         <div className="mb-3 md:mb-8 relative">
           {viewMode === 'constellation' ? (
             <>
-              <Constellation3D 
+              <Constellation3D
+                key={`3d-${nodeMode}-${bridgeToken || "lumen"}`}
                 peers={effectivePeers}
                 myNodeHeight={effectiveInfo?.fullHeight || effectiveInfo?.headersHeight || 0}
                 isOnline={isOnline || isDemoMode}
                 lastBlockHeight={lastBlockHeight || (effectiveInfo?.fullHeight || 0)}
                 onPeerHover={setSelectedPeer}
                 hideControls={isAnyModalOpen}
+                centerLabel={nodeMode === "my" ? "My Node" : "Lumen Node"}
                 onSimulateBlock={() => {
                   if ((window as any).__lumenSimulateBlock) {
                     (window as any).__lumenSimulateBlock();

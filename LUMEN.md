@@ -249,6 +249,15 @@ UI switch in **NODE SETTINGS → Data source** (also badge on dashboard: `SOURCE
 
 Dashboard shows **`NODE · <name>`** from live `/info` so you can verify the active source.
 
+**Labels (map pin + 3D sun + settings title):**
+
+| Mode | Label |
+|------|--------|
+| Lumen Node | **Lumen Node** / `LUMEN NODE` |
+| My Node | **My Node** / `MY NODE` |
+
+3D constellation remounts on mode switch (`key=3d-{mode}-{token}`) so peers always match the active source.
+
 ---
 
 ## 6. Important endpoints

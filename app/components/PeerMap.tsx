@@ -73,7 +73,7 @@ function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
   });
 }
 
-/** Bright orange "YOUR NODE" pin — kept outside the cluster group */
+/** Bright orange center-node pin — kept outside the cluster group */
 function meDivIcon(): L.DivIcon {
   const hit = 32;
   return L.divIcon({
@@ -107,7 +107,9 @@ function peerPopupHtml(
     connectionType?: string;
     state?: PeerMapState;
   },
-  isMe = false
+  isMe = false,
+  /** Active data source label for the center pin, e.g. LUMEN NODE / MY NODE */
+  meRoleLabel = "LUMEN NODE"
 ): string {
   const loc =
     [m.city, m.country].filter(Boolean).join(", ") || "Unknown location";
@@ -124,7 +126,9 @@ function peerPopupHtml(
       : state === "reachable"
         ? "ONLINE"
         : "OFFLINE";
-  const title = escapeHtml(m.name || (isMe ? "Ergo node" : "Peer"));
+  const title = escapeHtml(
+    m.name || (isMe ? meRoleLabel : "Peer")
+  );
   const addr = escapeHtml(m.ip) + (m.port ? `:${escapeHtml(m.port)}` : "");
   const roleColor = isMe
     ? "#FF7A3D"
@@ -133,22 +137,21 @@ function peerPopupHtml(
       : state === "reachable"
         ? "#38BDF8"
         : "#F87171";
+  const roleLine = isMe
+    ? escapeHtml(meRoleLabel)
+    : state === "connected"
+      ? "MY PEER"
+      : state === "reachable"
+        ? "ONLINE NODE"
+        : "OFFLINE NODE";
   return `<div class="lumen-peer-popup" style="min-width:180px;max-width:260px;font-size:12px;line-height:1.4;color:#E8E8F0">
-    <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.15em;color:${roleColor};margin-bottom:6px">${
-      isMe
-        ? "YOUR NODE"
-        : state === "connected"
-          ? "MY PEER"
-          : state === "reachable"
-            ? "ONLINE NODE"
-            : "OFFLINE NODE"
-    }</div>
+    <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.15em;color:${roleColor};margin-bottom:6px">${roleLine}</div>
     <div style="font-weight:600;font-size:14px;color:#fff;word-break:break-all">${title}</div>
     <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all;margin-top:6px;color:#E8E8F0">${addr}</div>
     <div style="color:#A0A0B0;margin-top:6px">${escapeHtml(loc)}</div>
     ${
       isMe
-        ? ""
+        ? `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#A0A0B0;margin-top:6px">Active data source</div>`
         : `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#A0A0B0;margin-top:6px">${escapeHtml(
             m.connectionType || "—"
           )} · <span style="color:${statusColor}">${statusLabel}</span></div>`
@@ -250,13 +253,16 @@ function ClusteredPeersLayer({
   return null;
 }
 
-/** Your node — outside cluster, always on top, with permanent label + popup */
+/** Center node pin — outside cluster, always on top, with permanent label + popup */
 function MeMarkerLayer({
   me,
   onSelect,
+  roleLabel = "LUMEN NODE",
 }: {
   me: PeerMapMarker;
   onSelect: (m: PeerMapMarker) => void;
+  /** Permanent map label: LUMEN NODE | MY NODE */
+  roleLabel?: string;
 }) {
   const map = useMap();
 
@@ -266,10 +272,10 @@ function MeMarkerLayer({
       zIndexOffset: 10000,
       riseOnHover: true,
       keyboard: true,
-      title: "YOUR NODE",
+      title: roleLabel,
     });
 
-    marker.bindTooltip("YOUR NODE", {
+    marker.bindTooltip(roleLabel, {
       permanent: true,
       direction: "top",
       offset: [0, -16],
@@ -277,12 +283,15 @@ function MeMarkerLayer({
       className: "lumen-map-tooltip",
     });
 
-    marker.bindPopup(peerPopupHtml({ ...me, state: "connected" }, true), {
-      maxWidth: 300,
-      className: "lumen-map-popup",
-      autoPan: true,
-      closeButton: true,
-    });
+    marker.bindPopup(
+      peerPopupHtml({ ...me, state: "connected" }, true, roleLabel),
+      {
+        maxWidth: 300,
+        className: "lumen-map-popup",
+        autoPan: true,
+        closeButton: true,
+      }
+    );
 
     marker.on("click", () => {
       onSelect(me);
@@ -297,7 +306,7 @@ function MeMarkerLayer({
         /* ignore */
       }
     };
-  }, [map, me, onSelect]);
+  }, [map, me, onSelect, roleLabel]);
 
   return null;
 }
@@ -1312,7 +1321,11 @@ export default function PeerMap({
             />
 
             {data?.me && (
-              <MeMarkerLayer me={data.me} onSelect={handleSelectPeer} />
+              <MeMarkerLayer
+                me={data.me}
+                onSelect={handleSelectPeer}
+                roleLabel={nodeMode === "my" ? "MY NODE" : "LUMEN NODE"}
+              />
             )}
 
             {/* Boom: 3 pulses on peer + flying notice top→peer */}
@@ -1399,8 +1412,14 @@ export default function PeerMap({
             <div className="flex items-start gap-2">
               <span className="mt-1 w-2 h-2 rounded-full bg-[#FF7A3D] shrink-0 shadow-[0_0_6px_rgba(255,122,61,0.7)]" />
               <span>
-                <span className="text-white font-medium">You</span>
-                <span className="text-[#A0A0B0]"> — this node</span>
+                <span className="text-white font-medium">
+                  {nodeMode === "my" ? "My Node" : "Lumen Node"}
+                </span>
+                <span className="text-[#A0A0B0]">
+                  {nodeMode === "my"
+                    ? " — via Bridge"
+                    : " — this Lumen server"}
+                </span>
               </span>
             </div>
             <div className="flex items-start gap-2">
@@ -1492,7 +1511,9 @@ export default function PeerMap({
                 >
                   <MapPin className="w-3 h-3" />{" "}
                   {selected.id === "me"
-                    ? "YOUR NODE"
+                    ? nodeMode === "my"
+                      ? "MY NODE"
+                      : "LUMEN NODE"
                     : selected.state === "connected"
                       ? "MY PEER"
                       : selected.state === "reachable"
@@ -1533,7 +1554,11 @@ export default function PeerMap({
                     </>
                   )}
                   {selected.id === "me" && (
-                    <span className="text-[#FF7A3D]">This is your node</span>
+                    <span className="text-[#FF7A3D]">
+                      {nodeMode === "my"
+                        ? "Active source · via Lumen Bridge"
+                        : "Active source · this Lumen server"}
+                    </span>
                   )}
                 </div>
               </div>
@@ -1552,7 +1577,8 @@ export default function PeerMap({
       {/* Compact color key — detail is in the top-left card */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[40] glass rounded-2xl px-4 py-2 text-[10px] font-mono tracking-wider border border-white/10 hidden md:flex items-center gap-3.5 text-[#A0A0B0]">
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" /> You
+          <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" />{" "}
+          {nodeMode === "my" ? "My Node" : "Lumen Node"}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF]" /> My peer
@@ -1602,7 +1628,10 @@ export default function PeerMap({
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#FF7A3D]" />
             <span>
-              <span className="text-white">You</span> — this node
+              <span className="text-white">
+                {nodeMode === "my" ? "My Node" : "Lumen Node"}
+              </span>
+              {nodeMode === "my" ? " — via Bridge" : " — this Lumen server"}
             </span>
           </div>
           <div className="flex items-center gap-2">

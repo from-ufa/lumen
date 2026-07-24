@@ -266,7 +266,9 @@ function buildResponse(opts: {
         id: "me",
         ip: meIp,
         port: "9030",
-        name: `${meName} (YOU)`,
+        // Role (Lumen Node / My Node) is applied on the client pin label;
+        // name stays the Ergo /info name for the popup body.
+        name: meName,
         address: `/${meIp}:9030`,
         connectionType: "Local",
         lastMessage: Date.now(),
@@ -387,7 +389,7 @@ export async function GET(req: NextRequest) {
           id: "me",
           ip: "bridge",
           port: null,
-          name: `${meName} (YOU)`,
+          name: meName,
           address: "via Lumen Bridge",
           connectionType: "Bridge",
           lastMessage: Date.now(),

@@ -459,7 +459,7 @@ export default function ConnectionSettings({
                     CONNECTION
                   </div>
                   <div className="text-2xl sm:text-3xl font-semibold tracking-tighter mt-1">
-                    Ergo Node
+                    {nodeMode === "my" ? "My Node" : "Lumen Node"}
                   </div>
                   <div
                     className={`mt-2 text-[10px] font-mono tracking-widest ${

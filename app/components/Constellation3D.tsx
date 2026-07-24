@@ -33,6 +33,8 @@ interface ConstellationProps {
   lastBlockHeight: number;
   onSimulateBlock?: () => void;
   hideControls?: boolean;
+  /** Center sun label: "Lumen Node" | "My Node" */
+  centerLabel?: string;
 }
 
 type PeerHoverFn = (peer: Peer | null, pos?: THREE.Vector3) => void;
@@ -283,10 +285,12 @@ const coronaFragment = /* glsl */ `
 function Sun({
   height,
   map,
+  centerLabel = "Lumen Node",
 }: {
   isOnline: boolean;
   height: number;
   map: THREE.Texture;
+  centerLabel?: string;
 }) {
   const groupRef = useRef<THREE.Group>(null!);
   const bodyRef = useRef<THREE.Mesh>(null!);
@@ -400,7 +404,7 @@ function Sun({
       <Html position={[0, -3.15, 0]} style={{ pointerEvents: "none" }} center>
         <div className="text-center select-none">
           <div className="text-[#E8C48A]/90 text-[10px] font-mono tracking-[0.28em] uppercase">
-            Your Node
+            {centerLabel}
           </div>
           <div className="text-[#E8E8F0]/45 text-[10px] font-mono mt-0.5 tracking-wider">
             {height > 0 ? height.toLocaleString() : "—"}
@@ -809,6 +813,7 @@ function ConstellationWorld({
   autoOrbit,
   orbitSpeed,
   controlsApiRef,
+  centerLabel = "Lumen Node",
 }: {
   peers: Peer[];
   myNodeHeight: number;
@@ -824,6 +829,7 @@ function ConstellationWorld({
   /** Multiplier 0.1–5 for galaxy spin */
   orbitSpeed: number;
   controlsApiRef: React.MutableRefObject<ControlsApi | null>;
+  centerLabel?: string;
 }) {
   const controlsRef = useRef<any>(null);
   const galaxyRef = useRef<THREE.Group>(null!);
@@ -925,7 +931,12 @@ function ConstellationWorld({
 
       {/* Sun fixed at center — does not spin with galaxy */}
       {atlas && (
-        <Sun isOnline={isOnline} height={myNodeHeight} map={atlas.sun} />
+        <Sun
+          isOnline={isOnline}
+          height={myNodeHeight}
+          map={atlas.sun}
+          centerLabel={centerLabel}
+        />
       )}
       <BoomWave active={isPropagating} startMs={propagationStart} />
 
@@ -1000,6 +1011,7 @@ function Scene({
   lastBlockHeight,
   onSimulateBlock,
   hideControls = false,
+  centerLabel = "Lumen Node",
 }: ConstellationProps) {
   const controlsApiRef = useRef<ControlsApi | null>(null);
   const ambienceRef = useRef<AmbienceController | null>(null);
@@ -1177,6 +1189,7 @@ function Scene({
           autoOrbit={isAutoOrbit}
           orbitSpeed={orbitSpeed}
           controlsApiRef={controlsApiRef}
+          centerLabel={centerLabel}
         />
       </Canvas>
 
@@ -1379,8 +1392,8 @@ function Scene({
       <div className="hidden md:block absolute bottom-4 left-4 z-20 glass rounded-2xl px-4 py-3 text-[10px] font-mono tracking-widest border border-white/10">
         <div className="flex items-center gap-4 text-[#A0A0B0]">
           <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" /> YOUR NODE
-            (SUN)
+            <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" />{" "}
+            {(centerLabel || "Lumen Node").toUpperCase()} (SUN)
           </div>
           <div className="flex items-center gap-1.5">
             <span className="inline-block w-2 h-2 rounded-full bg-[#8a9bb0]" /> PEER WORLDS
@@ -1395,16 +1408,18 @@ function Scene({
 }
 
 export default function Constellation3D(props: ConstellationProps) {
+  const label = props.centerLabel || "Lumen Node";
   return (
     <div className="w-full">
       <div className="canvas-container lumen-viz relative w-full bg-[#010104] overflow-hidden">
         <div className="absolute inset-0 w-full h-full">
-          <Scene {...props} />
+          <Scene {...props} centerLabel={label} />
         </div>
       </div>
       <div className="md:hidden mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[10px] font-mono tracking-wider text-[#A0A0B0]">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" /> YOU
+          <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" />{" "}
+          {label.toUpperCase()}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full bg-[#8a9bb0]" /> PEERS

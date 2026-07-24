@@ -28,6 +28,16 @@ export function isNodeMode(v: unknown): v is NodeMode {
   return v === "lumen" || v === "my";
 }
 
+/** Human-readable active center node (map pin, 3D sun, settings). */
+export function centerNodeLabel(mode: NodeMode): string {
+  return mode === "my" ? "My Node" : "Lumen Node";
+}
+
+/** Uppercase mono label for map tooltips / legends. */
+export function centerNodeLabelUpper(mode: NodeMode): string {
+  return mode === "my" ? "MY NODE" : "LUMEN NODE";
+}
+
 /**
  * Dashboard HTTP origin for install.sh downloads.
  * On localhost/SSH tunnel → public IP so the user's node machine can curl it.
