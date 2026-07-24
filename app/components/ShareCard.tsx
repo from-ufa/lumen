@@ -92,7 +92,7 @@ export default function ShareCard({
     ``,
     `Watch it live: ${origin}`,
     ``,
-    `#Ergo #Aether`,
+    `#Ergo #Lumen`,
   ].join("\n");
 
   const copyLink = async () => {
@@ -138,7 +138,7 @@ export default function ShareCard({
       });
       const a = document.createElement("a");
       const safeName = nodeName.replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 40);
-      a.download = `aether-${safeName || "node"}-card.png`;
+      a.download = `lumen-${safeName || "node"}-card.png`;
       a.href = dataUrl;
       a.click();
       toast.success("Card downloaded", {
@@ -292,10 +292,10 @@ export default function ShareCard({
                       </div>
                       <div className="min-w-0">
                         <div className="font-semibold text-2xl tracking-tight text-white leading-none">
-                          Aether
+                          Lumen
                         </div>
                         <div className="text-[10px] sm:text-[11px] text-[#A0A0B0] mt-1.5 leading-snug">
-                          The living pulse of your Ergo node
+                          Ergo Node Dashboard · The living pulse of your Ergo node
                         </div>
                       </div>
                     </div>
@@ -356,7 +356,7 @@ export default function ShareCard({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="text-[10px] font-mono tracking-[0.2em] text-[#A0A0B0]/85 mb-1">
-                        POWERED BY AETHER
+                        POWERED BY LUMEN
                       </div>
                       <div className="text-[11px] text-[#A0A0B0]/70 leading-snug max-w-[200px]">
                         Scan QR or open the link to watch this node live.
@@ -385,7 +385,7 @@ export default function ShareCard({
                         bgColor="#FFFFFF"
                         fgColor="#0A0A0F"
                         marginSize={0}
-                        title="Aether public URL QR"
+                        title="Lumen public URL QR"
                       />
                     </div>
                   </div>
