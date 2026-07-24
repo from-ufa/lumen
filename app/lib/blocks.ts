@@ -22,17 +22,43 @@ export function countTxsFromNodePayload(payload: unknown): number {
   return 0;
 }
 
+/** Pull bridge token from request headers (if any) so we can also put it on the URL. */
+function tokenFromHeaders(headers?: HeadersInit): string {
+  if (!headers) return "";
+  try {
+    const h = new Headers(headers as HeadersInit);
+    return (
+      h.get("X-Lumen-Bridge-Token") ||
+      h.get("x-lumen-bridge-token") ||
+      h.get("X-Bridge-Token") ||
+      ""
+    ).trim();
+  } catch {
+    return "";
+  }
+}
+
+function urlWithBridgeToken(base: string, path: string, token: string): string {
+  let url = `${base.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
+  if (token) {
+    url += `${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  }
+  return url;
+}
+
 export async function fetchBlockDetails(
   nodeUrl: string,
   height: number,
   headers?: HeadersInit
 ): Promise<RecentBlock | null> {
   const base = nodeUrl.replace(/\/$/, "");
+  const token = tokenFromHeaders(headers);
+  const reqHeaders = headers ?? { Accept: "application/json" };
   const req = (path: string) =>
-    fetch(`${base}${path}`, {
+    fetch(urlWithBridgeToken(base, path, token), {
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
-      headers: headers ?? { Accept: "application/json" },
+      headers: reqHeaders,
     });
   try {
     const atRes = await req(`/blocks/at/${height}`);
@@ -121,12 +147,16 @@ export async function fetchAvgBlockTime(
 ): Promise<AvgBlockTimeResult | null> {
   const base = nodeUrl.replace(/\/$/, "");
   const n = Math.max(2, Math.min(200, Math.floor(window)));
+  const token = tokenFromHeaders(reqHeaders);
   try {
-    const res = await fetch(`${base}/blocks/lastHeaders/${n}`, {
-      signal: AbortSignal.timeout(12000),
-      cache: "no-store",
-      headers: reqHeaders ?? { Accept: "application/json" },
-    });
+    const res = await fetch(
+      urlWithBridgeToken(base, `/blocks/lastHeaders/${n}`, token),
+      {
+        signal: AbortSignal.timeout(12000),
+        cache: "no-store",
+        headers: reqHeaders ?? { Accept: "application/json" },
+      }
+    );
     if (!res.ok) return null;
     const headers: Array<{ height?: number; timestamp?: number }> =
       await res.json();

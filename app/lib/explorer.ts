@@ -24,7 +24,23 @@ export async function openBlockOnSigmaSpace(
   let id = knownId;
   if (!id) {
     const base = nodeUrl.replace(/\/$/, "");
-    const res = await fetch(`${base}/blocks/at/${height}`, {
+    let token = "";
+    try {
+      if (headers) {
+        const h = new Headers(headers as HeadersInit);
+        token =
+          h.get("X-Lumen-Bridge-Token") ||
+          h.get("x-lumen-bridge-token") ||
+          "";
+      }
+    } catch {
+      /* ignore */
+    }
+    let url = `${base}/blocks/at/${height}`;
+    if (token) {
+      url += `?token=${encodeURIComponent(token)}`;
+    }
+    const res = await fetch(url, {
       signal: AbortSignal.timeout(8000),
       headers: headers ?? { Accept: "application/json" },
     });

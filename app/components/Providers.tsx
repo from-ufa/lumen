@@ -9,7 +9,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 5_000,
+            // Short stale window so mode switches (Lumen ↔ My Node) never linger
+            staleTime: 1_000,
+            gcTime: 30_000,
             refetchInterval: 8_000,
             retry: 1,
             refetchOnWindowFocus: false,

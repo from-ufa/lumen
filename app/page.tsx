@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { 
   Play, Pause, RefreshCw, Zap,
@@ -29,6 +29,7 @@ import {
   LS_NODE_URL,
   LS_NODE_URL_LEGACY,
   fetchBridgeStatus,
+  fetchNodeResource,
   loadBridgeToken,
   loadNodeMode,
   nodeRequestHeaders,
@@ -55,6 +56,7 @@ const PeerMap = dynamic(() => import('./components/PeerMap'), {
 const DEFAULT_NODE_URL = DEFAULT_LUMEN_NODE_URL;
 
 export default function LumenDashboard() {
+  const queryClient = useQueryClient();
   const [nodeUrl, setNodeUrl] = useState(DEFAULT_NODE_URL);
   const [nodeMode, setNodeModeState] = useState<NodeMode>("lumen");
   const [bridgeToken, setBridgeTokenState] = useState("");
@@ -74,7 +76,12 @@ export default function LumenDashboard() {
   const setNodeMode = useCallback((mode: NodeMode) => {
     setNodeModeState(mode);
     saveNodeMode(mode);
-  }, []);
+    // Drop all node-sourced caches so My Node never shows Lumen leftovers
+    void queryClient.removeQueries({ queryKey: ["nodeInfo"] });
+    void queryClient.removeQueries({ queryKey: ["peers"] });
+    void queryClient.removeQueries({ queryKey: ["mempool"] });
+    void queryClient.removeQueries({ queryKey: ["peer-map"] });
+  }, [queryClient]);
 
   const setBridgeToken = useCallback((token: string) => {
     setBridgeTokenState(token);
@@ -94,6 +101,18 @@ export default function LumenDashboard() {
   // My Node mode needs a token to query the bridge proxy
   const canFetchNode =
     !isDemoMode && (nodeMode === "lumen" || !!bridgeToken);
+
+  // When data source changes, wipe in-memory timeline + query cache again
+  useEffect(() => {
+    setRecentBlocks([]);
+    setLastBlockHeight(0);
+    setAvgBlockTime(null);
+    setAvgBlockSamples(0);
+    void queryClient.invalidateQueries({ queryKey: ["nodeInfo"] });
+    void queryClient.invalidateQueries({ queryKey: ["peers"] });
+    void queryClient.invalidateQueries({ queryKey: ["mempool"] });
+    void queryClient.invalidateQueries({ queryKey: ["peer-map"] });
+  }, [nodeMode, bridgeToken, effectiveNodeUrl, queryClient]);
 
   // Load saved URL / mode / token from localStorage
   useEffect(() => {
@@ -143,60 +162,74 @@ export default function LumenDashboard() {
     if (bridgeToken) void refetchBridgeStatus();
   }, [bridgeToken, refetchBridgeStatus]);
 
-  // === REAL NODE DATA ===
-  const { data: nodeInfo, isLoading: infoLoading, refetch: refetchInfo, isError: infoError } = useQuery({
+  // === REAL NODE DATA (Lumen: /api/node · My Node: /api/bridge/node + token) ===
+  const { data: nodeInfo, isLoading: infoLoading, refetch: refetchInfo, isError: infoError, isFetching: infoFetching } = useQuery({
     queryKey: ['nodeInfo', nodeMode, effectiveNodeUrl, bridgeToken],
     queryFn: async (): Promise<NodeInfo> => {
       if (isDemoMode) throw new Error('demo');
       if (nodeMode === "my" && !bridgeToken) throw new Error("no_bridge_token");
-      const res = await fetch(`${effectiveNodeUrl}/info`, { 
-        signal: AbortSignal.timeout(nodeMode === "my" ? 14000 : 6500),
-        headers: apiHeaders,
-        cache: "no-store",
+      const res = await fetchNodeResource(nodeMode, bridgeToken, "info", {
+        base: effectiveNodeUrl,
+        timeoutMs: nodeMode === "my" ? 14000 : 6500,
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || body.message || "Node unreachable");
       }
-      return res.json();
+      // Guard: response must look like Ergo /info (not a bridge error JSON)
+      const data = await res.json();
+      if (!data || typeof data !== "object" || (data.fullHeight == null && data.headersHeight == null)) {
+        throw new Error(data?.error || "invalid_node_info");
+      }
+      return data as NodeInfo;
     },
     enabled: canFetchNode,
     refetchInterval: 7500,
     retry: nodeMode === "my" ? 1 : 2,
+    // Never show the other mode's cached row while loading
+    placeholderData: undefined,
+    structuralSharing: false,
   });
 
   const { data: peers = [], refetch: refetchPeers } = useQuery({
     queryKey: ['peers', nodeMode, effectiveNodeUrl, bridgeToken],
     queryFn: async (): Promise<Peer[]> => {
       if (isDemoMode) return generateDemoPeers();
-      // Ergo has no bare /peers — use connected peers list
-      const res = await fetch(`${effectiveNodeUrl}/peers/connected`, {
-        signal: AbortSignal.timeout(nodeMode === "my" ? 14000 : 6500),
-        headers: apiHeaders,
-        cache: "no-store",
-      });
+      const res = await fetchNodeResource(
+        nodeMode,
+        bridgeToken,
+        "peers/connected",
+        { base: effectiveNodeUrl, timeoutMs: nodeMode === "my" ? 14000 : 6500 }
+      );
       if (!res.ok) return [];
-      return res.json();
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     },
     enabled: canFetchNode,
     refetchInterval: 14000,
+    placeholderData: undefined,
+    structuralSharing: false,
   });
 
   const { data: mempoolData, refetch: refetchMempool } = useQuery({
     queryKey: ['mempool', nodeMode, effectiveNodeUrl, bridgeToken],
     queryFn: async () => {
       if (isDemoMode) return { size: 47, txs: generateDemoTxs(47) };
-      const res = await fetch(`${effectiveNodeUrl}/transactions/unconfirmed`, {
-        signal: AbortSignal.timeout(nodeMode === "my" ? 14000 : 6500),
-        headers: apiHeaders,
-        cache: "no-store",
-      });
+      const res = await fetchNodeResource(
+        nodeMode,
+        bridgeToken,
+        "transactions/unconfirmed",
+        { base: effectiveNodeUrl, timeoutMs: nodeMode === "my" ? 14000 : 6500 }
+      );
       if (!res.ok) return { size: 0, txs: [] };
       const txs: any[] = await res.json();
+      if (!Array.isArray(txs)) return { size: 0, txs: [] };
       return { size: txs.length, txs: txs.slice(0, 24).map(t => ({ id: t.id })) };
     },
     enabled: canFetchNode,
     refetchInterval: 8500,
+    placeholderData: undefined,
+    structuralSharing: false,
   });
 
   const bridgeOnline = !!bridgeStatus?.connected;
@@ -266,27 +299,26 @@ export default function LumenDashboard() {
   //   GET /blocks/{id}/transactions → { transactions: [...] }
   //   txCount = transactions.length  (NOT random!)
   //
-  // Reset block timeline when switching data source
-  useEffect(() => {
-    setRecentBlocks([]);
-    setLastBlockHeight(0);
-    setAvgBlockTime(null);
-    setAvgBlockSamples(0);
-  }, [nodeMode, effectiveNodeUrl, bridgeToken]);
-
   useEffect(() => {
     if (!currentHeight || isDemoMode || !canFetchNode) return;
 
     let cancelled = false;
+    // Blocks helpers take a base URL; for My Node put token in each path via headers
+    // and also use a base that works with header+query through fetchBlockDetails.
+    const blockBase =
+      nodeMode === "my" && bridgeToken
+        ? effectiveNodeUrl
+        : effectiveNodeUrl;
+    const blockHeaders = apiHeaders;
 
     const loadInitial = async () => {
       // First connect or reconnect: pull last 9 blocks with real counts
       if (lastBlockHeight === 0 || recentBlocks.length === 0) {
         const blocks = await fetchRecentBlocks(
-          effectiveNodeUrl,
+          blockBase,
           currentHeight,
           9,
-          apiHeaders
+          blockHeaders
         );
         if (cancelled) return;
         if (blocks.length) {
@@ -297,9 +329,9 @@ export default function LumenDashboard() {
         }
         // Real avg from last N headers (one node request)
         const avg = await fetchAvgBlockTime(
-          effectiveNodeUrl,
+          blockBase,
           AVG_BLOCK_WINDOW,
-          apiHeaders
+          blockHeaders
         );
         if (!cancelled && avg) {
           setAvgBlockTime(avg.avgSeconds);
@@ -315,7 +347,7 @@ export default function LumenDashboard() {
 
         // Fill any skipped heights (rare) with real data
         for (let h = prev + 1; h <= currentHeight; h++) {
-          const block = await fetchBlockDetails(effectiveNodeUrl, h, apiHeaders);
+          const block = await fetchBlockDetails(blockBase, h, blockHeaders);
           if (cancelled) return;
           if (!block) continue;
           setRecentBlocks((list) => {
@@ -327,9 +359,9 @@ export default function LumenDashboard() {
 
         // Refresh avg block time on every new tip
         const avg = await fetchAvgBlockTime(
-          effectiveNodeUrl,
+          blockBase,
           AVG_BLOCK_WINDOW,
-          apiHeaders
+          blockHeaders
         );
         if (!cancelled && avg) {
           setAvgBlockTime(avg.avgSeconds);
@@ -347,6 +379,10 @@ export default function LumenDashboard() {
 
   // === MANUAL RECONNECT ===
   const handleReconnect = () => {
+    void queryClient.removeQueries({ queryKey: ["nodeInfo"] });
+    void queryClient.removeQueries({ queryKey: ["peers"] });
+    void queryClient.removeQueries({ queryKey: ["mempool"] });
+    void queryClient.removeQueries({ queryKey: ["peer-map"] });
     refetchInfo();
     refetchPeers();
     refetchMempool();
@@ -541,6 +577,30 @@ export default function LumenDashboard() {
             <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1">
               Your node. Your peers. Real-time beauty.
             </p>
+            {!isDemoMode && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
+                <span
+                  className={`px-2.5 py-1 rounded-full border ${
+                    nodeMode === "my"
+                      ? "border-[#00E5FF]/35 text-[#00E5FF] bg-[#00E5FF]/10"
+                      : "border-white/15 text-[#A0A0B0] bg-white/5"
+                  }`}
+                >
+                  {nodeMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · LUMEN"}
+                </span>
+                {effectiveInfo?.name && (
+                  <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
+                    NODE · {effectiveInfo.name}
+                    {infoFetching ? " …" : ""}
+                  </span>
+                )}
+                {nodeMode === "my" && (
+                  <span className="text-[10px] text-[#A0A0B0]/70 tracking-widest">
+                    via /api/bridge/node
+                  </span>
+                )}
+              </div>
+            )}
             {nodeMode === "my" && !isDemoMode && !isOnline && (
               <p className="mt-3 text-[11px] sm:text-sm font-mono tracking-wide text-[#F59E0B] max-w-xl">
                 {bridgeToken
@@ -636,6 +696,8 @@ export default function LumenDashboard() {
                 0
               }
               hideControls={isAnyModalOpen}
+              nodeMode={nodeMode}
+              bridgeToken={bridgeToken}
             />
           )}
         </div>

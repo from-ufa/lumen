@@ -408,6 +408,9 @@ type PeerMapProps = {
   blockHeight?: number;
   /** Hide floating Boom/Refresh while a parent modal is open */
   hideControls?: boolean;
+  /** When "my", map peers come from Bridge (user node) */
+  nodeMode?: "lumen" | "my";
+  bridgeToken?: string;
 };
 
 function peerLastMs(lm?: number) {
@@ -1091,16 +1094,27 @@ function pickBoomSource(
 export default function PeerMap({
   blockHeight = 0,
   hideControls = false,
+  nodeMode = "lumen",
+  bridgeToken = "",
 }: PeerMapProps) {
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ["peer-map"],
+    queryKey: ["peer-map", nodeMode, bridgeToken || ""],
     queryFn: async (): Promise<MapPayload> => {
-      const res = await fetch("/api/peers/map", {
-        signal: AbortSignal.timeout(12000),
+      const headers: Record<string, string> = { Accept: "application/json" };
+      let url = "/api/peers/map";
+      if (nodeMode === "my" && bridgeToken) {
+        headers["X-Lumen-Bridge-Token"] = bridgeToken;
+        url = `/api/peers/map?token=${encodeURIComponent(bridgeToken)}`;
+      }
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(nodeMode === "my" ? 16000 : 12000),
+        headers,
+        cache: "no-store",
       });
       if (!res.ok) throw new Error("map api failed");
       return res.json();
     },
+    enabled: nodeMode === "lumen" || !!bridgeToken,
     refetchInterval: 12000,
   });
 

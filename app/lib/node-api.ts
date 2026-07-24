@@ -150,6 +150,53 @@ export function joinNodePath(base: string, path: string): string {
   return `${b}/${p}`;
 }
 
+/**
+ * Full browser URL for a node REST path.
+ * In My Node mode always attaches token as query param (in addition to header)
+ * so proxies/extensions can't drop the custom header and fall back to wrong data.
+ */
+export function nodeResourceUrl(
+  base: string,
+  path: string,
+  mode: NodeMode,
+  bridgeToken?: string | null
+): string {
+  let url = joinNodePath(base, path);
+  if (mode === "my" && bridgeToken) {
+    const sep = url.includes("?") ? "&" : "?";
+    url = `${url}${sep}token=${encodeURIComponent(bridgeToken)}`;
+  }
+  return url;
+}
+
+/** Browser fetch to Ergo REST via /api/node or /api/bridge/node. */
+export async function fetchNodeResource(
+  mode: NodeMode,
+  bridgeToken: string | null | undefined,
+  path: string,
+  init?: RequestInit & { timeoutMs?: number; base?: string }
+): Promise<Response> {
+  const base = init?.base || resolveNodeBase(mode);
+  const timeoutMs = init?.timeoutMs ?? (mode === "my" ? 14_000 : 6_500);
+  const { timeoutMs: _t, base: _b, headers: extraHeaders, ...rest } = init || {};
+  const url = nodeResourceUrl(base, path, mode, bridgeToken);
+  const headers: Record<string, string> = {
+    ...(nodeRequestHeaders(mode, bridgeToken) as Record<string, string>),
+  };
+  if (extraHeaders) {
+    const h = new Headers(extraHeaders);
+    h.forEach((v, k) => {
+      headers[k] = v;
+    });
+  }
+  return fetch(url, {
+    ...rest,
+    headers,
+    cache: "no-store",
+    signal: rest.signal ?? AbortSignal.timeout(timeoutMs),
+  });
+}
+
 /** Suggested WS URL for the Bridge agent on the user's machine. */
 export function bridgeWsUrlForClient(): string {
   if (typeof window === "undefined") return DEFAULT_BRIDGE_WS_PUBLIC;
