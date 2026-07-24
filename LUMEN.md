@@ -35,17 +35,24 @@ Snapshot: **2026-07-24**. Read this first, then code.
 
 | | |
 |--|--|
-| Config | `/etc/caddy/Caddyfile` |
+| Config | `/etc/caddy/Caddyfile` (repo copy: `deploy/Caddyfile`) |
 | Unit | `caddy.service` (enabled) |
 | Logs | `/var/log/caddy/ergolumen.log` |
 | Certs | automatic Let’s Encrypt for `ergolumen.net` + `www` |
-| Notes | `nginx` on :80 was **stopped/disabled** (config backup `/root/nginx-backup-ergolumen/`). Legacy `/devnet/` proxy kept in Caddy. |
+| Protocols | **h1 + h2 only** (HTTP/3 disabled — QUIC/UDP:443 can cause browser timeouts) |
+| Firewall | **ufw active**: allow `22`, `80/tcp`, `443/tcp` (+ legacy node ports) |
+| Notes | `nginx` on :80 **stopped/disabled** (backup `/root/nginx-backup-ergolumen/`). Legacy `/devnet/` kept in Caddy. |
 
 ```bash
 systemctl status caddy
 caddy validate --config /etc/caddy/Caddyfile
-systemctl reload caddy
+# After editing repo copy:
+#   cp /home/aether/deploy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
+ufw status
+curl -I https://ergolumen.net/
 ```
+
+**Access note:** Public Mode is on — remote browsers get **Basic Auth** (not a connection error). Local SSH tunnel `localhost:3000` skips password.
 
 ---
 
