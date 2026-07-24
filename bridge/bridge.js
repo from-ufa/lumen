@@ -239,6 +239,56 @@ function nodeGet(nodeBase, pathWithQuery, timeoutMs = NODE_TIMEOUT_MS) {
 }
 
 // ---------------------------------------------------------------------------
+// Public IP (for map "My Node" pin on Lumen)
+// ---------------------------------------------------------------------------
+
+/**
+ * Best-effort public IPv4 for the machine running the agent.
+ * Used so the dashboard can place My Node at a real GeoIP location.
+ * Failures are non-fatal — hub may still use TCP remoteAddress.
+ */
+function detectPublicIp(timeoutMs = 4000) {
+  return new Promise((resolve) => {
+    const envIp =
+      process.env.LUMEN_PUBLIC_IP ||
+      process.env.LUMEN_BRIDGE_PUBLIC_IP ||
+      "";
+    if (envIp && /^\d{1,3}(?:\.\d{1,3}){3}$/.test(envIp.trim())) {
+      resolve(envIp.trim());
+      return;
+    }
+
+    const url = new URL("https://api.ipify.org?format=json");
+    const req = https.get(
+      {
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        timeout: timeoutMs,
+        headers: { Accept: "application/json", "User-Agent": `lumen-bridge/${BRIDGE_VERSION}` },
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          try {
+            const j = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+            const ip = j && typeof j.ip === "string" ? j.ip.trim() : "";
+            resolve(/^\d{1,3}(?:\.\d{1,3}){3}$/.test(ip) ? ip : null);
+          } catch {
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on("error", () => resolve(null));
+    req.on("timeout", () => {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Bridge client
 // ---------------------------------------------------------------------------
 
@@ -247,6 +297,7 @@ class LumenBridge {
     this.token = token;
     this.node = node.replace(/\/$/, "");
     this.server = server;
+    this.publicIp = null;
     this.ws = null;
     this.closed = false;
     this.reconnectAttempt = 0;
@@ -255,12 +306,15 @@ class LumenBridge {
     this.pending = new Map(); // reserved for future request tracking
   }
 
-  start() {
+  async start() {
     this.closed = false;
     log("info", `Lumen Bridge v${BRIDGE_VERSION}`);
     log("info", `Node:   ${this.node}`);
     log("info", `Server: ${this.server}`);
     log("info", `Token:  ${maskToken(this.token)}`);
+    this.publicIp = await detectPublicIp();
+    if (this.publicIp) log("info", `Public IP: ${this.publicIp} (for map pin)`);
+    else log("info", "Public IP: unknown — hub may use TCP remote address");
     this.connect();
   }
 
@@ -310,7 +364,7 @@ class LumenBridge {
     ws.on("open", () => {
       this.reconnectAttempt = 0;
       log("info", "Connected. Sending hello…");
-      this.send({
+      const hello = {
         type: "hello",
         token: this.token,
         version: BRIDGE_VERSION,
@@ -324,7 +378,9 @@ class LumenBridge {
             "/blocks/*",
           ],
         },
-      });
+      };
+      if (this.publicIp) hello.publicIp = this.publicIp;
+      this.send(hello);
       this.startPing();
     });
 

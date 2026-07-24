@@ -238,12 +238,16 @@ UI switch in **NODE SETTINGS → Data source** (also badge on dashboard: `SOURCE
 **What switches with My Node:**
 
 - `/info`, peers, mempool, blocks, avg block time
-- World map: `/api/peers/map?token=…` builds markers from **user** connected peers + catalog geo; pin name from user `/info.name`
+- **World map (user-owned):**
+  - Markers = **only** `GET /peers/connected` via Bridge (no Lumen catalog)
+  - GeoIP for those peers on Lumen server (`geoip-lite`)
+  - **Top Regions** = countries of those peers only
+  - **My Node pin** = real GeoIP of agent public IP  
+    (`hello.publicIp` from agent, else TCP `remoteAddress` of WS session)
+  - Lines = My Node pin → user connected peers
+  - Response `source: "bridge"`, `networkTotal` = live connected count (not catalog)
 
-**What does not (or only partially):**
-
-- Full network catalog crawler still runs against **this** host’s view of the network (enrichment only)
-- Share card uses currently loaded `nodeInfo` (so My Node name/height when mode is My)
+**Lumen Node map** still uses local Ergo + `network-catalog.json` crawler (full network picture for this server).
 
 **On mode switch:** React Query keys for `nodeInfo` / `peers` / `mempool` / `peer-map` are **removed/invalidated** so Lumen data is not shown as My Node.
 
@@ -384,7 +388,8 @@ ls -la /home/aether/data/network-catalog.json
 |------|------------|
 | Bridge tokens | In-memory only; hub restart invalidates tokens until re-create |
 | Bridge allowlist | GET-only subset of Ergo REST (no wallet/mining/POST) |
-| Map (My Node) | Connected peers of user node + shared catalog geo; not a full re-crawl of user’s network |
+| Map (My Node) | Only Bridge connected peers + server GeoIP; My Node pin needs public IPv4 (agent ipify or WS remote). Private/CGNAT → pin may be missing |
+| Map (My Node) public IP | Agent calls `api.ipify.org` once at start; override with `LUMEN_PUBLIC_IP` |
 | Peers without public IP | Unmapped on world map (NAT / empty address) |
 | Public Mode | Single shared password file; not multi-user accounts |
 | PWA | No service worker / offline cache |

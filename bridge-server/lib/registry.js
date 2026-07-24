@@ -85,6 +85,8 @@ class BridgeRegistry {
       version: meta.version,
       node: meta.node,
       remoteAddress: meta.remoteAddress,
+      /** Optional public IPv4 reported by the agent (hello.publicIp) */
+      publicIp: meta.publicIp || null,
       pending: new Map(),
     };
     this.connections.set(token, session);
@@ -141,6 +143,7 @@ class BridgeRegistry {
       version: open ? conn.version : null,
       node: open ? conn.node : null,
       remoteAddress: open ? conn.remoteAddress : null,
+      publicIp: open ? conn.publicIp || null : null,
       pendingRequests: open ? conn.pending.size : 0,
     };
   }

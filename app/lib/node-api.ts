@@ -236,6 +236,8 @@ export type BridgeStatus = {
   version: string | null;
   node: string | null;
   remoteAddress: string | null;
+  /** Agent-reported public IPv4 (hello.publicIp), if any */
+  publicIp?: string | null;
   pendingRequests: number;
   error?: string;
   message?: string;
@@ -299,6 +301,7 @@ export async function fetchBridgeStatus(
     version: data.version ?? null,
     node: data.node ?? null,
     remoteAddress: data.remoteAddress ?? null,
+    publicIp: data.publicIp ?? null,
     pendingRequests: data.pendingRequests ?? 0,
     error: data.error,
     message: data.message,

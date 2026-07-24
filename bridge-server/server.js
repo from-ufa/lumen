@@ -399,13 +399,21 @@ wss.on("connection", (ws, req) => {
       token = t;
       sessionToken = t;
       authed = true;
+      const publicIp =
+        typeof msg.publicIp === "string" && msg.publicIp.trim()
+          ? msg.publicIp.trim()
+          : null;
       registry.registerConnection(t, ws, {
         version: msg.version,
         node: msg.node,
         remoteAddress: remote,
+        publicIp,
       });
 
-      log("info", `Bridge online token=${t.slice(0, 12)}… version=${msg.version || "?"} node=${msg.node || "?"}`);
+      log(
+        "info",
+        `Bridge online token=${t.slice(0, 12)}… version=${msg.version || "?"} node=${msg.node || "?"} remote=${remote} publicIp=${publicIp || "—"}`
+      );
       ws.send(
         JSON.stringify({
           type: "hello_ack",

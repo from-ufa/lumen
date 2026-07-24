@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  catalogAgeMs,
   extractIpPort,
+  isPrivateIp,
   jitter,
   loadCatalog,
   lookupGeo,
@@ -20,7 +20,7 @@ const UPSTREAM = (process.env.ERGO_NODE_URL || "http://127.0.0.1:9053").replace(
   ""
 );
 
-/** Catalog older than this → try inline local harvest before serving */
+/** Catalog older than this → try inline local harvest before serving (Lumen mode only) */
 const STALE_MS = 45 * 60 * 1000;
 
 export type PeerMapMarker = {
@@ -70,6 +70,22 @@ function extractToken(req: NextRequest): string | null {
   return q ? q.trim() : null;
 }
 
+/** Normalize IPv4 from WS remoteAddress or agent-reported publicIp. */
+export function normalizePublicIpv4(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  let s = String(raw).trim();
+  // X-Forwarded-For first hop
+  if (s.includes(",")) s = s.split(",")[0].trim();
+  if (s.startsWith("::ffff:")) s = s.slice(7);
+  // Strip brackets / ports
+  s = s.replace(/^\[|\]$/g, "");
+  const m = s.match(/(\d{1,3}(?:\.\d{1,3}){3})/);
+  if (!m) return null;
+  const ip = m[1];
+  if (isPrivateIp(ip)) return null;
+  return ip;
+}
+
 async function fetchLocalPeers(path: string): Promise<any[]> {
   const res = await fetch(`${UPSTREAM}${path}`, {
     signal: AbortSignal.timeout(10000),
@@ -99,7 +115,33 @@ async function fetchViaBridge(token: string, ergoPath: string): Promise<any> {
   return upstream.json();
 }
 
-/** Build catalog from live local peers when crawler file missing/stale. */
+async function fetchBridgeStatus(token: string): Promise<{
+  connected?: boolean;
+  remoteAddress?: string | null;
+  publicIp?: string | null;
+  node?: string | null;
+}> {
+  try {
+    const res = await bridgeServerFetch(
+      `/status?token=${encodeURIComponent(token)}`,
+      {
+        headers: { Accept: "application/json" },
+        timeoutMs: 8_000,
+      }
+    );
+    if (!res.ok) return {};
+    return (await res.json()) as {
+      connected?: boolean;
+      remoteAddress?: string | null;
+      publicIp?: string | null;
+      node?: string | null;
+    };
+  } catch {
+    return {};
+  }
+}
+
+/** Build catalog from live local peers when crawler file missing/stale. Lumen only. */
 async function inlineLocalCatalog(
   existing: NetworkCatalog | null
 ): Promise<NetworkCatalog> {
@@ -156,22 +198,142 @@ function buildConnectedMap(connectedRaw: any[]) {
   return connectedByIp;
 }
 
-function buildResponse(opts: {
-  catalog: NetworkCatalog | null;
+/**
+ * My Node map: ONLY peers from Bridge + server-side GeoIP.
+ * No Lumen network catalog. No local Ergo harvest.
+ */
+function buildUserOwnedMap(opts: {
   connectedRaw: any[];
   meName: string;
   meIp: string | null;
-  source: "lumen" | "bridge";
+  mePublicIpSource: string | null;
 }) {
-  const { catalog, connectedRaw, meName, meIp, source } = opts;
+  const { connectedRaw, meName, meIp, mePublicIpSource } = opts;
   const connectedByIp = buildConnectedMap(connectedRaw);
   const byCell = new Map<string, number>();
   const markers: PeerMapMarker[] = [];
   let unmapped = 0;
 
-  const nodes = catalog?.nodes ? Object.values(catalog.nodes) : [];
+  for (const [ip, conn] of connectedByIp) {
+    // Don't put the user's own public IP in the peer cloud if it appears
+    if (meIp && ip === meIp) continue;
 
-  for (const n of nodes) {
+    const g = lookupGeo(ip);
+    if (!g) {
+      unmapped++;
+      continue;
+    }
+    const key = `${ip}:${conn.port || "9030"}`;
+    const cell = `${g.lat.toFixed(2)},${g.lon.toFixed(2)}`;
+    const stack = byCell.get(cell) || 0;
+    byCell.set(cell, stack + 1);
+    const [jLat, jLon] =
+      stack > 0 ? jitter(g.lat, g.lon, key) : [g.lat, g.lon];
+
+    markers.push({
+      id: key,
+      ip,
+      port: conn.port,
+      name: conn.name,
+      address: conn.address,
+      connectionType: conn.connectionType,
+      lastMessage: conn.lastMessage,
+      lat: jLat,
+      lon: jLon,
+      country: g.country,
+      city: g.city,
+      jittered: stack > 0,
+      state: "connected",
+      source: "bridge-connected",
+    });
+  }
+
+  let me: PeerMapMarker | null = null;
+  if (meIp) {
+    const geo = lookupGeo(meIp);
+    if (geo) {
+      me = {
+        id: "me",
+        ip: meIp,
+        port: "9030",
+        name: meName,
+        address: `/${meIp}:9030`,
+        connectionType: "Bridge",
+        lastMessage: Date.now(),
+        lat: geo.lat,
+        lon: geo.lon,
+        country: geo.country,
+        city: geo.city,
+        jittered: false,
+        state: "connected",
+        source: mePublicIpSource || "bridge-public-ip",
+      };
+    }
+  }
+
+  const links: PeerLink[] = [];
+  if (me) {
+    for (const m of markers) {
+      if (m.state !== "connected") continue;
+      if (m.ip === me.ip) continue;
+      links.push({
+        toIp: m.ip,
+        toLat: m.lat,
+        toLon: m.lon,
+        connectionType: m.connectionType,
+        lastMessage: m.lastMessage,
+        name: m.name,
+      });
+    }
+  }
+
+  // Top Regions: only user-node peers that have geo
+  const countries: Record<string, number> = {};
+  for (const m of markers) {
+    const c = m.country || "??";
+    countries[c] = (countries[c] || 0) + 1;
+  }
+
+  const connectedMapped = markers.length;
+  // All shown peers are connected (user node live set)
+  const reachableMapped = 0;
+
+  return {
+    markers,
+    me,
+    links,
+    totalPeers: connectedRaw.length,
+    mapped: markers.length,
+    /** User-owned map: totals equal the live connected set, not Lumen catalog */
+    networkTotal: connectedRaw.length,
+    networkMapped: markers.length,
+    connectedMapped,
+    reachableMapped,
+    unmapped,
+    countries,
+    catalogUpdatedAt: null as number | null,
+    generatedAt: Date.now(),
+    source: "bridge" as const,
+    nodeName: meName,
+    mePublicIp: meIp,
+    mePublicIpSource,
+  };
+}
+
+/** Lumen Node map: local Ergo + network catalog (unchanged product behaviour). */
+function buildLumenMap(opts: {
+  catalog: NetworkCatalog;
+  connectedRaw: any[];
+  meName: string;
+  meIp: string | null;
+}) {
+  const { catalog, connectedRaw, meName, meIp } = opts;
+  const connectedByIp = buildConnectedMap(connectedRaw);
+  const byCell = new Map<string, number>();
+  const markers: PeerMapMarker[] = [];
+  let unmapped = 0;
+
+  for (const n of Object.values(catalog.nodes)) {
     let lat = n.lat;
     let lon = n.lon;
     let country = n.country || "";
@@ -190,9 +352,6 @@ function buildResponse(opts: {
     }
 
     const conn = connectedByIp.get(n.ip);
-    // In bridge mode we only care about currently connected peers from user's node
-    if (source === "bridge" && !conn) continue;
-
     let state: PeerMapState = "stale";
     if (conn) state = "connected";
     else if (n.reachable === true) state = "reachable";
@@ -225,7 +384,6 @@ function buildResponse(opts: {
     });
   }
 
-  // Connected peers not yet in catalog
   for (const [ip, conn] of connectedByIp) {
     if (markers.some((m) => m.ip === ip)) continue;
     const g = lookupGeo(ip);
@@ -253,11 +411,10 @@ function buildResponse(opts: {
       city: g.city,
       jittered: stack > 0,
       state: "connected",
-      source: source === "bridge" ? "bridge-connected" : "connected-only",
+      source: "connected-only",
     });
   }
 
-  // Our node pin
   let me: PeerMapMarker | null = null;
   if (meIp) {
     const geo = lookupGeo(meIp);
@@ -266,8 +423,6 @@ function buildResponse(opts: {
         id: "me",
         ip: meIp,
         port: "9030",
-        // Role (Lumen Node / My Node) is applied on the client pin label;
-        // name stays the Ergo /info name for the popup body.
         name: meName,
         address: `/${meIp}:9030`,
         connectionType: "Local",
@@ -305,50 +460,50 @@ function buildResponse(opts: {
     countries[c] = (countries[c] || 0) + 1;
   }
 
-  const connectedMapped = markers.filter((m) => m.state === "connected").length;
-  const reachableMapped = markers.filter((m) => m.state === "reachable").length;
-  const networkTotal = catalog ? Object.keys(catalog.nodes).length : markers.length;
-
   return {
     markers,
     me,
     links,
     totalPeers: connectedRaw.length,
     mapped: markers.length,
-    networkTotal,
+    networkTotal: Object.keys(catalog.nodes).length,
     networkMapped: markers.length,
-    connectedMapped,
-    reachableMapped,
+    connectedMapped: markers.filter((m) => m.state === "connected").length,
+    reachableMapped: markers.filter((m) => m.state === "reachable").length,
     unmapped,
     countries,
-    catalogUpdatedAt: catalog?.updatedAt || null,
+    catalogUpdatedAt: catalog.updatedAt || null,
     generatedAt: Date.now(),
-    source,
+    source: "lumen" as const,
     nodeName: meName,
   };
 }
 
 /**
  * GET /api/peers/map
- * Optional: ?token= or X-Lumen-Bridge-Token → peers from user's Bridge node.
+ * Optional: ?token= or X-Lumen-Bridge-Token → user-owned map via Bridge.
  */
 export async function GET(req: NextRequest) {
   try {
     const token = extractToken(req);
 
-    // ── My Node (via Lumen Bridge) ──────────────────────────────────────
+    // ── My Node (fully user-owned) ──────────────────────────────────────
     if (token) {
       let connectedRaw: any[] = [];
       let meName = "My Node";
+      let status: Awaited<ReturnType<typeof fetchBridgeStatus>> = {};
+
       try {
-        const [peers, info] = await Promise.all([
+        const [peers, info, st] = await Promise.all([
           fetchViaBridge(token, "peers/connected"),
           fetchViaBridge(token, "info").catch(() => null),
+          fetchBridgeStatus(token),
         ]);
         connectedRaw = Array.isArray(peers) ? peers : [];
         if (info && typeof info.name === "string" && info.name) {
           meName = info.name;
         }
+        status = st;
       } catch (err) {
         const message = err instanceof Error ? err.message : "bridge_map_failed";
         return NextResponse.json(
@@ -361,66 +516,36 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // Enrich with global catalog geo when available; markers still only show
-      // peers currently connected to the user's node.
-      // Optional geo enrichment from crawler catalog (no local-node harvest in bridge mode)
-      const catalog = loadCatalog();
+      // Prefer agent-reported publicIp, then TCP remote of the Bridge session
+      const fromAgent = normalizePublicIpv4(status.publicIp);
+      const fromTcp = normalizePublicIpv4(status.remoteAddress ?? undefined);
+      const meIp = fromAgent || fromTcp;
+      const mePublicIpSource = fromAgent
+        ? "agent-publicIp"
+        : fromTcp
+          ? "ws-remoteAddress"
+          : null;
 
-      // Prefer not to pin "me" on Lumen's public IP in bridge mode.
-      // Use geo of first public peer only for links origin if we can't place me.
-      // meIp null → no YOU pin (links empty) unless we later know user IP.
-      const payload = buildResponse({
-        catalog: catalog,
+      const payload = buildUserOwnedMap({
         connectedRaw,
         meName,
-        meIp: null,
-        source: "bridge",
+        meIp,
+        mePublicIpSource,
       });
 
-      // Place YOU at map centroid of connected peers (visual anchor)
-      if (!payload.me && payload.markers.length) {
-        const connected = payload.markers.filter((m) => m.state === "connected");
-        const pool = connected.length ? connected : payload.markers;
-        const lat =
-          pool.reduce((s, m) => s + m.lat, 0) / Math.max(1, pool.length);
-        const lon =
-          pool.reduce((s, m) => s + m.lon, 0) / Math.max(1, pool.length);
-        payload.me = {
-          id: "me",
-          ip: "bridge",
-          port: null,
-          name: meName,
-          address: "via Lumen Bridge",
-          connectionType: "Bridge",
-          lastMessage: Date.now(),
-          lat,
-          lon,
-          country: "",
-          city: "",
-          jittered: false,
-          state: "connected",
-          source: "bridge-self",
-        };
-        payload.links = pool
-          .filter((m) => m.id !== "me")
-          .map((m) => ({
-            toIp: m.ip,
-            toLat: m.lat,
-            toLon: m.lon,
-            connectionType: m.connectionType,
-            lastMessage: m.lastMessage,
-            name: m.name,
-          }));
-      }
-
       return NextResponse.json(payload, {
-        headers: { "Cache-Control": "no-store", "X-Lumen-Map-Source": "bridge" },
+        headers: {
+          "Cache-Control": "no-store",
+          "X-Lumen-Map-Source": "bridge",
+        },
       });
     }
 
-    // ── Lumen Node (local server Ergo) ──────────────────────────────────
+    // ── Lumen Node (local server Ergo + catalog) ────────────────────────
     let catalog = loadCatalog();
-    const age = catalogAgeMs(catalog);
+    const age = catalog
+      ? Date.now() - (catalog.updatedAt || 0)
+      : Number.POSITIVE_INFINITY;
     if (!catalog || age > STALE_MS) {
       catalog = await inlineLocalCatalog(catalog);
     }
@@ -446,16 +571,18 @@ export async function GET(req: NextRequest) {
       /* keep default */
     }
 
-    const payload = buildResponse({
+    const payload = buildLumenMap({
       catalog,
       connectedRaw,
       meName,
       meIp: myPublicIpGuess(),
-      source: "lumen",
     });
 
     return NextResponse.json(payload, {
-      headers: { "Cache-Control": "no-store", "X-Lumen-Map-Source": "lumen" },
+      headers: {
+        "Cache-Control": "no-store",
+        "X-Lumen-Map-Source": "lumen",
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "map error";
