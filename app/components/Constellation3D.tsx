@@ -1215,9 +1215,10 @@ function Scene({
       )}
 
       {!hideControls && (
-        <div className="hidden md:flex absolute top-4 right-4 z-20 flex-col gap-2 min-w-[220px]">
+        /* Fixed width so Music ON/OFF helper text never resizes the whole stack */
+        <div className="hidden md:flex absolute top-4 right-4 z-20 flex-col gap-2 w-[220px] max-w-[220px]">
           {/* Auto orbit + galaxy speed */}
-          <div className="glass rounded-xl border border-white/10 px-4 py-3 space-y-2.5">
+          <div className="glass rounded-xl border border-white/10 px-4 py-3 space-y-2.5 w-full box-border">
             <button
               type="button"
               onClick={toggleAutoOrbit}
@@ -1226,7 +1227,7 @@ function Scene({
               <span className={isAutoOrbit ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>
                 ◉
               </span>
-              <span className="text-[#E8E8F0]">
+              <span className="text-[#E8E8F0] truncate">
                 {isAutoOrbit ? "AUTO ORBIT ON" : "AUTO ORBIT OFF"}
               </span>
             </button>
@@ -1238,7 +1239,9 @@ function Scene({
             >
               <div className="flex items-center justify-between text-[10px] font-mono tracking-wider text-[#A0A0B0]">
                 <span>GALAXY SPEED</span>
-                <span className="text-[#E8C48A]">{orbitSpeed.toFixed(2)}×</span>
+                <span className="text-[#E8C48A] tabular-nums">
+                  {orbitSpeed.toFixed(2)}×
+                </span>
               </div>
               <input
                 type="range"
@@ -1259,7 +1262,7 @@ function Scene({
           </div>
 
           {/* Music / ambience */}
-          <div className="glass rounded-xl border border-white/10 px-4 py-3 space-y-2.5">
+          <div className="glass rounded-xl border border-white/10 px-4 py-3 space-y-2.5 w-full box-border">
             <button
               type="button"
               onClick={() => void toggleMusic()}
@@ -1269,7 +1272,7 @@ function Scene({
               <span className={musicOn ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>
                 {musicOn ? "♪" : "♩"}
               </span>
-              <span className="text-[#E8E8F0]">
+              <span className="text-[#E8E8F0] truncate">
                 {musicBusy
                   ? "LOADING…"
                   : musicOn
@@ -1284,7 +1287,7 @@ function Scene({
             >
               <div className="flex items-center justify-between text-[10px] font-mono tracking-wider text-[#A0A0B0]">
                 <span>VOLUME</span>
-                <span className="text-[#E8C48A]">
+                <span className="text-[#E8C48A] tabular-nums">
                   {Math.round(musicVol * 100)}%
                 </span>
               </div>
@@ -1298,12 +1301,13 @@ function Scene({
                 className="w-full h-1.5 appearance-none rounded-full bg-white/10 accent-[#E8C48A] cursor-pointer"
                 aria-label="Music volume"
               />
-              <div className="text-[9px] font-mono text-[#A0A0B0]/55 leading-relaxed">
+              {/* Fixed min-height so ON/OFF caption length never shifts panel height */}
+              <div className="text-[9px] font-mono text-[#A0A0B0]/55 leading-relaxed min-h-[2.5em] break-words">
                 {musicMode === "file"
                   ? "Playing /audio/stay.* (your file)"
                   : musicMode === "synth"
                     ? "Lumen space pad · M to toggle"
-                    : "Press MUSIC or M · place stay.mp3 in /public/audio for your track"}
+                    : "Press M · stay.mp3 in /public/audio"}
               </div>
             </div>
           </div>
@@ -1311,7 +1315,7 @@ function Scene({
           <button
             type="button"
             onClick={focusOnMyNode}
-            className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-white/30 flex items-center gap-2 transition-all active:scale-[0.985]"
+            className="btn-cinematic glass w-full px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-white/30 flex items-center justify-center gap-2 transition-all active:scale-[0.985] box-border"
           >
             FOCUS ON MY NODE
           </button>
@@ -1319,7 +1323,7 @@ function Scene({
             <button
               type="button"
               onClick={triggerBlockPropagation}
-              className="btn-cinematic glass px-4 py-2 rounded-xl text-xs font-mono tracking-[2px] bg-[#E8C48A]/08 border border-[#E8C48A]/25 hover:bg-[#E8C48A]/14 text-[#E8C48A] flex items-center gap-2 transition-all active:scale-[0.985]"
+              className="btn-cinematic glass w-full px-4 py-2 rounded-xl text-xs font-mono tracking-[2px] bg-[#E8C48A]/08 border border-[#E8C48A]/25 hover:bg-[#E8C48A]/14 text-[#E8C48A] flex items-center justify-center gap-2 transition-all active:scale-[0.985] box-border"
             >
               ✧ SIMULATE BLOCK WAVE
             </button>
