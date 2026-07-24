@@ -1,396 +1,437 @@
 # Lumen — Ergo Node Dashboard
 
-> **Rebrand 2026-07-24:** product renamed **Aether → Lumen**.  
-> Deploy path stays `/home/aether`, systemd units stay `aether.service` / `aether-crawl.*` (legacy names).  
-> Auth accepts new + old: password files, cookies, `X-Lumen-Password` / `X-Aether-Password`.
+**Handoff / context pack** for humans and AI sessions.  
+Snapshot: **2026-07-24**. Read this first, then code.
 
-**Handoff / context pack for future Grok (or any AI) sessions.**  
-Документ описывает проект целиком: зачем, как устроен, где лежит, как деплоится, что уже сделано.
+> **Rebrand:** product was **Aether → Lumen** (2026-07-24).  
+> Paths and systemd still use legacy names: `/home/aether`, `aether.service`, `aether-crawl.*`.  
+> Auth accepts Lumen + legacy Aether cookie/header/password file names.
 
 | | |
 |--|--|
-| **Продукт** | **Lumen** — Ergo Node Dashboard |
-| **UI header** | `Lumen` + subtitle `Ergo Node Dashboard` |
-| **Слоган** | The living pulse of your Ergo node (Share Card / PWA / README) |
-| **Версия** | 0.1.0 |
-| **Стек** | Next.js 16 · React 19 · R3F/Three · Leaflet + markercluster · TanStack Query · Framer Motion · geoip-lite · html-to-image · qrcode.react |
-| **Продакшен-хост** | `toa.c.hostens.cloud` / `80.209.232.82` (Hostens) |
-| **Каталог** | `/home/aether` |
-| **URL (local / SSH)** | `http://127.0.0.1:3000` |
-| **URL (public)** | `http://80.209.232.82:3000` — auth if Public Mode on |
-| **Public Mode** | file `/home/aether/.lumen-public-password (legacy: .aether-public-password)` (chmod 600); set/change in NODE SETTINGS or shell |
-| **systemd** | `aether.service` (enabled), bind **`0.0.0.0:3000`** |
-| **Auth gate** | `proxy.ts` (Next 16 Node network proxy; not deprecated middleware) |
-| **Связанная дока сервера** | `/root/SERVER.md` |
-| **Снимок handoff** | **2026-07-24** (rebrand → Lumen) (3D planets + galaxy orbit + music) |
-| **Network crawler** | `scripts/crawl-network.mjs` + `aether-crawl.timer` (every 12m) |
-| **Catalog** | `/home/aether/data/network-catalog.json` (gitignored) |
+| **Product** | **Lumen** — Ergo Node Dashboard |
+| **Tagline** | The living pulse of your Ergo node |
+| **Version** | 0.1.0 (`package.json` name: `lumen`) |
+| **Host** | `toa.c.hostens.cloud` / `80.209.232.82` |
+| **App dir** | `/home/aether` |
+| **GitHub** | `from-ufa/aether` (repo name unchanged) |
+| **UI** | `http://127.0.0.1:3000` (local) · `http://80.209.232.82:3000` (public) |
+| **Related** | `/root/SERVER.md` (host / Ergo / oracles / Telegram) |
 
 ---
 
-## 1. Что это и зачем
+## 1. What Lumen is
 
-**Lumen** — веб-дашборд для **владельца Ergo mainnet-ноды**. Показывает:
+**Lumen** is a **read-only** web dashboard for an **Ergo mainnet node** operator.
 
-- состояние **своей** ноды (height, peers, mempool);
-- **3D constellation** — нода в центре, peers в 3D;
-- **World map** — peers по GeoIP, **clustering**, boom на новый блок;
-- **Share My Node** — premium card + QR + copy link / text / PNG;
-- **Public Mode** — опциональный внешний доступ с паролем;
-- **PWA** — Add to Home Screen (manifest + icons, без service worker);
-- ленту **recent blocks** (реальный txCount) + **mempool** → SigmaSpace;
-- метрики, в т.ч. **AVG BLOCK TIME** с ноды (`lastHeaders/100`).
+It shows:
 
-Не майнер, не кошелёк, не explorer. **Read-only** к Ergo REST.  
-Не трогает `ergonode` / oracle systemd units и не шлёт транзакции.
+- Node status (`/info`: height, peers, mempool size, name, network)
+- **3D constellation** (R3F) — your node + connected peers
+- **World map** (Leaflet + GeoIP + clustering, boom on new tip)
+- **Recent blocks** with real `txCount` from the node (not faked)
+- **Mempool** sample + SigmaSpace links
+- **AVG BLOCK TIME** from `GET /blocks/lastHeaders/100`
+- **Share My Node** card (QR, copy link/text, PNG)
+- **Public Mode** — optional remote access with a password
+- **PWA** manifest/icons (no service worker)
+- **Lumen Bridge** — connect a *remote* user node without inbound ports
+
+Not a miner, wallet, explorer, or tx broadcaster.  
+Does **not** touch `ergonode` / oracle units. Only **allowlisted GET** Ergo REST.
 
 ---
 
-## 2. Как смотреть
+## 2. Stack and layout
 
-### SSH-туннель (всегда без пароля — Host localhost)
+### Stack
 
-```bash
-ssh -L 3000:127.0.0.1:3000 root@80.209.232.82 -N
-# http://localhost:3000
-```
+| Layer | Tech |
+|-------|------|
+| App | **Next.js 16** (App Router) · **React 19** · TypeScript |
+| Data | **TanStack Query** · same-origin API proxies |
+| 3D | **@react-three/fiber** · drei · three |
+| Map | **Leaflet** · markercluster · **geoip-lite** (server) |
+| UI | Tailwind 4 · Framer Motion · lucide · sonner |
+| Share | html-to-image · qrcode.react |
+| Bridge agent | Node 20 (Docker alpine) · `ws` |
+| Bridge hub | Node · `ws` · port **3100** |
 
-### Публично (если Public Mode on)
+### Tree (high level)
 
 ```text
-http://80.209.232.82:3000
-Basic Auth: любой user + пароль из .lumen-public-password (legacy: .aether-public-password)
-или: ?password=SECRET  (ставит httpOnly cookie)
-или: X-Lumen-Password (legacy: X-Aether-Password): SECRET
-```
-
-Данные ноды: browser → `/api/node/*` → server proxy → `127.0.0.1:9053`.  
-Второй туннель на 9053 **не нужен**.
-
----
-
-## 3. Архитектура
-
-```
-┌─────────────┐  SSH -L 3000   ┌──────────────────────────────────────────┐
-│  Laptop     │ ─────────────► │  Server 0.0.0.0:3000 (Next.js)           │
-│  Browser    │  or public IP  │    proxy.ts → local bypass / Basic auth  │
-│             │                │    /              → UI                   │
-│             │                │    /api/node/*    → :9053                │
-│             │                │    /api/peers/map → peers + geoip        │
-│             │                │    /api/public-status                    │
-│             │                │    /api/public-password  (POST)          │
-└─────────────┘                │  Ergo :9053 REST, :9030 P2P              │
-                               │  Oracles (independent)                   │
-                               └──────────────────────────────────────────┘
-```
-
-### proxy.ts (auth)
-
-- **Local Host** (`localhost` / `127.0.0.1` / `::1`) → always allow (не путать с bind `0.0.0.0` — locality по **Host header**).
-- Password file empty/missing → remote **401**.
-- Password set → Basic / `?password=` / `X-Lumen-Password (legacy: X-Aether-Password)` / cookie `lumen_public_auth (legacy: aether_public_auth)` (sha256).
-- Password **read from file every request** (смена без rebuild).
-
-### Public password
-
-| | |
-|--|--|
-| Path | `/home/aether/.lumen-public-password (legacy: .aether-public-password)` |
-| Mode | `0600`, owner root |
-| Content | one line, secret |
-| UI | NODE SETTINGS → SET / CHANGE PUBLIC PASSWORD (min 10) |
-| API | `POST /api/public-password` `{ password }` — localhost or valid public auth |
-| Status | `GET /api/public-status` → `{ publicMode, storage: "file", ... }` never leaks password |
-
----
-
-## 4. Структура файлов (важное)
-
-```
 /home/aether/
-├── AETHER.md
-├── README.md
-├── proxy.ts                 ← network auth (Next 16)
-├── lib/public-password.ts   ← read/write password file
-├── .lumen-public-password (legacy: .aether-public-password)  ← SECRET chmod 600 (not in git)
-├── .env.local               ← ERGO_NODE_URL only (no public password)
 ├── app/
-│   ├── manifest.ts          ← PWA
-│   ├── page.tsx
-│   ├── layout.tsx           ← viewport, appleWebApp, theme-color
-│   ├── globals.css
+│   ├── page.tsx                 # Dashboard (modes, queries, layout)
+│   ├── proxy.ts                 # → root proxy.ts (Next 16 network proxy)
+│   ├── components/              # UI: settings, map, 3D, metrics, share…
+│   ├── lib/                     # node-api, blocks, copy-text, bridge-server client
 │   ├── api/
-│   │   ├── node/[...path]/route.ts
-│   │   ├── peers/map/route.ts   ← network catalog + links + live connected
-│   │   ├── public-status/route.ts
-│   │   └── public-password/route.ts
-│   ├── components/
-│   │   ├── Constellation3D.tsx
-│   │   ├── PeerMap.tsx      ← network markers, signal arcs, boom, clusters
-│   │   ├── ShareCard.tsx
-│   │   ├── ConnectionSettings.tsx
-│   │   ├── BlocksTimeline.tsx
-│   │   ├── MempoolFlow.tsx
-│   │   ├── MetricsCards.tsx
-│   │   └── Providers.tsx
-│   ├── lib/ blocks.ts, explorer.ts
-│   └── types/ergo.ts
-├── lib/
-│   ├── public-password.ts
-│   └── network-peers.ts     ← catalog load/merge/geo helpers
-├── scripts/crawl-network.mjs  ← local + REST fan-out + TCP probe
-├── data/network-catalog.json  ← generated (not in git)
-└── public/icons/            ← icon-192, icon-512, apple-touch
+│   │   ├── node/[...path]/     # Proxy → local Ergo :9053
+│   │   ├── bridge/tokens|status|node/  # Bridge hub proxy
+│   │   ├── peers/map/           # Geo map (Lumen or Bridge token)
+│   │   ├── public-status/
+│   │   └── public-password/
+│   └── bridge/[file]/          # Public downloads: install.sh, context.tar, …
+├── bridge/                      # Outbound agent (Docker primary)
+│   ├── Dockerfile
+│   ├── bridge.js
+│   ├── install.sh               # Advanced (no Docker)
+│   └── DOCKER.md
+├── bridge-server/               # WS hub + tokens + proxy (:3100)
+│   ├── server.js
+│   └── lumen-bridge-server.service
+├── lib/                         # public-password, network-peers
+├── scripts/crawl-network.mjs    # Peer catalog crawler
+├── data/network-catalog.json    # gitignored, regenerated
+├── proxy.ts                     # Auth gate
+├── LUMEN.md                     # This handoff
+└── .env.local                   # ERGO_NODE_URL, LUMEN_BRIDGE_SERVER_URL
 ```
 
----
+### Env (`.env.local`)
 
-## 5. UI — ключевое поведение
-
-### Top bar
-- NODE LIVE / DEMO / OFFLINE · **PUBLIC** badge · **SHARE MY NODE** · NODE SETTINGS · DEMO · Refresh  
-- Mobile: compact labels, status chip, controls wrap; viz floating Boom/Refresh **hidden while any modal open** (`hideControls` / `isAnyModalOpen`).
-
-### View modes
-1. **3D CONSTELLATION** — R3F; mobile: BOOM left + FOCUS right on canvas; toggle under viz on mobile.  
-2. **WORLD MAP** — Leaflet CARTO dark + **markercluster** + **network catalog**:
-   - Shows **all known network nodes** (catalog), not only connected peers.
-   - Marker states: **LINKED** (connected to you, bright cyan) · **LIVE** (TCP reachable) · **STALE** (known, offline).
-   - **Signal lines:** thin arcs YOU → each linked peer with flying packet animation.
-   - Default camera: `setView(Your Node | Europe, zoom 2.5)` — no aggressive fitBounds.
-   - Refresh: refetch peers + reset to default view.
-   - **Boom (new block):** 3 pulses on hottest **connected** peer + flying notice (~3.75s).
-   - Top Regions under map on mobile / overlay on desktop.
-   - HUD: `NETWORK · LIVE · LINKED` counts from `/api/peers/map`.
-
-### Metrics / lists
-- Equal two-column grid: **Recent Blocks** | **Mempool Flow**.
-- Block row click → **modal only**; SigmaSpace only via button in modal.
-- Mempool dots: 8-color palette by tx id hash; click → SigmaSpace TX.
-
-### Share Card
-- Premium PNG export (`html-to-image` @3x), QR (`qrcode.react`), Copy link / Copy as text for X·TG.
+| Variable | Typical | Role |
+|----------|---------|------|
+| `ERGO_NODE_URL` | `http://127.0.0.1:9053` | Upstream for `/api/node` and local map harvest |
+| `LUMEN_BRIDGE_SERVER_URL` | `http://127.0.0.1:3100` | Next → bridge-server |
 
 ---
 
-## 6. systemd (`/etc/systemd/system/aether.service`)
+## 3. Public Mode
 
-```ini
-[Service]
-WorkingDirectory=/home/aether
-Environment=NODE_ENV=production
-Environment=ERGO_NODE_URL=http://127.0.0.1:9053
-EnvironmentFile=-/home/aether/.env.local
-ExecStart=/usr/bin/npx next start -H 0.0.0.0 -p 3000
-Restart=on-failure
-Nice=10
-```
-
-```bash
-cd /home/aether && npm run build && systemctl restart aether
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3000/
-curl -s http://127.0.0.1:3000/api/public-status
-curl -s -o /dev/null -w "%{http_code}\n" http://80.209.232.82:3000/   # 401 if public mode
-```
-
-**Не коммитить:** `node_modules/`, `.next/`, `.lumen-public-password (legacy: .aether-public-password)`, `.env*`.
-
----
-
-## 7. Зависимости (ключевые)
-
-```
-next 16.2.10 · react 19.2.4
-@react-three/fiber 9.6.1 · @react-three/drei 9.121.1 · three
-leaflet · react-leaflet 5 · leaflet.markercluster · react-leaflet-cluster (installed; map uses native cluster API)
-geoip-lite · @tanstack/react-query · framer-motion · sonner · lucide-react
-html-to-image · qrcode.react · date-fns
-```
-
----
-
-## 8. Ergo REST
-
-| Path | Зачем |
-|------|--------|
-| `/info` | height, peers, name, version |
-| `/peers/connected` | peer list |
-| `/transactions/unconfirmed` | mempool |
-| `/blocks/at/{h}` · `/blocks/{id}/header` · `/blocks/{id}/transactions` | blocks + txCount |
-| `/blocks/lastHeaders/{n}` | avg block time |
-
-Прод-нода: **mainnet 6.0.2**, `netim_node`, REST `:9053`, P2P `:9030`.
-
----
-
-## 9. Design tokens
-
-| Token | Value |
-|-------|--------|
-| BG | `#0A0A0F` |
-| Ergo orange | `#FF7A3D` |
-| Cyan | `#00E5FF` |
-| Text | `#E8E8F0` |
-| Muted | `#A0A0B0` |
-
----
-
-## 10. Network crawler
+Optional **remote** access to the dashboard. Localhost always open.
 
 | | |
 |--|--|
-| Script | `npm run crawl:network` → `scripts/crawl-network.mjs` |
-| Sources | local `/peers/all` + `/peers/connected`, REST fan-out (`restApiUrl`), TCP :9030 probe |
-| Output | `data/network-catalog.json` |
-| Timer | `aether-crawl.timer` every **12 min** (`Nice=15`) |
-| Map API | loads catalog; overlays live connected → `state` + `links[]` |
-| Fallback | if catalog missing/stale (>45m) → inline local harvest |
+| Password file | `/home/aether/.lumen-public-password` (legacy `.aether-public-password`) |
+| Mode | `0600` |
+| Set UI | **NODE SETTINGS → Public Access** (min 10 chars) |
+| Gate | `proxy.ts` (Next 16 Node proxy; password re-read every request) |
 
-```bash
-cd /home/aether && npm run crawl:network
-systemctl status aether-crawl.timer
-journalctl -u aether-crawl.service -n 30 --no-pager
-curl -s http://127.0.0.1:3000/api/peers/map | jq '{networkMapped,connectedMapped,links:(.links|length)}'
-```
+**Remote auth (any one):**
 
-Not a full Scorex P2P crawler (Phase B later if needed). Does **not** depend on ergonodes.net.
+- HTTP Basic (any username + password)
+- `?password=SECRET` → sets httpOnly cookie
+- Header `X-Lumen-Password` (legacy `X-Aether-Password`)
+- Cookie `lumen_public_auth` (legacy `aether_public_auth`) = sha256(password)
 
----
+**Local bypass:** `Host` is `localhost` / `127.0.0.1` / `::1` → always allow.
 
-## 11. Lumen Bridge (remote node via outbound WS)
+**Public without password:** remote gets 401 (Public Mode off).
 
-Позволяет **дашборду** читать Ergo REST **чужой** ноды без входящих портов у пользователя.
+**Exception (no auth):** GET install/Docker assets under `/bridge/*` so `curl` / `docker build` work from the internet:
 
-| | |
-|--|--|
-| **Client** | `/home/aether/bridge/` — `node bridge.js --token=lumen_…` |
-| **Server** | `/home/aether/bridge-server/` — WS hub + tokens + proxy |
-| **Port** | **3100** (`lumen-bridge-server.service`) |
-| **WS** | `ws://<host>:3100/bridge` |
-| **Storage** | in-memory Map (tokens + connections; lost on restart) |
-| **Next proxy** | `POST /api/bridge/tokens`, `GET /api/bridge/status`, `GET /api/bridge/node/*` |
-| **Env** | `LUMEN_BRIDGE_SERVER_URL=http://127.0.0.1:3100` |
-
-```bash
-# token
-curl -s -X POST http://127.0.0.1:3100/tokens -H 'Content-Type: application/json' -d '{"label":"home"}'
-# bridge
-node /home/aether/bridge/bridge.js --token=lumen_… --server=ws://127.0.0.1:3100/bridge
-# status + /info
-curl -s "http://127.0.0.1:3100/status?token=lumen_…"
-curl -s -H "X-Lumen-Bridge-Token: lumen_…" http://127.0.0.1:3000/api/bridge/node/info
-```
-
-Allowlist: `/info`, `/peers/connected`, `/transactions/unconfirmed`, `/blocks/*` (GET only).
+- `/bridge/install.sh`, `bridge.js`, `package.json`, `package-lock.json`
+- `/bridge/Dockerfile`, `DOCKER.md`, `context.tar`
 
 ---
 
-## 12. Ограничения / TODO
+## 4. Lumen Bridge
 
-- Peers without public IP still unmapped (NAT / empty address)  
-- Boom peer = hottest connected `lastMessage`, not miner  
-- TCP open ≠ full Ergo handshake (reachable ≈ port open)  
-- CARTO tiles = исходящий HTTPS из **браузера**  
-- systemd leftover next-server on restart (unit всё равно active)  
-- PWA без service worker  
-- Bridge tokens/connections not persisted (restart = re-issue / reconnect)  
-- Optional: heatmap, oracle metrics UI, full P2P handshake crawler  
-- Server security (mnemonics → EnvironmentFile) — `SERVER.md`
+### What it is
 
----
+Outbound **WebSocket agent** that runs **next to the user’s Ergo node**.  
+User does **not** open inbound ports. Agent connects **out** to Lumen’s hub; the dashboard then reads the node through the hub (allowlisted GETs only).
 
-## 13. Чеклист для нового чата
+### Architecture
 
 ```text
-Проект: Lumen — Ergo node visualizer
-Путь: /home/aether
-Дока: /home/aether/AETHER.md + /root/SERVER.md
-Прод: aether.service, 0.0.0.0:3000, proxy.ts auth, password file .lumen-public-password (legacy: .aether-public-password)
-Crawler: aether-crawl.timer → data/network-catalog.json
-Стек: Next 16 + React 19 + R3F 9 + Leaflet cluster + geoip-lite
-Не трогать: ergonode, oracle-core, oracle-core-usd без просьбы
-Доступ: ssh -L 3000:127.0.0.1:3000 root@80.209.232.82 -N
-Public: http://80.209.232.82:3000 + Basic/password
+┌──────────────────┐  outbound WS   ┌─────────────────────────────┐
+│ User machine     │ ─────────────► │ Lumen host                  │
+│  Ergo :9053      │                │  bridge-server :3100        │
+│  lumen-bridge    │◄── request/─── │    tokens (in-memory)       │
+│  (Docker/node)   │    response    │    /bridge  (WS)            │
+└──────────────────┘                │  Next.js :3000              │
+                                    │    /api/bridge/* → :3100    │
+                                    │    UI: My Node mode         │
+                                    └─────────────────────────────┘
+```
+
+| Piece | Path | Port |
+|-------|------|------|
+| Agent | `/home/aether/bridge` | (client) |
+| Hub | `/home/aether/bridge-server` | **3100** (`lumen-bridge-server.service`) |
+| Next proxy | `app/api/bridge/*` | via :3000 |
+| WS path | `ws://<host>:3100/bridge` | |
+
+**Allowlist (GET only):**  
+`/info`, `/peers/connected`, `/transactions/unconfirmed`, `/blocks/*` (incl. `lastHeaders`).
+
+**Storage:** tokens + sessions are **in-memory** on bridge-server. Restart hub → re-issue token / reconnect agent.
+
+### Connect flow (UI)
+
+**NODE SETTINGS → Connect my node**
+
+1. **START — GET DOCKER COMMAND** → creates `lumen_*` token (`POST /api/bridge/tokens`)
+2. **Step 1 — Docker (recommended):** one pasteable command (token + server filled)
+3. **Step 2 — Wait for ONLINE** (poll `GET /api/bridge/status?token=…` every 5s)
+4. Switch data source to **My Node** (or auto on start)
+
+Token + mode stored in **localStorage** (`lumen-bridge-token`, `lumen-node-mode`).
+
+### Docker (primary)
+
+Dashboard builds a ready command. Equivalent manual form:
+
+```bash
+docker build -t lumen-bridge http://80.209.232.82:3000/bridge/context.tar && \
+docker rm -f lumen-bridge 2>/dev/null; \
+docker run -d --name lumen-bridge --restart unless-stopped \
+  --network host \
+  -e LUMEN_TOKEN=lumen_YOUR_TOKEN \
+  -e LUMEN_SERVER=ws://80.209.232.82:3100/bridge \
+  -e LUMEN_NODE=http://127.0.0.1:9053 \
+  lumen-bridge
+```
+
+| Env | Alias | Meaning |
+|-----|--------|---------|
+| `LUMEN_BRIDGE_TOKEN` | `LUMEN_TOKEN` | Required |
+| `LUMEN_BRIDGE_SERVER` | `LUMEN_SERVER` | WS hub URL |
+| `LUMEN_NODE_URL` | `LUMEN_NODE` | Local Ergo REST (default `http://127.0.0.1:9053`) |
+
+- **`--network host`** (Linux): container reaches host `127.0.0.1:9053`
+- Docs: `bridge/DOCKER.md`, `bridge/README.md`
+- Context tarball: `GET /bridge/context.tar` (Dockerfile + bridge.js + package*.json)
+
+### Advanced (no Docker)
+
+```bash
+curl -fsSL http://80.209.232.82:3000/bridge/install.sh | \
+  LUMEN_BASE=http://80.209.232.82:3000 bash
+# installs to ~/lumen-bridge
+
+cd ~/lumen-bridge && node bridge.js \
+  --token=lumen_… \
+  --server=ws://80.209.232.82:3100/bridge
+```
+
+### Create token / status (API)
+
+```bash
+# Create
+curl -s -X POST http://127.0.0.1:3000/api/bridge/tokens \
+  -H 'Content-Type: application/json' -d '{"label":"home"}'
+
+# Status
+curl -s "http://127.0.0.1:3000/api/bridge/status?token=lumen_…"
+
+# Proxy /info through bridge
+curl -s -H "X-Lumen-Bridge-Token: lumen_…" \
+  http://127.0.0.1:3000/api/bridge/node/info
+# same: ?token=lumen_… also accepted
 ```
 
 ---
 
-## 14. История сессий
+## 5. Modes: Lumen Node vs My Node
 
-### 2026-07-18 → 2026-07-19
-Прототип → deploy `/home/aether`, proxy, 3D + map + boom, SigmaSpace, real metrics, handoff MD.
+UI switch in **NODE SETTINGS → Data source** (also badge on dashboard: `SOURCE · LUMEN | BRIDGE`).
 
-### 2026-07-20 (основная сессия UI)
-1. **Public Mode** + bind `0.0.0.0` + Share Card phase 1  
-2. Password → **file** + UI change API (no env password)  
-3. Share Card premium (QR, copy text, PNG)  
-4. Mobile + basic PWA  
-5. Mobile viz controls under map; hide floating controls when modal open  
-6. **Marker clustering** (native Leaflet cluster + bindPopup/Tooltip)  
-7. Map default **setView** (no black bars); Refresh resets view  
-8. Boom redesign: 3 pulses + flying notice top→peer (no bottom plaque)  
-9. Equal Blocks/Mempool panels; colored TX dots; block click → modal only  
+| Mode | localStorage | Browser requests | Meaning |
+|------|--------------|------------------|---------|
+| **Lumen Node** | `lumen-node-mode=lumen` | `/api/node/*` | This server’s Ergo (`ERGO_NODE_URL` → :9053) |
+| **My Node** | `lumen-node-mode=my` + token | `/api/bridge/node/*` + `X-Lumen-Bridge-Token` and `?token=` | User node via Bridge |
 
-### 2026-07-22 — Network map + signal lines
-1. **Network Indexer** crawler: local `/peers/all` + REST fan-out + TCP probe  
-2. Catalog `data/network-catalog.json` + `aether-crawl.timer` (12m)  
-3. `/api/peers/map` serves full network markers + `links[]` for connected  
-4. Map UI: NETWORK/LIVE/LINKED states + animated YOU→peer signal arcs  
-5. ~437 mapped network nodes, ~62 signal lines (live snapshot)
+**What switches with My Node:**
 
-### 2026-07-23 — 3D constellation (planets / sun / orbit / music)
-1. **Real planets** — textures in `public/planets/` (Solar System Scope + three.js Earth/Moon)  
-   + procedural canvas fallback so no white spheres (`app/lib/planet-textures.ts`)  
-2. **Sun** at center: photosphere shader + multi-harmonic **physical** pulse (body scale + noisy corona)  
-3. **Galaxy orbit**: whole peer system rotates around sun; UI **AUTO ORBIT** + **GALAXY SPEED** slider (0.25–5×), keys `[` `]`  
-4. **Music**: panel MUSIC + key `M`; plays `public/audio/stay.mp3` if present (licensed by operator);  
-   else original Web Audio space pad. Interstellar *Stay* is **not** redistributed (copyright).  
-5. GitHub: `from-ufa/aether` main — latest `e502a7c` (+ handoff update)
+- `/info`, peers, mempool, blocks, avg block time
+- World map: `/api/peers/map?token=…` builds markers from **user** connected peers + catalog geo; pin name from user `/info.name`
 
-Исходный idea chat:  
-https://grok.com/share/bGVnYWN5_01882487-4c5e-4e7e-88cf-7d67479d1387  
+**What does not (or only partially):**
+
+- Full network catalog crawler still runs against **this** host’s view of the network (enrichment only)
+- Share card uses currently loaded `nodeInfo` (so My Node name/height when mode is My)
+
+**On mode switch:** React Query keys for `nodeInfo` / `peers` / `mempool` / `peer-map` are **removed/invalidated** so Lumen data is not shown as My Node.
+
+Dashboard shows **`NODE · <name>`** from live `/info` so you can verify the active source.
 
 ---
 
-### 2026-07-24 — Rebrand Aether → Lumen
-1. Product name **Lumen** in UI, PWA, Share Card, package.json, console, CSS classes  
-2. Auth dual-compat: `.lumen-public-password` + legacy `.aether-public-password`; cookies & headers  
-3. Env aliases: `LUMEN_*` preferred, `AETHER_*` still accepted  
-4. Docs: `LUMEN.md` primary; `AETHER.md` pointer  
-5. Deploy path `/home/aether` + unit `aether.service` **unchanged** (no downtime rename)
+## 6. Important endpoints
 
-### 2026-07-24 — Lumen Bridge backend
-1. Client `/home/aether/bridge` (outbound WS agent, allowlist GET proxy)  
-2. Server `/home/aether/bridge-server` on **:3100** + `lumen-bridge-server.service`  
-3. Next routes `/api/bridge/tokens|status|node/*` → bridge-server  
-4. Smoke: create token → bridge connect → `/info` via API  
+### Next.js (port 3000)
 
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/` | Dashboard UI |
+| GET | `/api/node/*` | Proxy → local Ergo REST |
+| POST | `/api/bridge/tokens` | Create `lumen_*` token |
+| GET | `/api/bridge/status?token=` | Bridge online/offline |
+| GET | `/api/bridge/node/*` | Proxy Ergo path via live Bridge |
+| GET | `/api/peers/map` | Map for Lumen node |
+| GET | `/api/peers/map?token=` | Map for My Node (Bridge) |
+| GET | `/api/public-status` | Public Mode on/off |
+| POST | `/api/public-password` | Set/change public password |
+| GET | `/bridge/install.sh` | Agent installer (public) |
+| GET | `/bridge/context.tar` | Docker build context (public) |
+| GET | `/bridge/Dockerfile` · `bridge.js` · … | Public assets |
 
-## 15. Dev loop
+### Bridge-server (port 3100)
+
+| Method | Path | Role |
+|--------|------|------|
+| GET | `/health` | Hub health |
+| POST | `/tokens` | Create token |
+| GET | `/status?token=` | Connection status |
+| GET | `/api/bridge/node/<path>` | Proxy via agent (+ token header/query) |
+| WS | `/bridge` | Agent handshake (`hello` / `hello_ack`, request/response) |
+
+### Ergo node (local, 9053) — used by Lumen mode / agent
+
+| Path | Use |
+|------|-----|
+| `/info` | Status, name, heights |
+| `/peers/connected` | Live peers |
+| `/transactions/unconfirmed` | Mempool |
+| `/blocks/at/{h}`, `/blocks/{id}/…` | Block details / tx count |
+| `/blocks/lastHeaders/{n}` | Avg block time |
+
+---
+
+## 7. Run and deploy
+
+### systemd
+
+| Unit | Role |
+|------|------|
+| `aether.service` | Next.js `0.0.0.0:3000` (`npm start` after build) |
+| `lumen-bridge-server.service` | Bridge hub `:3100` |
+| `aether-crawl.timer` | Network catalog every ~12m |
+| `ergonode.service` | Ergo node (independent) |
+
+### Deploy loop (this host)
 
 ```bash
 cd /home/aether
-npm run crawl:network   # optional refresh catalog
-npm run build && systemctl restart aether
-systemctl is-active aether ergonode oracle-core oracle-core-usd aether-crawl.timer
+npm run build
+systemctl restart aether
+systemctl restart lumen-bridge-server   # if hub code changed
+systemctl is-active aether lumen-bridge-server aether-crawl.timer ergonode
+```
+
+### View
+
+```bash
+# Always open (no password): SSH tunnel
+ssh -L 3000:127.0.0.1:3000 root@80.209.232.82 -N
+# → http://localhost:3000
+
+# Public (Public Mode password required if set)
+# http://80.209.232.82:3000
+```
+
+### Git
+
+```bash
+cd /home/aether
+git status
+git add …
+git commit -m "…"
+git push origin main   # github.com:from-ufa/aether
 ```
 
 ---
 
-## 16. Снимок (2026-07-23 ~14:00)
+## 8. Useful commands
 
-| | |
-|--|--|
-| lumen | **active**, HTTP **200**, publicMode **true** |
-| ergonode | active — mainnet **6.0.2**, height **~1835293**, peers **~114** |
-| oracles | oracle-core + oracle-core-usd **active** |
-| aether-crawl.timer | **active**, catalog fresh |
-| load | **~0.1** (idle) · RAM **4/16 GiB** used · disk **40%** |
-| git | `main` = `origin/main` (clean) |
+```bash
+# Health
+curl -s http://127.0.0.1:3000/api/public-status | jq .
+curl -s http://127.0.0.1:3100/health | jq .
+curl -s http://127.0.0.1:9053/info | jq '{name,fullHeight,peersCount,network}'
+
+# Local node via Next
+curl -s http://127.0.0.1:3000/api/node/info | jq '{name,fullHeight}'
+
+# Bridge token + status + proxy
+curl -s -X POST http://127.0.0.1:3000/api/bridge/tokens \
+  -H 'Content-Type: application/json' -d '{"label":"ops"}' | jq .
+curl -s "http://127.0.0.1:3000/api/bridge/status?token=lumen_…" | jq .
+curl -s -H "X-Lumen-Bridge-Token: lumen_…" \
+  http://127.0.0.1:3000/api/bridge/node/info | jq '{name,fullHeight}'
+
+# Docker agent logs (on user machine)
+docker logs -f lumen-bridge
+docker rm -f lumen-bridge
+
+# Smoke
+npm run bridge-server:smoke
+cd bridge && npm run test:local
+
+# Crawler
+systemctl status aether-crawl.timer
+ls -la /home/aether/data/network-catalog.json
+```
 
 ---
 
-**Конец handoff.**  
-Обновляй этот файл при крупных изменениях API/деплоя.  
-Синхронизируй `/root/AETHER.md` ← `/home/aether/AETHER.md` и pointer в `/root/SERVER.md`.
+## 9. Current limitations
+
+| Area | Limitation |
+|------|------------|
+| Bridge tokens | In-memory only; hub restart invalidates tokens until re-create |
+| Bridge allowlist | GET-only subset of Ergo REST (no wallet/mining/POST) |
+| Map (My Node) | Connected peers of user node + shared catalog geo; not a full re-crawl of user’s network |
+| Peers without public IP | Unmapped on world map (NAT / empty address) |
+| Public Mode | Single shared password file; not multi-user accounts |
+| PWA | No service worker / offline cache |
+| Repo name | GitHub still `from-ufa/aether`; product name is Lumen |
+| Deploy paths | Still `/home/aether` + `aether.service` (intentional, no downtime rename) |
+| Copy on HTTP | Clipboard uses fallback (`execCommand`) for plain `http://` (no secure context) |
+| Docker agent | Designed for **Linux `--network host`**; other Docker network modes need different `LUMEN_NODE` |
+
+---
+
+## 10. Checklist for a new session
+
+```text
+Project: Lumen — Ergo Node Dashboard
+Path:    /home/aether
+Git:     from-ufa/aether (main)
+Handoff: /home/aether/LUMEN.md  (+ /root/SERVER.md for host)
+
+Services:
+  systemctl is-active aether lumen-bridge-server aether-crawl.timer ergonode
+
+Modes:
+  Lumen Node → /api/node/*
+  My Node    → /api/bridge/node/* + token (Docker agent recommended)
+
+Bridge:
+  Hub :3100  ·  WS /bridge  ·  agent bridge/  ·  UI NODE SETTINGS
+
+Do not:
+  - Break Public Mode local bypass
+  - Commit .lumen-public-password / .env.local secrets / data/network-catalog.json
+  - Open Ergo wallet or send txs from this app
+```
+
+---
+
+## 11. Session history (condensed)
+
+| When | What |
+|------|------|
+| 2026-07-18→23 | Prototype → deploy, 3D + map, SigmaSpace, real block TX counts, crawl timer, music/planets |
+| 2026-07-24 | Rebrand Aether → Lumen |
+| 2026-07-24 | Bridge backend: agent + hub :3100 + `/api/bridge/*` |
+| 2026-07-24 | Connect UI, Lumen/My Node modes, Docker-first install, copy fix (HTTP), My Node data path + map via Bridge |
+
+Recent commits live on `main` (`git log --oneline -20`).
+
+---
+
+## 12. Dev loop (local on server)
+
+```bash
+cd /home/aether
+npm run build && systemctl restart aether
+# optional hub:
+# systemctl restart lumen-bridge-server
+
+systemctl is-active aether lumen-bridge-server ergonode oracle-core oracle-core-usd aether-crawl.timer
+```
