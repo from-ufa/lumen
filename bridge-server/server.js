@@ -147,8 +147,9 @@ async function handleHttp(req, res) {
       createdAt: entry.createdAt,
       label: entry.label ?? null,
       connect: {
-        command: `node bridge.js --token=${entry.token} --server=wss://ergolumen.net/ws/bridge`,
+        command: `docker build -t lumen-bridge https://github.com/from-ufa/lumen.git#main:bridge && docker run -d --name lumen-bridge --restart unless-stopped --network host -e LUMEN_TOKEN=${entry.token} -e LUMEN_SERVER=wss://ergolumen.net/ws/bridge lumen-bridge`,
         wsUrl: `wss://ergolumen.net/ws/bridge`,
+        install: `curl -fsSL https://raw.githubusercontent.com/from-ufa/lumen/main/bridge/install.sh | bash`,
       },
     });
     return;

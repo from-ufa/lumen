@@ -28,7 +28,7 @@ Snapshot: **2026-07-24**. Read this first, then code.
 | Use | URL |
 |-----|-----|
 | Dashboard | `https://ergolumen.net` |
-| Bridge install assets | `https://ergolumen.net/bridge/*` (install.sh, context.tar, …) |
+| Bridge install assets | **GitHub** `from-ufa/lumen` (`bridge/`) — Docker + install.sh |
 | Bridge WebSocket | `wss://ergolumen.net/ws/bridge` |
 | Bridge hub (loopback only) | `http://127.0.0.1:3100` (not public) |
 | Next (loopback) | `http://127.0.0.1:3000` |
@@ -114,7 +114,7 @@ Does **not** touch `ergonode` / oracle units. Only **allowlisted GET** Ergo REST
 │   │   ├── peers/map/           # Geo map (Lumen or Bridge token)
 │   │   ├── public-status/
 │   │   └── public-password/
-│   └── bridge/[file]/          # Public downloads: install.sh, context.tar, …
+│   └── bridge/[file]/          # Optional self-host fallback (primary: GitHub)
 ├── bridge/                      # Outbound agent (Docker primary)
 │   ├── Dockerfile
 │   ├── bridge.js
@@ -168,10 +168,8 @@ By default the site is **fully open** on the internet (no login).
 
 **Local bypass:** `Host` is `localhost` / `127.0.0.1` / `::1` → always allow (even when protected).
 
-**Always public (no auth):** GET/HEAD install/Docker assets under `/bridge/*`:
-
-- `/bridge/install.sh`, `bridge.js`, `package.json`, `package-lock.json`
-- `/bridge/Dockerfile`, `DOCKER.md`, `context.tar`
+**Always public (no auth):** GET/HEAD under `/bridge/*` still served as a **fallback** (self-host / mirrors).  
+**Primary source for agents:** GitHub `from-ufa/lumen` (`bridge/` — Docker context + `install.sh`).
 
 ---
 
@@ -202,7 +200,7 @@ User does **not** open inbound ports. Agent connects **out** to Lumen’s hub; t
 | Hub | `/home/lumen/bridge-server` | **127.0.0.1:3100** only |
 | Public WS | Caddy `/ws/*` → hub | **wss://ergolumen.net/ws/bridge** |
 | Next proxy | `app/api/bridge/*` | via :3000 / HTTPS |
-| Install assets | `app/bridge/[file]` | `https://ergolumen.net/bridge/*` |
+| Install assets | GitHub `bridge/` | `git#main:bridge` + raw `install.sh` |
 
 **Allowlist (GET only):**  
 `/info`, `/peers/connected`, `/transactions/unconfirmed`, `/blocks/*` (incl. `lastHeaders`).
@@ -234,7 +232,7 @@ Token + mode stored in **localStorage** (`lumen-bridge-token`, `lumen-node-mode`
 Dashboard builds a ready command. Equivalent manual form:
 
 ```bash
-docker build -t lumen-bridge https://ergolumen.net/bridge/context.tar && \
+docker build -t lumen-bridge https://github.com/from-ufa/lumen.git#main:bridge && \
 docker rm -f lumen-bridge 2>/dev/null; \
 docker run -d --name lumen-bridge --restart unless-stopped \
   --network host \
@@ -252,15 +250,14 @@ docker run -d --name lumen-bridge --restart unless-stopped \
 
 - **`--network host`** (Linux): container reaches host `127.0.0.1:9053`
 - Docs: `bridge/DOCKER.md`, `bridge/README.md`
-- Context: `https://ergolumen.net/bridge/context.tar`
+- Context: `https://github.com/from-ufa/lumen.git#main:bridge`
 - WSS via Caddy → hub on `127.0.0.1:3100`
 
 ### Advanced (no Docker)
 
 ```bash
-curl -fsSL https://ergolumen.net/bridge/install.sh | \
-  LUMEN_BASE=https://ergolumen.net bash
-# installs to ~/lumen-bridge
+curl -fsSL https://raw.githubusercontent.com/from-ufa/lumen/main/bridge/install.sh | bash
+# installs to ~/lumen-bridge (downloads bridge.js from GitHub raw)
 
 cd ~/lumen-bridge && node bridge.js \
   --token=lumen_… \
@@ -338,8 +335,8 @@ Dashboard shows **`NODE · <name>`** from live `/info` so you can verify the act
 | GET | `/api/peers/map?token=` | Map for My Node (Bridge) |
 | GET | `/api/public-status` | Public Mode on/off |
 | POST | `/api/public-password` | Set/change public password |
-| GET | `/bridge/install.sh` | Agent installer (public) |
-| GET | `/bridge/context.tar` | Docker build context (public) |
+| GET | `/bridge/install.sh` | Fallback installer (primary: GitHub raw) |
+| GET | `/bridge/context.tar` | Fallback Docker context (primary: GitHub git context) |
 | GET | `/bridge/Dockerfile` · `bridge.js` · … | Public assets |
 
 ### Bridge-server (port 3100)
@@ -481,7 +478,7 @@ Modes:
 Bridge:
   Hub 127.0.0.1:3100  ·  public WSS wss://ergolumen.net/ws/bridge
   agent bridge/  ·  UI NODE SETTINGS
-  assets https://ergolumen.net/bridge/*
+  assets GitHub from-ufa/lumen bridge/
 
 Do not:
   - Break Public Mode local bypass
@@ -504,6 +501,7 @@ Do not:
 | 2026-07-24 | Rename deploy path `/home/aether` → `/home/lumen`; public repo `from-ufa/lumen` |
 | 2026-07-24 | **Bridge offline fix:** hub tokens now persist to disk; unknown-token auth logs; recovered remote agent after rename restart |
 | 2026-07-24 | **NODE SETTINGS cleanup:** only Lumen/My Node + Connect Bridge; drop REST URL, Public Access UI, Try Demo |
+| 2026-07-24 | Bridge agent assets from **GitHub** (Docker `git#main:bridge`, raw install.sh); detailed root README |
 
 Recent commits live on `main` (`git log --oneline -20`).
 

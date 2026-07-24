@@ -1,25 +1,36 @@
 #!/usr/bin/env bash
 # Lumen Bridge installer
-# Usage (copy-paste from Lumen dashboard):
-#   curl -fsSL http://HOST:3000/bridge/install.sh | bash
+# Usage (from Lumen dashboard / docs):
+#   curl -fsSL https://raw.githubusercontent.com/from-ufa/lumen/main/bridge/install.sh | bash
 #
 # Optional env:
-#   LUMEN_BASE          Dashboard base URL (default: https://ergolumen.net)
+#   LUMEN_BRIDGE_RAW    Raw base for bridge files
+#                       (default: https://raw.githubusercontent.com/from-ufa/lumen/main/bridge)
+#   LUMEN_BASE          Legacy: dashboard origin — if set, uses $LUMEN_BASE/bridge/*
 #   LUMEN_BRIDGE_DIR    Install directory (default: ~/lumen-bridge)
 #   LUMEN_BRIDGE_TOKEN  If set, prints a ready-to-run start command after install
 #   LUMEN_BRIDGE_SERVER WebSocket hub (default: wss://ergolumen.net/ws/bridge)
 
 set -euo pipefail
 
-LUMEN_BASE="${LUMEN_BASE:-https://ergolumen.net}"
-LUMEN_BASE="${LUMEN_BASE%/}"
-DIR="${LUMEN_BRIDGE_DIR:-$HOME/lumen-bridge}"
+GH_RAW_DEFAULT="https://raw.githubusercontent.com/from-ufa/lumen/main/bridge"
 WS_DEFAULT="wss://ergolumen.net/ws/bridge"
+
+# Prefer explicit raw base; else map legacy LUMEN_BASE → …/bridge; else GitHub.
+if [[ -n "${LUMEN_BRIDGE_RAW:-}" ]]; then
+  BRIDGE_RAW="${LUMEN_BRIDGE_RAW%/}"
+elif [[ -n "${LUMEN_BASE:-}" ]]; then
+  BRIDGE_RAW="${LUMEN_BASE%/}/bridge"
+else
+  BRIDGE_RAW="$GH_RAW_DEFAULT"
+fi
+
+DIR="${LUMEN_BRIDGE_DIR:-$HOME/lumen-bridge}"
 WS="${LUMEN_BRIDGE_SERVER:-$WS_DEFAULT}"
 
-# If install.sh was saved to disk and executed, try to infer LUMEN_BASE from path (skip for pipe)
-if [[ -z "${LUMEN_BASE_SET:-}" && "${1:-}" == "--base" && -n "${2:-}" ]]; then
-  LUMEN_BASE="${2%/}"
+# Optional: --base URL (legacy) → treat as LUMEN_BASE
+if [[ "${1:-}" == "--base" && -n "${2:-}" ]]; then
+  BRIDGE_RAW="${2%/}/bridge"
 fi
 
 echo ""
@@ -27,7 +38,7 @@ echo "╔═══════════════════════�
 echo "║       Lumen Bridge — quick install       ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
-echo "  From:  $LUMEN_BASE"
+echo "  From:  $BRIDGE_RAW"
 echo "  Into:  $DIR"
 echo ""
 
@@ -53,9 +64,14 @@ mkdir -p "$DIR"
 cd "$DIR"
 
 echo "→ Downloading bridge.js …"
-curl -fsSL "$LUMEN_BASE/bridge/bridge.js" -o bridge.js
+curl -fsSL "$BRIDGE_RAW/bridge.js" -o bridge.js
 echo "→ Downloading package.json …"
-curl -fsSL "$LUMEN_BASE/bridge/package.json" -o package.json
+curl -fsSL "$BRIDGE_RAW/package.json" -o package.json
+if curl -fsSL "$BRIDGE_RAW/package-lock.json" -o package-lock.json 2>/dev/null; then
+  echo "→ Downloaded package-lock.json"
+else
+  rm -f package-lock.json
+fi
 chmod +x bridge.js
 
 echo "→ npm install (ws) …"
@@ -80,4 +96,5 @@ else
 fi
 
 echo "Requires a local Ergo node REST at http://127.0.0.1:9053 (override with --node=)."
+echo "Source: https://github.com/from-ufa/lumen  ·  Hub: $WS"
 echo ""

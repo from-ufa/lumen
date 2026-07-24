@@ -25,8 +25,18 @@ export const PUBLIC_DOMAIN = "ergolumen.net";
  */
 export const DEFAULT_BRIDGE_WS_PUBLIC = `wss://${PUBLIC_DOMAIN}/ws/bridge`;
 
-/** Public HTTPS base for dashboard + bridge install downloads. */
+/** Public HTTPS base for dashboard. */
 export const DEFAULT_LUMEN_HTTP_PUBLIC = `https://${PUBLIC_DOMAIN}`;
+
+/** GitHub source of truth for Bridge agent assets (Docker context, install.sh). */
+export const GITHUB_REPO = "from-ufa/lumen";
+export const GITHUB_BRANCH = "main";
+export const GITHUB_REPO_URL = `https://github.com/${GITHUB_REPO}`;
+/** Docker remote git context — subdirectory `bridge/` as build context. */
+export const GITHUB_BRIDGE_DOCKER_CONTEXT = `https://github.com/${GITHUB_REPO}.git#${GITHUB_BRANCH}:bridge`;
+/** Raw files for install.sh / curl downloads. */
+export const GITHUB_BRIDGE_RAW_BASE = `https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}/bridge`;
+export const GITHUB_BRIDGE_INSTALL_SH = `${GITHUB_BRIDGE_RAW_BASE}/install.sh`;
 
 /** Default install directory used by install.sh */
 export const BRIDGE_INSTALL_DIR = "~/lumen-bridge";
@@ -46,9 +56,8 @@ export function centerNodeLabelUpper(mode: NodeMode): string {
 }
 
 /**
- * Dashboard HTTP origin for install.sh / docker context downloads.
- * Localhost/SSH tunnel → public HTTPS domain so agents can pull over the internet.
- * Production hostname → same-origin https.
+ * @deprecated Bridge assets come from GitHub. Kept for rare self-host overrides.
+ * Dashboard HTTP origin (ergolumen.net) — not used for Docker/install by default.
  */
 export function bridgeHttpBase(): string {
   if (typeof window === "undefined") return DEFAULT_LUMEN_HTTP_PUBLIC;
@@ -56,7 +65,6 @@ export function bridgeHttpBase(): string {
   if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
     return DEFAULT_LUMEN_HTTP_PUBLIC;
   }
-  // Prefer canonical domain when opened via raw IP
   if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.endsWith(".hostens.cloud")) {
     return DEFAULT_LUMEN_HTTP_PUBLIC;
   }
@@ -68,10 +76,9 @@ export function bridgeHttpBase(): string {
 }
 
 /** One-liner: install Bridge next to the user's Ergo node (advanced / no Docker). */
-export function bridgeInstallCommand(httpBase?: string): string {
-  const base = (httpBase || bridgeHttpBase()).replace(/\/$/, "");
-  // LUMEN_BASE ensures install.sh downloads assets from the same host
-  return `curl -fsSL ${base}/bridge/install.sh | LUMEN_BASE=${base} bash`;
+export function bridgeInstallCommand(_httpBase?: string): string {
+  // Assets always from GitHub so install works even if the dashboard host is down.
+  return `curl -fsSL ${GITHUB_BRIDGE_INSTALL_SH} | bash`;
 }
 
 /**
@@ -85,19 +92,19 @@ export function bridgeRunCommand(token: string, wsUrl?: string): string {
 
 /**
  * Recommended: one pasteable Docker command.
- * Builds image from this Lumen host, then runs with token + server already set.
+ * Builds image from GitHub (from-ufa/lumen#main:bridge), then runs with token + WSS.
  * --network host so the container can reach Ergo on 127.0.0.1:9053 (Linux).
  */
 export function bridgeDockerCommand(
   token: string,
-  opts?: { wsUrl?: string; httpBase?: string; nodeUrl?: string }
+  opts?: { wsUrl?: string; nodeUrl?: string; dockerContext?: string }
 ): string {
   const server = opts?.wsUrl || bridgeWsUrlForClient();
-  const base = (opts?.httpBase || bridgeHttpBase()).replace(/\/$/, "");
   const node = opts?.nodeUrl || "http://127.0.0.1:9053";
-  // Multi-line, ready to paste. Rebuilds when Dockerfile changes; run is restart-safe.
+  const context = opts?.dockerContext || GITHUB_BRIDGE_DOCKER_CONTEXT;
+  // Multi-line, ready to paste. Rebuilds when GitHub bridge/ changes; run is restart-safe.
   return [
-    `docker build -t lumen-bridge ${base}/bridge/context.tar && \\`,
+    `docker build -t lumen-bridge ${context} && \\`,
     `docker rm -f lumen-bridge 2>/dev/null; \\`,
     `docker run -d --name lumen-bridge --restart unless-stopped \\`,
     `  --network host \\`,

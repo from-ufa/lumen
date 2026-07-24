@@ -29,7 +29,6 @@ import { toast } from "sonner";
 import type { NodeMode, BridgeStatus } from "../lib/node-api";
 import {
   bridgeDockerCommand,
-  bridgeHttpBase,
   bridgeInstallCommand,
   bridgeRunCommand,
   createBridgeToken,
@@ -215,15 +214,13 @@ export default function ConnectionSettings({
   const [creatingToken, setCreatingToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [httpBase, setHttpBase] = useState("https://ergolumen.net");
 
   const bridgeOnline = !!bridgeStatus?.connected;
   const bridgeKnown = bridgeStatus?.known !== false;
 
-  const dockerCmd = bridgeToken
-    ? bridgeDockerCommand(bridgeToken, { httpBase })
-    : "";
-  const installCmd = bridgeInstallCommand(httpBase);
+  // Docker context + install.sh come from GitHub (from-ufa/lumen)
+  const dockerCmd = bridgeToken ? bridgeDockerCommand(bridgeToken) : "";
+  const installCmd = bridgeInstallCommand();
   const runCmd = bridgeToken ? bridgeRunCommand(bridgeToken) : "";
 
   useEffect(() => {
@@ -232,7 +229,6 @@ export default function ConnectionSettings({
 
   useEffect(() => {
     if (open) {
-      setHttpBase(bridgeHttpBase());
       onRefreshBridgeStatus?.();
     }
   }, [open, onRefreshBridgeStatus]);
@@ -523,7 +519,11 @@ export default function ConnectionSettings({
                           label="DOCKER · COPY & RUN"
                         />
                         <p className="text-[10px] text-[#A0A0B0]/65 leading-relaxed">
-                          Builds image, starts{" "}
+                          Builds from{" "}
+                          <span className="font-mono text-[#A0A0B0]">
+                            github.com/from-ufa/lumen
+                          </span>
+                          , starts{" "}
                           <span className="font-mono text-[#A0A0B0]">
                             lumen-bridge
                           </span>{" "}
@@ -742,7 +742,7 @@ export default function ConnectionSettings({
               </div>
 
               <div className="mt-6 sm:mt-7 pt-5 border-t border-white/10 text-xs text-[#A0A0B0]/70 font-mono tracking-[0.5px]">
-                Bridge is outbound-only (allowlisted GETs). WSS:{" "}
+                Agent from GitHub · WSS{" "}
                 <span className="text-[#A0A0B0]">
                   wss://ergolumen.net/ws/bridge
                 </span>

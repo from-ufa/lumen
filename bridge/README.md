@@ -4,10 +4,12 @@ Outbound agent for [Lumen](https://ergolumen.net) (Ergo Node Dashboard).
 
 Connects to the Lumen hub over **outbound WebSocket** so the dashboard can read your local Ergo REST **without opening inbound ports**.
 
+Source of truth: **[github.com/from-ufa/lumen](https://github.com/from-ufa/lumen)** (`bridge/` folder).
+
 ## Docker (recommended)
 
 ```bash
-docker build -t lumen-bridge https://ergolumen.net/bridge/context.tar && \
+docker build -t lumen-bridge https://github.com/from-ufa/lumen.git#main:bridge && \
 docker rm -f lumen-bridge 2>/dev/null; \
 docker run -d --name lumen-bridge --restart unless-stopped \
   --network host \
@@ -21,8 +23,7 @@ Full notes: [DOCKER.md](./DOCKER.md). Token from **NODE SETTINGS → Connect my 
 ## Install without Docker
 
 ```bash
-curl -fsSL https://ergolumen.net/bridge/install.sh | \
-  LUMEN_BASE=https://ergolumen.net bash
+curl -fsSL https://raw.githubusercontent.com/from-ufa/lumen/main/bridge/install.sh | bash
 
 cd ~/lumen-bridge && node bridge.js \
   --token=lumen_… \
