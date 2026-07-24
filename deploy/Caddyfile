@@ -1,31 +1,25 @@
 # Lumen — ergolumen.net
-# HTTPS via Let's Encrypt (automatic)
-# UI  → 127.0.0.1:3000  (aether.service / Next.js)
-# WS  → 127.0.0.1:3100  (lumen-bridge-server)  /ws/* → /*
-# Devnet REST preserved under /devnet/
+# HTTPS via Let's Encrypt
+# UI → 127.0.0.1:3000 | Bridge WSS /ws/* → 127.0.0.1:3100
 
 {
 	email admin@ergolumen.net
-	# Disable HTTP/3 (QUIC): some networks block UDP/443 → browser ERR_CONNECTION_TIMED_OUT
-	# after seeing alt-svc: h3. Stick to reliable TCP h1/h2.
+	# TCP only — no HTTP/3 (QUIC)
 	servers {
 		protocols h1 h2
 	}
 }
 
+# Force IPv4 listen (OpenVZ venet often needs explicit 0.0.0.0)
 ergolumen.net, www.ergolumen.net {
-	# Explicit dual-stack bind (all interfaces)
-	bind 0.0.0.0 ::
+	bind 0.0.0.0
 
 	encode gzip
 
-	# Bridge hub WebSocket + HTTP
-	# Client: wss://ergolumen.net/ws/bridge → 127.0.0.1:3100/bridge
 	handle_path /ws/* {
 		reverse_proxy 127.0.0.1:3100
 	}
 
-	# Legacy Ergo devnet REST (former nginx /devnet/)
 	handle_path /devnet/* {
 		reverse_proxy 127.0.0.1:9153 {
 			header_up api_key "hello"
@@ -33,7 +27,6 @@ ergolumen.net, www.ergolumen.net {
 		}
 	}
 
-	# Lumen dashboard + Next API + /bridge/* install assets
 	handle {
 		reverse_proxy 127.0.0.1:3000 {
 			header_up Host {host}
@@ -45,7 +38,6 @@ ergolumen.net, www.ergolumen.net {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
-		# Do not advertise HTTP/3
 		-Alt-Svc
 		-Server
 	}
@@ -58,9 +50,8 @@ ergolumen.net, www.ergolumen.net {
 	}
 }
 
-# HTTP on bare IP / hostname → HTTPS domain (and keep /devnet for ops)
 http://80.209.232.82, http://toa.c.hostens.cloud {
-	bind 0.0.0.0 ::
+	bind 0.0.0.0
 
 	handle_path /devnet/* {
 		reverse_proxy 127.0.0.1:9153 {

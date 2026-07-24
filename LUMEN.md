@@ -40,7 +40,7 @@ Snapshot: **2026-07-24**. Read this first, then code.
 | Logs | `/var/log/caddy/ergolumen.log` |
 | Certs | automatic Let’s Encrypt for `ergolumen.net` + `www` |
 | Protocols | **h1 + h2 only** (HTTP/3 disabled — QUIC/UDP:443 can cause browser timeouts) |
-| Firewall | **ufw active**: allow `22`, `80/tcp`, `443/tcp` (+ legacy node ports) |
+| Firewall | **ufw disabled/masked** (OpenVZ/venet — ufw default-deny broke public :443). INPUT policy ACCEPT. Do **not** re-enable ufw without testing external 443. |
 | Notes | `nginx` on :80 **stopped/disabled** (backup `/root/nginx-backup-ergolumen/`). Legacy `/devnet/` kept in Caddy. |
 
 ```bash
