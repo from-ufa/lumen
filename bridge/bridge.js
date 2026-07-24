@@ -45,10 +45,20 @@ const ALLOWED_PATH_RULES = [
 // ---------------------------------------------------------------------------
 
 function parseArgs(argv) {
+  // Prefer long names; short aliases for Docker one-liners (LUMEN_TOKEN / LUMEN_SERVER)
   const out = {
-    token: process.env.LUMEN_BRIDGE_TOKEN || null,
-    node: process.env.LUMEN_NODE_URL || DEFAULT_NODE,
-    server: process.env.LUMEN_BRIDGE_SERVER || DEFAULT_SERVER,
+    token:
+      process.env.LUMEN_BRIDGE_TOKEN ||
+      process.env.LUMEN_TOKEN ||
+      null,
+    node:
+      process.env.LUMEN_NODE_URL ||
+      process.env.LUMEN_NODE ||
+      DEFAULT_NODE,
+    server:
+      process.env.LUMEN_BRIDGE_SERVER ||
+      process.env.LUMEN_SERVER ||
+      DEFAULT_SERVER,
     help: false,
     version: false,
   };
@@ -85,13 +95,19 @@ Usage:
   node bridge.js --token=lumen_xxxxx --server=wss://lumen.example.com/bridge
 
 Options:
-  --token=TOKEN     Bridge auth token (required). Env: LUMEN_BRIDGE_TOKEN
+  --token=TOKEN     Bridge auth token (required).
+                    Env: LUMEN_BRIDGE_TOKEN or LUMEN_TOKEN
   --node=URL        Local Ergo node REST URL (default: ${DEFAULT_NODE})
-                    Env: LUMEN_NODE_URL
+                    Env: LUMEN_NODE_URL or LUMEN_NODE
   --server=URL      Lumen Bridge WebSocket URL (default: ${DEFAULT_SERVER})
-                    Env: LUMEN_BRIDGE_SERVER
+                    Env: LUMEN_BRIDGE_SERVER or LUMEN_SERVER
   --help, -h        Show this help
   --version, -v     Show version
+
+Docker:
+  docker run -d --name lumen-bridge --restart unless-stopped --network host \\
+    -e LUMEN_TOKEN=lumen_xxx -e LUMEN_SERVER=ws://host:3100/bridge lumen-bridge
+
 
 Protocol (JSON over WebSocket):
   Client → Server (on open):

@@ -62,13 +62,18 @@ export function proxy(req: NextRequest) {
   const publicMode = password.length > 0;
   const pathname = req.nextUrl.pathname;
 
-  // Public Bridge install assets (no secrets) — curl one-liner must work remotely
-  // GET /bridge/install.sh | /bridge/bridge.js | /bridge/package.json
+  // Public Bridge install / Docker assets (no secrets) — curl & docker build work remotely
+  // GET /bridge/install.sh | bridge.js | package.json | package-lock.json
+  //     Dockerfile | DOCKER.md | context.tar
   if (
     req.method === "GET" &&
     (pathname === "/bridge/install.sh" ||
       pathname === "/bridge/bridge.js" ||
-      pathname === "/bridge/package.json")
+      pathname === "/bridge/package.json" ||
+      pathname === "/bridge/package-lock.json" ||
+      pathname === "/bridge/Dockerfile" ||
+      pathname === "/bridge/DOCKER.md" ||
+      pathname === "/bridge/context.tar")
   ) {
     const res = NextResponse.next();
     res.headers.set("X-Lumen-Auth", "bridge-public-asset");

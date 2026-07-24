@@ -24,10 +24,14 @@ import {
   Download,
   Terminal,
   Radio,
+  Container,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { NodeMode, BridgeStatus } from "../lib/node-api";
 import {
+  bridgeDockerCommand,
   bridgeHttpBase,
   bridgeInstallCommand,
   bridgeRunCommand,
@@ -198,11 +202,15 @@ export default function ConnectionSettings({
   const [savingPassword, setSavingPassword] = useState(false);
   const [creatingToken, setCreatingToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [httpBase, setHttpBase] = useState("http://80.209.232.82:3000");
 
   const bridgeOnline = !!bridgeStatus?.connected;
   const bridgeKnown = bridgeStatus?.known !== false;
 
+  const dockerCmd = bridgeToken
+    ? bridgeDockerCommand(bridgeToken, { httpBase })
+    : "";
   const installCmd = bridgeInstallCommand(httpBase);
   const runCmd = bridgeToken ? bridgeRunCommand(bridgeToken) : "";
 
@@ -388,9 +396,7 @@ export default function ConnectionSettings({
   };
   const status = statusLine();
 
-  const step1Done = !!bridgeToken; // install is user-side; we mark "ready to install" once flow started
-  const step2Done = bridgeOnline;
-  const step3Done = bridgeOnline;
+  const dockerDone = bridgeOnline;
 
   const modal =
     open &&
@@ -519,8 +525,9 @@ export default function ConnectionSettings({
 
                   <p className="text-[11px] text-[#A0A0B0] leading-relaxed">
                     Connect <span className="text-[#E8E8F0]">your</span> Ergo
-                    node in about a minute — no open ports. Run two copy-paste
-                    commands on the machine where the node lives.
+                    node in about a minute — no open ports.{" "}
+                    <span className="text-[#00E5FF]">Docker</span> is the
+                    recommended way: one command, copy → paste → done.
                   </p>
 
                   {!bridgeToken ? (
@@ -533,51 +540,42 @@ export default function ConnectionSettings({
                       {creatingToken ? (
                         <Loader2 size={15} className="animate-spin" />
                       ) : (
-                        <Cable size={15} />
+                        <Container size={15} />
                       )}
                       {creatingToken
                         ? "PREPARING…"
-                        : "START — GET MY COMMANDS"}
+                        : "START — GET DOCKER COMMAND"}
                     </button>
                   ) : (
                     <div className="space-y-3">
-                      {/* STEP 1 */}
+                      {/* STEP 1 — DOCKER (primary) */}
                       <StepCard
                         n={1}
-                        title="INSTALL BRIDGE"
-                        subtitle="Once, on the machine with your Ergo node (Node.js 18+)."
-                        done={step1Done && bridgeOnline}
+                        title="RUN WITH DOCKER"
+                        subtitle="Recommended. Paste on the machine with your Ergo node (Docker + Linux host network)."
+                        done={dockerDone}
                         active={!bridgeOnline}
                       >
                         <div className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-[#A0A0B0] mb-1">
-                          <Download size={12} className="text-[#00E5FF]" />
-                          TERMINAL
+                          <Container size={12} className="text-[#00E5FF]" />
+                          RECOMMENDED · ONE COMMAND
                         </div>
                         <CommandBlock
-                          value={installCmd}
-                          label="STEP 1 · COPY & RUN"
+                          value={dockerCmd}
+                          label="DOCKER · COPY & RUN"
                         />
-                      </StepCard>
-
-                      {/* STEP 2 */}
-                      <StepCard
-                        n={2}
-                        title="START BRIDGE WITH YOUR TOKEN"
-                        subtitle="Paste this exact command — token and server are already filled in."
-                        done={step2Done}
-                        active={!!bridgeToken && !bridgeOnline}
-                      >
-                        <div className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-[#A0A0B0] mb-1">
-                          <Terminal size={12} className="text-[#00E5FF]" />
-                          TERMINAL
-                        </div>
-                        <CommandBlock
-                          value={runCmd}
-                          label="STEP 2 · COPY & RUN"
-                        />
+                        <p className="text-[10px] text-[#A0A0B0]/65 leading-relaxed">
+                          Builds image, starts{" "}
+                          <span className="font-mono text-[#A0A0B0]">
+                            lumen-bridge
+                          </span>{" "}
+                          with your token. Auto-restart after reboot. Needs Ergo
+                          REST on{" "}
+                          <span className="font-mono">127.0.0.1:9053</span>.
+                        </p>
                         <div className="flex items-center justify-between gap-2 pt-1">
                           <span className="text-[10px] text-[#A0A0B0]/70 font-mono tracking-wider">
-                            TOKEN
+                            YOUR TOKEN
                           </span>
                           <div className="flex items-center gap-1">
                             <button
@@ -605,21 +603,21 @@ export default function ConnectionSettings({
                         {bridgeStatus && !bridgeKnown && (
                           <p className="text-[10px] text-[#F59E0B]">
                             Token unknown on server (restart cleared memory).
-                            Tap New token below.
+                            Tap New token below, then re-run Docker.
                           </p>
                         )}
                       </StepCard>
 
-                      {/* STEP 3 */}
+                      {/* STEP 2 — STATUS */}
                       <StepCard
-                        n={3}
+                        n={2}
                         title="WAIT FOR ONLINE"
                         subtitle={
                           bridgeOnline
-                            ? "Connected. Switch to My Node if you haven’t — data is live."
-                            : "Leave Step 2 running. This status updates automatically."
+                            ? "Connected. Use My Node mode — data is live."
+                            : "After Docker starts, this flips to Online automatically."
                         }
-                        done={step3Done}
+                        done={bridgeOnline}
                         active={!!bridgeToken && !bridgeOnline}
                       >
                         <div
@@ -656,7 +654,7 @@ export default function ConnectionSettings({
                                   ]
                                     .filter(Boolean)
                                     .join(" · ") || "Agent linked"
-                                : "Run Step 2 and keep the terminal open"}
+                                : "docker logs -f lumen-bridge  ·  keep container running"}
                             </div>
                           </div>
                         </div>
@@ -686,6 +684,49 @@ export default function ConnectionSettings({
                           )}
                         </div>
                       </StepCard>
+
+                      {/* ADVANCED — node / install.sh */}
+                      <div className="rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => setShowAdvanced((v) => !v)}
+                          className="w-full flex items-center justify-between gap-2 px-4 py-3 text-[11px] font-mono tracking-widest text-[#A0A0B0] hover:text-white hover:bg-white/[0.03]"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Terminal size={13} />
+                            ADVANCED · WITHOUT DOCKER
+                          </span>
+                          {showAdvanced ? (
+                            <ChevronUp size={14} />
+                          ) : (
+                            <ChevronDown size={14} />
+                          )}
+                        </button>
+                        {showAdvanced && (
+                          <div className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3">
+                            <p className="text-[10px] text-[#A0A0B0] leading-relaxed">
+                              Node.js 18+ on the machine with your Ergo node.
+                              Two commands instead of one Docker paste.
+                            </p>
+                            <div className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-[#A0A0B0]">
+                              <Download size={12} />
+                              1 · INSTALL
+                            </div>
+                            <CommandBlock
+                              value={installCmd}
+                              label="INSTALL · COPY"
+                            />
+                            <div className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-[#A0A0B0]">
+                              <Terminal size={12} />
+                              2 · RUN
+                            </div>
+                            <CommandBlock
+                              value={runCmd}
+                              label="RUN · COPY"
+                            />
+                          </div>
+                        )}
+                      </div>
 
                       <div className="flex flex-wrap gap-2 pt-1">
                         <button
@@ -840,8 +881,8 @@ export default function ConnectionSettings({
               </div>
 
               <div className="mt-6 sm:mt-7 pt-5 border-t border-white/10 text-xs text-[#A0A0B0]/70 font-mono tracking-[0.5px]">
-                Bridge is outbound-only (allowlisted GETs). Install:{" "}
-                <span className="text-[#A0A0B0]">/bridge/install.sh</span>
+                Bridge is outbound-only (allowlisted GETs). Docker:{" "}
+                <span className="text-[#A0A0B0]">/bridge/DOCKER.md</span>
               </div>
             </motion.div>
           </div>

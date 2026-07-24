@@ -41,7 +41,7 @@ export function bridgeHttpBase(): string {
   return `${window.location.protocol}//${window.location.host}`;
 }
 
-/** One-liner: install Bridge next to the user's Ergo node. */
+/** One-liner: install Bridge next to the user's Ergo node (advanced / no Docker). */
 export function bridgeInstallCommand(httpBase?: string): string {
   const base = (httpBase || bridgeHttpBase()).replace(/\/$/, "");
   // LUMEN_BASE ensures install.sh downloads assets from the same host
@@ -49,12 +49,37 @@ export function bridgeInstallCommand(httpBase?: string): string {
 }
 
 /**
- * One-liner: run Bridge with personal token (after install).
+ * One-liner: run Bridge with personal token (after install.sh).
  * Uses ~/lumen-bridge — same default as install.sh.
  */
 export function bridgeRunCommand(token: string, wsUrl?: string): string {
   const server = wsUrl || bridgeWsUrlForClient();
   return `cd ~/lumen-bridge && node bridge.js --token=${token} --server=${server}`;
+}
+
+/**
+ * Recommended: one pasteable Docker command.
+ * Builds image from this Lumen host, then runs with token + server already set.
+ * --network host so the container can reach Ergo on 127.0.0.1:9053 (Linux).
+ */
+export function bridgeDockerCommand(
+  token: string,
+  opts?: { wsUrl?: string; httpBase?: string; nodeUrl?: string }
+): string {
+  const server = opts?.wsUrl || bridgeWsUrlForClient();
+  const base = (opts?.httpBase || bridgeHttpBase()).replace(/\/$/, "");
+  const node = opts?.nodeUrl || "http://127.0.0.1:9053";
+  // Multi-line, ready to paste. Rebuilds when Dockerfile changes; run is restart-safe.
+  return [
+    `docker build -t lumen-bridge ${base}/bridge/context.tar && \\`,
+    `docker rm -f lumen-bridge 2>/dev/null; \\`,
+    `docker run -d --name lumen-bridge --restart unless-stopped \\`,
+    `  --network host \\`,
+    `  -e LUMEN_TOKEN=${token} \\`,
+    `  -e LUMEN_SERVER=${server} \\`,
+    `  -e LUMEN_NODE=${node} \\`,
+    `  lumen-bridge`,
+  ].join("\n");
 }
 
 export function loadNodeMode(): NodeMode {

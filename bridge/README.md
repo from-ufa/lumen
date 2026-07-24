@@ -28,14 +28,35 @@
 
 ## Требования
 
-- Node.js **≥ 18**
+- **Docker** (рекомендуется) **или** Node.js ≥ 18
 - Доступ к локальной Ergo REST (по умолчанию `http://127.0.0.1:9053`)
 
-## Установка
+## Запуск через Docker (рекомендуется)
+
+Подробнее: **[DOCKER.md](./DOCKER.md)**.
+
+Готовая команда с твоим токеном — в Lumen → **NODE SETTINGS → Connect my node**.
 
 ```bash
-cd /home/aether/bridge
-npm install
+# Пример (подставь token из дашборда)
+docker build -t lumen-bridge http://80.209.232.82:3000/bridge/context.tar && \
+docker rm -f lumen-bridge 2>/dev/null; \
+docker run -d --name lumen-bridge --restart unless-stopped \
+  --network host \
+  -e LUMEN_TOKEN=lumen_YOUR_TOKEN \
+  -e LUMEN_SERVER=ws://80.209.232.82:3100/bridge \
+  lumen-bridge
+```
+
+Env: `LUMEN_TOKEN` / `LUMEN_SERVER` / `LUMEN_NODE` (или длинные `LUMEN_BRIDGE_*`).
+
+## Установка без Docker
+
+```bash
+curl -fsSL http://80.209.232.82:3000/bridge/install.sh | \
+  LUMEN_BASE=http://80.209.232.82:3000 bash
+# или из репо:
+cd bridge && npm install
 ```
 
 ## Запуск
