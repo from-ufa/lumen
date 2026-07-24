@@ -21,10 +21,10 @@ Then open **3D CONSTELLATION** → **MUSIC ON**. The app will loop your file.
 
 ## Copyright note
 
-We **cannot** ship or download Hans Zimmer’s *Stay* (Interstellar) with Aether.
+We **cannot** ship or download Hans Zimmer’s *Stay* (Interstellar) with Lumen.
 That recording is copyrighted (WaterTower Music / Sony, etc.).
 
-Without a file in this folder, Aether plays an **original** soft Web Audio
+Without a file in this folder, Lumen plays an **original** soft Web Audio
 space pad — similar *mood*, different composition.
 
 ## Controls

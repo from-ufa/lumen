@@ -1,7 +1,8 @@
 {
-  "name": "aether",
+  "name": "lumen",
   "version": "0.1.0",
   "private": true,
+  "description": "Lumen — Ergo Node Dashboard. The living pulse of your Ergo node.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
