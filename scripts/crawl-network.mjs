@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Aether Network Indexer
+ * Lumen Network Indexer
  * Harvests Ergo peers from local node + REST fan-out + TCP :9030 probe.
  * Writes data/network-catalog.json for /api/peers/map.
  *
  * Usage: node scripts/crawl-network.mjs
- * Env: ERGO_NODE_URL, AETHER_NETWORK_CATALOG, AETHER_CRAWL_SKIP_PROBE=1
+ * Env: ERGO_NODE_URL, AETHER_NETWORK_CATALOG (compat), AETHER_CRAWL_SKIP_PROBE=1
  */
 import fs from "fs";
 import path from "path";
@@ -157,7 +157,7 @@ async function fetchJson(url, timeoutMs) {
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
-      headers: { "User-Agent": "AetherNetworkIndexer/0.1", Accept: "application/json" },
+      headers: { "User-Agent": "LumenNetworkIndexer/0.1", Accept: "application/json" },
       redirect: "follow",
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
