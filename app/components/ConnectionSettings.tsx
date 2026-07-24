@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -39,6 +39,7 @@ import {
   saveBridgeToken,
   saveNodeMode,
 } from "../lib/node-api";
+import { copyTextToClipboard } from "../lib/copy-text";
 
 interface ConnectionSettingsProps {
   nodeUrl: string;
@@ -67,33 +68,59 @@ function CopyButton({
   primary?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
-  const onCopy = async () => {
-    if (!value) return;
-    try {
-      await navigator.clipboard.writeText(value);
+  const [busy, setBusy] = useState(false);
+
+  const onCopy = async (e: MouseEvent<HTMLButtonElement>) => {
+    // Modal shell uses stopPropagation; keep this a direct user gesture for clipboard
+    e.preventDefault();
+    e.stopPropagation();
+    if (!value || busy) return;
+
+    setBusy(true);
+    const ok = await copyTextToClipboard(value);
+    setBusy(false);
+
+    if (ok) {
       setCopied(true);
-      toast.success("Copied — paste into your terminal", {
-        description: label,
+      toast.success("Copied", {
+        description: `${label} — paste into your terminal`,
+        duration: 2200,
       });
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      toast.error("Could not copy");
+      window.setTimeout(() => setCopied(false), 2000);
+    } else {
+      toast.error("Could not copy", {
+        description: "Select the command text and copy manually (Ctrl/Cmd+C)",
+      });
     }
   };
+
   return (
     <button
       type="button"
       onClick={onCopy}
-      disabled={!value}
+      disabled={!value || busy}
       className={
         primary
-          ? "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/15 text-[#00E5FF] text-[10px] font-mono tracking-widest hover:bg-[#00E5FF]/25 disabled:opacity-40 transition-all"
-          : "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/15 hover:bg-white/5 text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white disabled:opacity-40 transition-all"
+          ? `flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-mono tracking-widest disabled:opacity-40 transition-all ${
+              copied
+                ? "border-[#10B981]/50 bg-[#10B981]/15 text-[#10B981]"
+                : "border-[#00E5FF]/40 bg-[#00E5FF]/15 text-[#00E5FF] hover:bg-[#00E5FF]/25"
+            }`
+          : `flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] font-mono tracking-widest disabled:opacity-40 transition-all ${
+              copied
+                ? "border-[#10B981]/40 bg-[#10B981]/10 text-[#10B981]"
+                : "border-white/15 hover:bg-white/5 text-[#A0A0B0] hover:text-white"
+            }`
       }
-      aria-label={label}
+      aria-label={copied ? "Copied" : label}
+      title={copied ? "Copied!" : `Copy ${label}`}
     >
-      {copied ? <Check size={12} className="text-[#10B981]" /> : <Copy size={12} />}
-      {copied ? "COPIED" : "COPY"}
+      {copied ? (
+        <Check size={12} className="text-[#10B981]" />
+      ) : (
+        <Copy size={12} />
+      )}
+      {copied ? "COPIED" : busy ? "…" : "COPY"}
     </button>
   );
 }
