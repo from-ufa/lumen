@@ -7,9 +7,6 @@ import {
   Settings,
   X,
   RefreshCw,
-  Globe,
-  Shield,
-  Info,
   KeyRound,
   Eye,
   EyeOff,
@@ -42,12 +39,8 @@ import {
 import { copyTextToClipboard } from "../lib/copy-text";
 
 interface ConnectionSettingsProps {
-  nodeUrl: string;
-  setNodeUrl: (url: string) => void;
   isOnline: boolean;
   onReconnect: () => void;
-  publicMode?: boolean;
-  onPublicModeChange?: (enabled: boolean) => void;
   onOpenChange?: (open: boolean) => void;
   nodeMode: NodeMode;
   setNodeMode: (mode: NodeMode) => void;
@@ -71,7 +64,6 @@ function CopyButton({
   const [busy, setBusy] = useState(false);
 
   const onCopy = async (e: MouseEvent<HTMLButtonElement>) => {
-    // Modal shell uses stopPropagation; keep this a direct user gesture for clipboard
     e.preventDefault();
     e.stopPropagation();
     if (!value || busy) return;
@@ -201,12 +193,8 @@ function CommandBlock({
 }
 
 export default function ConnectionSettings({
-  nodeUrl,
-  setNodeUrl,
   isOnline,
   onReconnect,
-  publicMode = false,
-  onPublicModeChange,
   onOpenChange,
   nodeMode,
   setNodeMode,
@@ -222,11 +210,8 @@ export default function ConnectionSettings({
     setOpen(next);
     onOpenChange?.(next);
   };
-  const [tempUrl, setTempUrl] = useState(nodeUrl);
+
   const [mounted, setMounted] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [savingPassword, setSavingPassword] = useState(false);
   const [creatingToken, setCreatingToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -247,13 +232,10 @@ export default function ConnectionSettings({
 
   useEffect(() => {
     if (open) {
-      setTempUrl(nodeUrl);
-      setNewPassword("");
-      setShowPassword(false);
       setHttpBase(bridgeHttpBase());
       onRefreshBridgeStatus?.();
     }
-  }, [open, nodeUrl, onRefreshBridgeStatus]);
+  }, [open, onRefreshBridgeStatus]);
 
   useEffect(() => {
     if (!open) return;
@@ -263,16 +245,6 @@ export default function ConnectionSettings({
       document.body.style.overflow = prev;
     };
   }, [open]);
-
-  const handleSave = () => {
-    if (tempUrl !== nodeUrl) {
-      setNodeUrl(tempUrl);
-      localStorage.setItem("lumen-node-url", tempUrl);
-      toast.success("Node URL updated", { description: "Reconnecting..." });
-      setTimeout(onReconnect, 120);
-    }
-    setModalOpen(false);
-  };
 
   const handleMode = (mode: NodeMode) => {
     if (mode === nodeMode) return;
@@ -285,7 +257,7 @@ export default function ConnectionSettings({
       toast.success("My Node mode", {
         description: bridgeOnline
           ? "Dashboard reads your node via Lumen Bridge"
-          : "Follow the 3 steps below to connect Bridge",
+          : "Run the Docker command below to connect Bridge",
       });
     } else {
       toast.success("Lumen Node mode", {
@@ -319,9 +291,8 @@ export default function ConnectionSettings({
     const t = await ensureToken();
     if (t) {
       toast.success("Your personal token is ready", {
-        description: "Copy step 1, then step 2 into a terminal next to your node.",
+        description: "Copy the Docker command and paste it next to your node.",
       });
-      // Auto-select My Node so data path is ready when Bridge comes online
       if (nodeMode !== "my") {
         setNodeMode("my");
         saveNodeMode("my");
@@ -337,7 +308,7 @@ export default function ConnectionSettings({
       saveBridgeToken(data.token);
       setShowToken(true);
       toast.success("New token created", {
-        description: "Copy the Step 2 command again — the old token stops working.",
+        description: "Copy the Docker command again — the old token stops working.",
       });
       onRefreshBridgeStatus?.();
       if (nodeMode !== "my") {
@@ -364,73 +335,6 @@ export default function ConnectionSettings({
     toast.message("Bridge token cleared");
   };
 
-  const handleChangePassword = async () => {
-    const pwd = newPassword.trim();
-    if (pwd.length < 10) {
-      toast.error("Password too short", {
-        description: "Minimum 10 characters",
-      });
-      return;
-    }
-
-    setSavingPassword(true);
-    try {
-      const res = await fetch("/api/public-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: pwd }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) {
-        toast.error("Could not update password", {
-          description: data.error || `HTTP ${res.status}`,
-        });
-        return;
-      }
-      toast.success("Password protection ON", {
-        description:
-          "Remote visitors need the new password. Localhost always open.",
-      });
-      setNewPassword("");
-      onPublicModeChange?.(true);
-    } catch {
-      toast.error("Could not update password", {
-        description: "Network error",
-      });
-    } finally {
-      setSavingPassword(false);
-    }
-  };
-
-  const handleClearPassword = async () => {
-    setSavingPassword(true);
-    try {
-      const res = await fetch("/api/public-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clear: true }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) {
-        toast.error("Could not clear password", {
-          description: data.error || `HTTP ${res.status}`,
-        });
-        return;
-      }
-      toast.success("Site is fully public", {
-        description: "No login required. Set a password anytime to protect again.",
-      });
-      setNewPassword("");
-      onPublicModeChange?.(false);
-    } catch {
-      toast.error("Could not clear password", {
-        description: "Network error",
-      });
-    } finally {
-      setSavingPassword(false);
-    }
-  };
-
   const statusLine = () => {
     if (nodeMode === "my") {
       if (bridgeOnline && isOnline)
@@ -451,7 +355,6 @@ export default function ConnectionSettings({
     };
   };
   const status = statusLine();
-
   const dockerDone = bridgeOnline;
 
   const modal =
@@ -485,7 +388,7 @@ export default function ConnectionSettings({
               <div className="flex justify-between items-start mb-6 sm:mb-7">
                 <div>
                   <div className="font-mono text-xs tracking-[4px] text-[#FF7A3D]">
-                    CONNECTION
+                    NODE SETTINGS
                   </div>
                   <div className="text-2xl sm:text-3xl font-semibold tracking-tighter mt-1">
                     {nodeMode === "my" ? "My Node" : "Lumen Node"}
@@ -508,7 +411,7 @@ export default function ConnectionSettings({
               </div>
 
               <div className="space-y-5">
-                {/* === NODE MODE SWITCHER === */}
+                {/* === DATA SOURCE === */}
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5 space-y-3">
                   <div className="flex items-center gap-2">
                     <Server className="w-4 h-4 text-[#FF7A3D]" />
@@ -552,7 +455,7 @@ export default function ConnectionSettings({
                   </div>
                 </div>
 
-                {/* === CONNECT MY NODE — 3 STEPS === */}
+                {/* === CONNECT MY NODE === */}
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5 space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
@@ -581,9 +484,9 @@ export default function ConnectionSettings({
 
                   <p className="text-[11px] text-[#A0A0B0] leading-relaxed">
                     Connect <span className="text-[#E8E8F0]">your</span> Ergo
-                    node in about a minute — no open ports.{" "}
-                    <span className="text-[#00E5FF]">Docker</span> is the
-                    recommended way: one command, copy → paste → done.
+                    node — no open ports.{" "}
+                    <span className="text-[#00E5FF]">Docker</span>: one
+                    command, copy → paste → done.
                   </p>
 
                   {!bridgeToken ? (
@@ -604,11 +507,10 @@ export default function ConnectionSettings({
                     </button>
                   ) : (
                     <div className="space-y-3">
-                      {/* STEP 1 — DOCKER (primary) */}
                       <StepCard
                         n={1}
                         title="RUN WITH DOCKER"
-                        subtitle="Recommended. Paste on the machine with your Ergo node (Docker + Linux host network)."
+                        subtitle="Paste on the machine with your Ergo node (Docker + Linux host network)."
                         done={dockerDone}
                         active={!bridgeOnline}
                       >
@@ -660,14 +562,13 @@ export default function ConnectionSettings({
                           <p className="text-[10px] text-[#F59E0B]">
                             Token not registered on the hub. Tap{" "}
                             <span className="font-mono">New token</span>, then
-                            re-run the Docker command (old containers keep a
-                            stale token).
+                            re-run the Docker command.
                           </p>
                         )}
                         {bridgeToken && !bridgeOnline && bridgeKnown && (
                           <p className="text-[10px] text-[#A0A0B0]/80 leading-relaxed">
                             Hub knows this token but no agent is online. On the
-                            node host: re-run the Docker command above (
+                            node host re-run Docker (
                             <span className="font-mono text-[#A0A0B0]">
                               LUMEN_SERVER=wss://ergolumen.net/ws/bridge
                             </span>
@@ -680,7 +581,6 @@ export default function ConnectionSettings({
                         )}
                       </StepCard>
 
-                      {/* STEP 2 — STATUS */}
                       <StepCard
                         n={2}
                         title="WAIT FOR ONLINE"
@@ -757,7 +657,6 @@ export default function ConnectionSettings({
                         </div>
                       </StepCard>
 
-                      {/* ADVANCED — node / install.sh */}
                       <div className="rounded-2xl border border-white/10 bg-black/20 overflow-hidden">
                         <button
                           type="button"
@@ -826,133 +725,12 @@ export default function ConnectionSettings({
                   )}
                 </div>
 
-                {/* === NODE URL (Lumen mode advanced) === */}
-                {nodeMode === "lumen" && (
-                  <div>
-                    <label className="text-xs font-mono tracking-widest text-[#A0A0B0] block mb-2">
-                      NODE REST API URL
-                    </label>
-                    <input
-                      type="text"
-                      value={tempUrl}
-                      onChange={(e) => setTempUrl(e.target.value)}
-                      className="w-full bg-[#0A0A0F] border border-white/20 focus:border-[#FF7A3D] rounded-2xl px-5 py-4 font-mono text-sm outline-none"
-                      placeholder="/api/node or http://127.0.0.1:9053"
-                    />
-                    <p className="text-[10px] text-[#A0A0B0]/60 mt-2 px-1">
-                      Default{" "}
-                      <span className="text-[#00E5FF]">/api/node</span> proxies
-                      to this server Ergo REST (:9053).
-                    </p>
-                  </div>
-                )}
-
-                {/* === PUBLIC ACCESS === */}
-                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5 space-y-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-[#00E5FF]" />
-                      <span className="text-xs font-mono tracking-widest text-[#E8E8F0]">
-                        PUBLIC ACCESS
-                      </span>
-                    </div>
-                    <span
-                      className={`text-[10px] font-mono tracking-widest px-2.5 py-1 rounded-full border ${
-                        publicMode
-                          ? "border-[#F59E0B]/40 text-[#F59E0B] bg-[#F59E0B]/10"
-                          : "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/10"
-                      }`}
-                    >
-                      {publicMode ? "PROTECTED" : "OPEN"}
-                    </span>
-                  </div>
-
-                  <p className="text-[11px] text-[#A0A0B0] leading-relaxed flex items-start gap-2">
-                    {publicMode ? (
-                      <>
-                        <Shield className="w-3.5 h-3.5 mt-0.5 text-[#F59E0B] flex-shrink-0" />
-                        <span>
-                          <span className="text-[#F59E0B] font-medium">
-                            Password protection ON
-                          </span>
-                          {" — "}remote visitors need Basic Auth /{" "}
-                          <span className="font-mono text-[#E8E8F0]/80">
-                            ?password=
-                          </span>
-                          . Localhost always open.
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Info className="w-3.5 h-3.5 mt-0.5 text-[#10B981] flex-shrink-0" />
-                        <span>
-                          <span className="text-[#10B981] font-medium">
-                            Site is fully public
-                          </span>
-                          {" — "}no login required. Set a password below to
-                          protect remote access again.
-                        </span>
-                      </>
-                    )}
-                  </p>
-
-                  <div>
-                    <label className="text-[10px] font-mono tracking-widest text-[#A0A0B0] block mb-2">
-                      {publicMode ? "NEW PUBLIC PASSWORD" : "PUBLIC PASSWORD"}
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? "text" : "password"}
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        autoComplete="new-password"
-                        className="w-full bg-[#0A0A0F] border border-white/20 focus:border-[#00E5FF] rounded-2xl px-5 py-3.5 pr-12 font-mono text-sm outline-none"
-                        placeholder="min 10 characters"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-[#A0A0B0] hover:text-white"
-                        aria-label={
-                          showPassword ? "Hide password" : "Show password"
-                        }
-                      >
-                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleChangePassword}
-                    disabled={savingPassword || newPassword.trim().length < 10}
-                    className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-[#00E5FF]/35 bg-[#00E5FF]/10 text-[#00E5FF] text-xs font-mono tracking-widest hover:bg-[#00E5FF]/15 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.985] transition-all"
-                  >
-                    <KeyRound size={15} />
-                    {savingPassword
-                      ? "SAVING…"
-                      : publicMode
-                        ? "CHANGE PUBLIC PASSWORD"
-                        : "SET PUBLIC PASSWORD"}
-                  </button>
-                  {publicMode && (
-                    <button
-                      type="button"
-                      onClick={handleClearPassword}
-                      disabled={savingPassword}
-                      className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-white/15 text-[#A0A0B0] text-[11px] font-mono tracking-widest hover:bg-white/5 hover:text-white disabled:opacity-40"
-                    >
-                      TURN OFF PROTECTION (OPEN SITE)
-                    </button>
-                  )}
-                </div>
-
                 <div className="flex flex-col sm:flex-row gap-3 pt-1">
                   <button
-                    onClick={handleSave}
+                    onClick={() => setModalOpen(false)}
                     className="flex-1 py-4 rounded-2xl bg-[#FF7A3D] text-black font-semibold tracking-wider text-sm active:scale-[0.985] transition-all"
                   >
-                    {nodeMode === "lumen" ? "SAVE & RECONNECT" : "DONE"}
+                    DONE
                   </button>
                   <button
                     onClick={onReconnect}
@@ -964,8 +742,10 @@ export default function ConnectionSettings({
               </div>
 
               <div className="mt-6 sm:mt-7 pt-5 border-t border-white/10 text-xs text-[#A0A0B0]/70 font-mono tracking-[0.5px]">
-                Bridge is outbound-only (allowlisted GETs). Docker:{" "}
-                <span className="text-[#A0A0B0]">/bridge/DOCKER.md</span>
+                Bridge is outbound-only (allowlisted GETs). WSS:{" "}
+                <span className="text-[#A0A0B0]">
+                  wss://ergolumen.net/ws/bridge
+                </span>
               </div>
             </motion.div>
           </div>

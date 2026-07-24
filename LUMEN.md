@@ -153,11 +153,11 @@ By default the site is **fully open** on the internet (no login).
 |--|--|
 | Password file | `/home/lumen/.lumen-public-password` (legacy `.aether-public-password`) |
 | Mode | `0600` when present |
-| UI | **NODE SETTINGS → Public Access** — set password or **Turn off protection** |
+| UI | not in NODE SETTINGS (removed) — manage via file / `POST /api/public-password` |
 | Gate | `proxy.ts` (reads file every request; no rebuild needed) |
 
-**To protect again:** set a password (min 10 chars) in NODE SETTINGS.  
-**To open again:** NODE SETTINGS → Turn off protection, or `rm` the password file(s).
+**To protect again:** write a password (≥10 chars) to the password file, or `POST /api/public-password`.  
+**To open again:** `rm` the password file(s) (or clear via API).
 
 **When protected, remote auth (any one):**
 
@@ -209,6 +209,15 @@ User does **not** open inbound ports. Agent connects **out** to Lumen’s hub; t
 
 **Storage:** tokens are **persisted** to `bridge-server/data/tokens.json` (gitignored, mode 0600). Live WS sessions stay in-memory; after hub restart agents reconnect with the same token. Creating a **new** token in the UI without re-running Docker leaves the old agent offline for the dashboard token.
 
+### NODE SETTINGS (UI)
+
+Clean modal — only what operators need:
+
+1. **Data source** — switch **Lumen Node** / **My Node**
+2. **Connect my node** — Docker command, Bridge status, token (advanced: install.sh without Docker)
+
+Removed from UI: custom NODE REST API URL, Public Access password, Try Demo.
+
 ### Connect flow (UI)
 
 **NODE SETTINGS → Connect my node**
@@ -218,7 +227,7 @@ User does **not** open inbound ports. Agent connects **out** to Lumen’s hub; t
 3. **Step 2 — Wait for ONLINE** (poll `GET /api/bridge/status?token=…` every 5s)
 4. Switch data source to **My Node** (or auto on start)
 
-Token + mode stored in **localStorage** (`lumen-bridge-token`, `lumen-node-mode`).
+Token + mode stored in **localStorage** (`lumen-bridge-token`, `lumen-node-mode`). Lumen REST base is fixed: `/api/node`.
 
 ### Docker (primary)
 
@@ -494,6 +503,7 @@ Do not:
 | 2026-07-24 | Domain **ergolumen.net** + **Caddy HTTPS**; Bridge WSS `wss://ergolumen.net/ws/bridge`; hub localhost-only |
 | 2026-07-24 | Rename deploy path `/home/aether` → `/home/lumen`; public repo `from-ufa/lumen` |
 | 2026-07-24 | **Bridge offline fix:** hub tokens now persist to disk; unknown-token auth logs; recovered remote agent after rename restart |
+| 2026-07-24 | **NODE SETTINGS cleanup:** only Lumen/My Node + Connect Bridge; drop REST URL, Public Access UI, Try Demo |
 
 Recent commits live on `main` (`git log --oneline -20`).
 
