@@ -2,7 +2,7 @@
 
 import React, { useRef, useMemo, useState, useEffect, useCallback } from "react";
 import { Canvas, useFrame, ThreeEvent, useThree } from "@react-three/fiber";
-import { OrbitControls, Html, Stars } from "@react-three/drei";
+import { OrbitControls, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import { Peer } from "../types/ergo";
 import { motion, AnimatePresence } from "framer-motion";
@@ -283,7 +283,6 @@ const coronaFragment = /* glsl */ `
 `;
 
 function Sun({
-  height,
   map,
 }: {
   isOnline: boolean;
@@ -398,17 +397,6 @@ function Sun({
       <mesh ref={coronaFarRef} geometry={GEO_ATMOS} material={coronaFarMat} />
       <mesh ref={coronaNearRef} geometry={GEO_ATMOS} material={coronaNearMat} />
       <mesh ref={bodyRef} geometry={GEO_SUN} material={bodyMat} />
-
-      {/* Height only — no "My Node" / "Lumen Node" caption on the sun */}
-      {height > 0 && (
-        <Html position={[0, -3.15, 0]} style={{ pointerEvents: "none" }} center>
-          <div className="text-center select-none">
-            <div className="text-[#E8E8F0]/50 text-[10px] font-mono tracking-wider tabular-nums">
-              {height.toLocaleString()}
-            </div>
-          </div>
-        </Html>
-      )}
     </group>
   );
 }
@@ -948,11 +936,7 @@ function ConstellationWorld({
 
       {/* Sun fixed at center — does not spin with galaxy */}
       {atlas && (
-        <Sun
-          isOnline={isOnline}
-          height={myNodeHeight}
-          map={atlas.sun}
-        />
+        <Sun isOnline={isOnline} height={myNodeHeight} map={atlas.sun} />
       )}
       <BoomWave active={isPropagating} startMs={propagationStart} />
 
