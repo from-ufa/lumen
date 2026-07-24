@@ -18,13 +18,15 @@ export function sigmaBlockUrl(blockId: string): string {
 export async function openBlockOnSigmaSpace(
   height: number,
   nodeUrl: string,
-  knownId?: string
+  knownId?: string,
+  headers?: HeadersInit
 ): Promise<void> {
   let id = knownId;
   if (!id) {
     const base = nodeUrl.replace(/\/$/, "");
     const res = await fetch(`${base}/blocks/at/${height}`, {
       signal: AbortSignal.timeout(8000),
+      headers: headers ?? { Accept: "application/json" },
     });
     if (!res.ok) throw new Error("Could not resolve block id");
     const ids: string[] = await res.json();

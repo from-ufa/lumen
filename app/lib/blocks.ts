@@ -24,14 +24,18 @@ export function countTxsFromNodePayload(payload: unknown): number {
 
 export async function fetchBlockDetails(
   nodeUrl: string,
-  height: number
+  height: number,
+  headers?: HeadersInit
 ): Promise<RecentBlock | null> {
   const base = nodeUrl.replace(/\/$/, "");
-  try {
-    const atRes = await fetch(`${base}/blocks/at/${height}`, {
+  const req = (path: string) =>
+    fetch(`${base}${path}`, {
       signal: AbortSignal.timeout(8000),
       cache: "no-store",
+      headers: headers ?? { Accept: "application/json" },
     });
+  try {
+    const atRes = await req(`/blocks/at/${height}`);
     if (!atRes.ok) return null;
     const ids: string[] = await atRes.json();
     const id = ids?.[0];
@@ -39,14 +43,8 @@ export async function fetchBlockDetails(
 
     // Parallel: header (timestamp) + transactions (real count)
     const [hRes, tRes] = await Promise.all([
-      fetch(`${base}/blocks/${id}/header`, {
-        signal: AbortSignal.timeout(8000),
-        cache: "no-store",
-      }),
-      fetch(`${base}/blocks/${id}/transactions`, {
-        signal: AbortSignal.timeout(8000),
-        cache: "no-store",
-      }),
+      req(`/blocks/${id}/header`),
+      req(`/blocks/${id}/transactions`),
     ]);
 
     let timestamp = Date.now();
@@ -77,7 +75,8 @@ export async function fetchBlockDetails(
 export async function fetchRecentBlocks(
   nodeUrl: string,
   tipHeight: number,
-  count = 9
+  count = 9,
+  headers?: HeadersInit
 ): Promise<RecentBlock[]> {
   if (!tipHeight || tipHeight <= 0) return [];
   const heights: number[] = [];
@@ -90,7 +89,7 @@ export async function fetchRecentBlocks(
   for (let i = 0; i < heights.length; i += batch) {
     const slice = heights.slice(i, i + batch);
     const parts = await Promise.all(
-      slice.map((h) => fetchBlockDetails(nodeUrl, h))
+      slice.map((h) => fetchBlockDetails(nodeUrl, h, headers))
     );
     for (const b of parts) {
       if (b) out.push(b);
@@ -117,7 +116,8 @@ export type AvgBlockTimeResult = {
  */
 export async function fetchAvgBlockTime(
   nodeUrl: string,
-  window = 100
+  window = 100,
+  reqHeaders?: HeadersInit
 ): Promise<AvgBlockTimeResult | null> {
   const base = nodeUrl.replace(/\/$/, "");
   const n = Math.max(2, Math.min(200, Math.floor(window)));
@@ -125,6 +125,7 @@ export async function fetchAvgBlockTime(
     const res = await fetch(`${base}/blocks/lastHeaders/${n}`, {
       signal: AbortSignal.timeout(12000),
       cache: "no-store",
+      headers: reqHeaders ?? { Accept: "application/json" },
     });
     if (!res.ok) return null;
     const headers: Array<{ height?: number; timestamp?: number }> =
