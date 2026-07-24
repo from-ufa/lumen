@@ -1,13 +1,41 @@
 "use strict";
 
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 /**
- * In-memory registry of tokens and live Bridge connections.
- * v1: process memory only (lost on restart).
+ * Registry of bridge tokens + live WebSocket sessions.
+ *
+ * Tokens persist to disk (TOKEN_STORE_PATH) so restarts / renames do not
+ * invalidate remote agents that still hold a previously issued token.
+ * Live connections remain in-memory only.
  */
+
+const DEFAULT_STORE =
+  process.env.LUMEN_BRIDGE_TOKEN_STORE ||
+  path.join(__dirname, "..", "data", "tokens.json");
+
+/** lumen_* or legacy aether_* agent tokens */
+function isBridgeTokenFormat(token) {
+  return (
+    typeof token === "string" &&
+    (token.startsWith("lumen_") || token.startsWith("aether_")) &&
+    token.length >= 20
+  );
+}
+
+function tokenPreview(token) {
+  if (!token || typeof token !== "string") return "?";
+  if (token.length <= 16) return `${token.slice(0, 8)}…`;
+  return `${token.slice(0, 12)}…${token.slice(-4)}`;
+}
+
 class BridgeRegistry {
-  constructor() {
+  /**
+   * @param {{ storePath?: string, persist?: boolean }} [opts]
+   */
+  constructor(opts = {}) {
     /** @type {Map<string, { token: string, createdAt: number, label?: string }>} */
     this.tokens = new Map();
 
@@ -20,10 +48,66 @@ class BridgeRegistry {
      *   version?: string,
      *   node?: string,
      *   remoteAddress?: string,
+     *   publicIp?: string|null,
      *   pending: Map<string, { resolve: Function, reject: Function, timer: NodeJS.Timeout }>
      * }>}
      */
     this.connections = new Map();
+
+    this.storePath = opts.storePath || DEFAULT_STORE;
+    this.persistEnabled = opts.persist !== false;
+    this._load();
+  }
+
+  _load() {
+    if (!this.persistEnabled) return;
+    try {
+      if (!fs.existsSync(this.storePath)) return;
+      const raw = fs.readFileSync(this.storePath, "utf8");
+      const data = JSON.parse(raw);
+      const list = Array.isArray(data?.tokens) ? data.tokens : [];
+      for (const t of list) {
+        if (!t || typeof t.token !== "string" || !isBridgeTokenFormat(t.token)) continue;
+        this.tokens.set(t.token, {
+          token: t.token,
+          createdAt: Number(t.createdAt) || Date.now(),
+          label: typeof t.label === "string" ? t.label : undefined,
+        });
+      }
+    } catch (err) {
+      console.error(
+        `[registry] failed to load token store ${this.storePath}: ${err.message}`
+      );
+    }
+  }
+
+  _save() {
+    if (!this.persistEnabled) return;
+    try {
+      const dir = path.dirname(this.storePath);
+      fs.mkdirSync(dir, { recursive: true });
+      const payload = {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        tokens: [...this.tokens.values()].map((t) => ({
+          token: t.token,
+          createdAt: t.createdAt,
+          label: t.label || null,
+        })),
+      };
+      const tmp = `${this.storePath}.${process.pid}.tmp`;
+      fs.writeFileSync(tmp, JSON.stringify(payload, null, 2), { mode: 0o600 });
+      fs.renameSync(tmp, this.storePath);
+      try {
+        fs.chmodSync(this.storePath, 0o600);
+      } catch {
+        /* ignore */
+      }
+    } catch (err) {
+      console.error(
+        `[registry] failed to save token store ${this.storePath}: ${err.message}`
+      );
+    }
   }
 
   createToken(label) {
@@ -34,6 +118,7 @@ class BridgeRegistry {
       label: label || undefined,
     };
     this.tokens.set(token, entry);
+    this._save();
     return entry;
   }
 
@@ -43,17 +128,36 @@ class BridgeRegistry {
   }
 
   /**
-   * Ensure token exists. If autoRegister is true, unknown lumen_* tokens are stored.
+   * Ensure token exists. If autoRegister is true, unknown lumen_ or aether_ tokens are stored.
    * Useful for manual tokens / smoke tests.
    */
   ensureToken(token, { autoRegister = false, label } = {}) {
     if (this.hasToken(token)) return this.tokens.get(token);
-    if (autoRegister && typeof token === "string" && token.startsWith("lumen_")) {
-      const entry = { token, createdAt: Date.now(), label: label || "auto" };
+    if (autoRegister && isBridgeTokenFormat(token)) {
+      const entry = {
+        token,
+        createdAt: Date.now(),
+        label: label || "auto",
+      };
       this.tokens.set(token, entry);
+      this._save();
       return entry;
     }
     return null;
+  }
+
+  /** Explicitly register a known token string (e.g. import / recovery). */
+  addToken(token, label) {
+    if (!isBridgeTokenFormat(token)) return null;
+    if (this.hasToken(token)) return this.tokens.get(token);
+    const entry = {
+      token,
+      createdAt: Date.now(),
+      label: label || "imported",
+    };
+    this.tokens.set(token, entry);
+    this._save();
+    return entry;
   }
 
   listTokens() {
@@ -156,8 +260,9 @@ class BridgeRegistry {
     return {
       tokens: this.tokens.size,
       connections: connected,
+      storePath: this.persistEnabled ? this.storePath : null,
     };
   }
 }
 
-module.exports = { BridgeRegistry };
+module.exports = { BridgeRegistry, isBridgeTokenFormat, tokenPreview };

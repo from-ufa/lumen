@@ -7,7 +7,7 @@ FROM node:20-alpine
 
 LABEL org.opencontainers.image.title="lumen-bridge" \
       org.opencontainers.image.description="Lumen Bridge — outbound WebSocket agent for Ergo node REST" \
-      org.opencontainers.image.source="https://github.com/from-ufa/aether"
+      org.opencontainers.image.source="https://github.com/from-ufa/lumen"
 
 WORKDIR /app
 

@@ -658,8 +658,24 @@ export default function ConnectionSettings({
                         </div>
                         {bridgeStatus && !bridgeKnown && (
                           <p className="text-[10px] text-[#F59E0B]">
-                            Token unknown on server (restart cleared memory).
-                            Tap New token below, then re-run Docker.
+                            Token not registered on the hub. Tap{" "}
+                            <span className="font-mono">New token</span>, then
+                            re-run the Docker command (old containers keep a
+                            stale token).
+                          </p>
+                        )}
+                        {bridgeToken && !bridgeOnline && bridgeKnown && (
+                          <p className="text-[10px] text-[#A0A0B0]/80 leading-relaxed">
+                            Hub knows this token but no agent is online. On the
+                            node host: re-run the Docker command above (
+                            <span className="font-mono text-[#A0A0B0]">
+                              LUMEN_SERVER=wss://ergolumen.net/ws/bridge
+                            </span>
+                            ) and check{" "}
+                            <span className="font-mono">
+                              docker logs -f lumen-bridge
+                            </span>
+                            .
                           </p>
                         )}
                       </StepCard>

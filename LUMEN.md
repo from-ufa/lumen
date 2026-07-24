@@ -188,7 +188,7 @@ User does **not** open inbound ports. Agent connects **out** to Lumen’s hub; t
 ┌──────────────────┐  outbound WS   ┌─────────────────────────────┐
 │ User machine     │ ─────────────► │ Lumen host                  │
 │  Ergo :9053      │                │  bridge-server :3100        │
-│  lumen-bridge    │◄── request/─── │    tokens (in-memory)       │
+│  lumen-bridge    │◄── request/─── │    tokens → data/tokens.json│
 │  (Docker/node)   │    response    │    /bridge  (WS)            │
 └──────────────────┘                │  Next.js :3000              │
                                     │    /api/bridge/* → :3100    │
@@ -207,7 +207,7 @@ User does **not** open inbound ports. Agent connects **out** to Lumen’s hub; t
 **Allowlist (GET only):**  
 `/info`, `/peers/connected`, `/transactions/unconfirmed`, `/blocks/*` (incl. `lastHeaders`).
 
-**Storage:** tokens + sessions are **in-memory** on bridge-server. Restart hub → re-issue token / reconnect agent.
+**Storage:** tokens are **persisted** to `bridge-server/data/tokens.json` (gitignored, mode 0600). Live WS sessions stay in-memory; after hub restart agents reconnect with the same token. Creating a **new** token in the UI without re-running Docker leaves the old agent offline for the dashboard token.
 
 ### Connect flow (UI)
 
@@ -492,6 +492,8 @@ Do not:
 | 2026-07-24 | Bridge backend: agent + hub :3100 + `/api/bridge/*` |
 | 2026-07-24 | Connect UI, Lumen/My Node modes, Docker-first install, copy fix (HTTP), My Node data path + map via Bridge |
 | 2026-07-24 | Domain **ergolumen.net** + **Caddy HTTPS**; Bridge WSS `wss://ergolumen.net/ws/bridge`; hub localhost-only |
+| 2026-07-24 | Rename deploy path `/home/aether` → `/home/lumen`; public repo `from-ufa/lumen` |
+| 2026-07-24 | **Bridge offline fix:** hub tokens now persist to disk; unknown-token auth logs; recovered remote agent after rename restart |
 
 Recent commits live on `main` (`git log --oneline -20`).
 

@@ -21,8 +21,11 @@ Env:
 |----------|---------|---------|
 | `PORT` | `3100` | HTTP + WS port |
 | `HOST` | `0.0.0.0` | Bind address |
-| `AUTO_REGISTER_TOKENS` | off | If `1`, unknown `lumen_*` tokens accepted on connect |
+| `AUTO_REGISTER_TOKENS` | off | If `1`, unknown `lumen_*` / `aether_*` tokens accepted on connect |
+| `LUMEN_BRIDGE_TOKEN_STORE` | `data/tokens.json` | Persist issued tokens across restarts |
 | `REQUEST_TIMEOUT_MS` | `12000` | Proxy timeout |
+
+**Tokens are persisted** to `bridge-server/data/tokens.json` (mode `0600`, gitignored). Live WebSocket sessions stay in-memory; after a hub restart agents reconnect automatically if their token is still in the store.
 
 ## HTTP API
 

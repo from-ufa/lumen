@@ -8,7 +8,8 @@
  * Env:
  *   PORT                 default 3100
  *   HOST                 default 0.0.0.0
- *   AUTO_REGISTER_TOKENS if "1", accept unknown lumen_* tokens on connect
+ *   AUTO_REGISTER_TOKENS if "1", accept unknown lumen_ or aether_ tokens on connect
+ *   LUMEN_BRIDGE_TOKEN_STORE  path to tokens.json (default: data/tokens.json)
  *   REQUEST_TIMEOUT_MS   default 12000
  */
 
@@ -17,7 +18,7 @@
 const http = require("http");
 const { URL } = require("url");
 const { WebSocketServer } = require("ws");
-const { BridgeRegistry } = require("./lib/registry");
+const { BridgeRegistry, tokenPreview } = require("./lib/registry");
 const { requestViaBridge, handleBridgeReply } = require("./lib/proxy");
 const { isPathAllowed, normalizePath } = require("./lib/allowlist");
 
@@ -173,7 +174,12 @@ async function handleHttp(req, res) {
     if (!token) {
       const parts = path.split("/").filter(Boolean);
       const last = parts[parts.length - 1];
-      if (last && last.startsWith("lumen_")) token = last;
+      if (
+        last &&
+        (last.startsWith("lumen_") || last.startsWith("aether_"))
+      ) {
+        token = last;
+      }
     }
     if (!token) {
       sendJson(res, 400, { error: "token_required" });
@@ -320,33 +326,17 @@ wss.on("connection", (ws, req) => {
   let token = extractWsToken(req, url);
   let authed = false;
   let sessionToken = null;
+  let rejectReason = null;
 
   const remote =
     req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
     req.socket.remoteAddress ||
     "unknown";
 
-  log("info", `WS open from ${remote} (token query/header: ${token ? "yes" : "pending hello"})`);
-
-  // Optional early auth from query/header
-  if (token) {
-    const entry = registry.ensureToken(token, {
-      autoRegister: AUTO_REGISTER,
-      label: "ws-connect",
-    });
-    if (!entry && !registry.hasToken(token)) {
-      ws.send(
-        JSON.stringify({
-          type: "auth_error",
-          error: "unknown_token",
-          message: "Token not registered. Create via POST /tokens",
-        })
-      );
-      ws.close(4001, "unknown_token");
-      return;
-    }
-    // Wait for hello to fully register, but mark known
-  }
+  log(
+    "info",
+    `WS open from ${remote} (token=${token ? tokenPreview(token) : "pending hello"})`
+  );
 
   const heartbeat = setInterval(() => {
     if (ws.readyState !== 1) return;
@@ -356,6 +346,54 @@ wss.on("connection", (ws, req) => {
       /* ignore */
     }
   }, 30_000);
+
+  const rejectAuth = (error, message, closeCode = 4001) => {
+    rejectReason = error;
+    log(
+      "warn",
+      `WS auth rejected remote=${remote} token=${tokenPreview(token)} error=${error}`
+    );
+    try {
+      ws.send(
+        JSON.stringify({
+          type: "auth_error",
+          error,
+          message,
+        })
+      );
+    } catch {
+      /* ignore */
+    }
+    try {
+      ws.close(closeCode, error);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Optional early auth from query/header
+  if (token) {
+    const entry = registry.ensureToken(token, {
+      autoRegister: AUTO_REGISTER,
+      label: "ws-connect",
+    });
+    if (!entry && !registry.hasToken(token)) {
+      // Attach minimal close logging, then reject (stale token after hub restart is common)
+      ws.on("close", (code) => {
+        clearInterval(heartbeat);
+        log(
+          "info",
+          `WS closed unauthenticated code=${code} reason=${rejectReason || "unknown_token"} remote=${remote}`
+        );
+      });
+      rejectAuth(
+        "unknown_token",
+        "Token not registered. Create a token in the dashboard (Connect my node) and re-run the Docker command with that token."
+      );
+      return;
+    }
+    // Wait for hello to fully register, but mark known
+  }
 
   ws.on("message", (data, isBinary) => {
     if (isBinary) return;
@@ -369,14 +407,7 @@ wss.on("connection", (ws, req) => {
     if (msg.type === "hello") {
       const t = msg.token || token;
       if (!t) {
-        ws.send(
-          JSON.stringify({
-            type: "auth_error",
-            error: "token_required",
-            message: "hello.token is required",
-          })
-        );
-        ws.close(4001, "token_required");
+        rejectAuth("token_required", "hello.token is required");
         return;
       }
 
@@ -385,14 +416,11 @@ wss.on("connection", (ws, req) => {
         label: "hello",
       });
       if (!entry && !registry.hasToken(t)) {
-        ws.send(
-          JSON.stringify({
-            type: "auth_error",
-            error: "unknown_token",
-            message: "Token not registered. Create via POST /tokens",
-          })
+        token = t;
+        rejectAuth(
+          "unknown_token",
+          "Token not registered. Create a token in the dashboard (Connect my node) and re-run the Docker command with that token."
         );
-        ws.close(4001, "unknown_token");
         return;
       }
 
@@ -412,7 +440,7 @@ wss.on("connection", (ws, req) => {
 
       log(
         "info",
-        `Bridge online token=${t.slice(0, 12)}… version=${msg.version || "?"} node=${msg.node || "?"} remote=${remote} publicIp=${publicIp || "—"}`
+        `Bridge online token=${tokenPreview(t)} version=${msg.version || "?"} node=${msg.node || "?"} remote=${remote} publicIp=${publicIp || "—"}`
       );
       ws.send(
         JSON.stringify({
@@ -468,24 +496,32 @@ wss.on("connection", (ws, req) => {
       registry.removeConnection(sessionToken, ws);
       log(
         "info",
-        `Bridge offline token=${sessionToken.slice(0, 12)}… code=${code} ${reason || ""}`
+        `Bridge offline token=${tokenPreview(sessionToken)} code=${code} ${reason || ""}`
       );
     } else {
-      log("info", `WS closed unauthenticated code=${code}`);
+      log(
+        "info",
+        `WS closed unauthenticated code=${code} reason=${rejectReason || reason || ""} remote=${remote}`
+      );
     }
   });
 
   ws.on("error", (err) => {
-    log("error", `WS error: ${err.message}`);
+    log("error", `WS error remote=${remote}: ${err.message}`);
   });
 });
 
 server.listen(PORT, HOST, () => {
+  const stats = registry.stats();
   log(
     "info",
     `Lumen Bridge Server v${VERSION} listening on http://${HOST}:${PORT} (WS /bridge)`
   );
   log("info", `AUTO_REGISTER_TOKENS=${AUTO_REGISTER ? "on" : "off"}`);
+  log(
+    "info",
+    `Token store: ${stats.storePath || "disabled"} (loaded ${stats.tokens} token(s))`
+  );
 });
 
 // Graceful shutdown

@@ -4,3 +4,7 @@ npm-debug.log*
 .env.*
 *.log
 .DS_Store
+
+# Persisted bridge tokens (secrets)
+data/tokens.json
+data/*.tmp
