@@ -33,7 +33,7 @@ interface ConstellationProps {
   lastBlockHeight: number;
   onSimulateBlock?: () => void;
   hideControls?: boolean;
-  /** Center sun label: "Lumen Node" | "My Node" */
+  /** @deprecated Sun no longer shows a name caption; kept for API compat */
   centerLabel?: string;
 }
 
@@ -285,12 +285,10 @@ const coronaFragment = /* glsl */ `
 function Sun({
   height,
   map,
-  centerLabel = "Lumen Node",
 }: {
   isOnline: boolean;
   height: number;
   map: THREE.Texture;
-  centerLabel?: string;
 }) {
   const groupRef = useRef<THREE.Group>(null!);
   const bodyRef = useRef<THREE.Mesh>(null!);
@@ -401,16 +399,16 @@ function Sun({
       <mesh ref={coronaNearRef} geometry={GEO_ATMOS} material={coronaNearMat} />
       <mesh ref={bodyRef} geometry={GEO_SUN} material={bodyMat} />
 
-      <Html position={[0, -3.15, 0]} style={{ pointerEvents: "none" }} center>
-        <div className="text-center select-none">
-          <div className="text-[#E8C48A]/90 text-[10px] font-mono tracking-[0.28em] uppercase">
-            {centerLabel}
+      {/* Height only — no "My Node" / "Lumen Node" caption on the sun */}
+      {height > 0 && (
+        <Html position={[0, -3.15, 0]} style={{ pointerEvents: "none" }} center>
+          <div className="text-center select-none">
+            <div className="text-[#E8E8F0]/50 text-[10px] font-mono tracking-wider tabular-nums">
+              {height.toLocaleString()}
+            </div>
           </div>
-          <div className="text-[#E8E8F0]/45 text-[10px] font-mono mt-0.5 tracking-wider">
-            {height > 0 ? height.toLocaleString() : "—"}
-          </div>
-        </div>
-      </Html>
+        </Html>
+      )}
     </group>
   );
 }
@@ -813,7 +811,7 @@ function ConstellationWorld({
   autoOrbit,
   orbitSpeed,
   controlsApiRef,
-  centerLabel = "Lumen Node",
+  peerHovered = false,
 }: {
   peers: Peer[];
   myNodeHeight: number;
@@ -829,12 +827,16 @@ function ConstellationWorld({
   /** Multiplier 0.1–5 for galaxy spin */
   orbitSpeed: number;
   controlsApiRef: React.MutableRefObject<ControlsApi | null>;
-  centerLabel?: string;
+  /** When true, galaxy spin eases to a stop (read peer tooltip) */
+  peerHovered?: boolean;
 }) {
   const controlsRef = useRef<any>(null);
   const galaxyRef = useRef<THREE.Group>(null!);
   const orbitOnRef = useRef(autoOrbit);
   const orbitSpeedRef = useRef(orbitSpeed);
+  /** Smooth 0..1 multiplier — eases out on planet hover, eases in on leave */
+  const orbitFactorRef = useRef(autoOrbit ? 1 : 0);
+  const peerHoveredRef = useRef(peerHovered);
   const { gl } = useThree();
   const [atlas, setAtlas] = useState<ReturnType<typeof getTextureAtlas> | null>(
     null
@@ -847,6 +849,9 @@ function ConstellationWorld({
   useEffect(() => {
     orbitSpeedRef.current = orbitSpeed;
   }, [orbitSpeed]);
+  useEffect(() => {
+    peerHoveredRef.current = peerHovered;
+  }, [peerHovered]);
 
   useEffect(() => {
     gl.toneMapping = THREE.NoToneMapping;
@@ -882,14 +887,26 @@ function ConstellationWorld({
   const ends = useMemo(() => peerData.map((p) => p.position), [peerData]);
   const activeFlags = useMemo(() => peerData.map((p) => p.isActive), [peerData]);
 
-  // Rotate the whole galaxy (planets + links) around the sun
+  // Rotate the whole galaxy (planets + links) around the sun.
+  // Smoothly pause when hovering a peer so tooltips are readable.
   useFrame((_, delta) => {
     if (!galaxyRef.current) return;
-    if (!orbitOnRef.current) return;
-    const speed = GALAXY_BASE_SPEED * orbitSpeedRef.current;
+    const wantSpin = orbitOnRef.current && !peerHoveredRef.current;
+    const target = wantSpin ? 1 : 0;
+    // ~0.35s ease (exponential smoothstep)
+    const blend = 1 - Math.exp(-delta * 5.5);
+    orbitFactorRef.current = THREE.MathUtils.lerp(
+      orbitFactorRef.current,
+      target,
+      blend
+    );
+    const factor = orbitFactorRef.current;
+    if (factor < 0.001) return;
+    const speed = GALAXY_BASE_SPEED * orbitSpeedRef.current * factor;
     galaxyRef.current.rotation.y += delta * speed;
     // slight tilt drift so it feels spatial, not flat turntable
-    galaxyRef.current.rotation.x = Math.sin(galaxyRef.current.rotation.y * 0.35) * 0.04;
+    galaxyRef.current.rotation.x =
+      Math.sin(galaxyRef.current.rotation.y * 0.35) * 0.04;
   });
 
   useEffect(() => {
@@ -935,7 +952,6 @@ function ConstellationWorld({
           isOnline={isOnline}
           height={myNodeHeight}
           map={atlas.sun}
-          centerLabel={centerLabel}
         />
       )}
       <BoomWave active={isPropagating} startMs={propagationStart} />
@@ -1011,7 +1027,6 @@ function Scene({
   lastBlockHeight,
   onSimulateBlock,
   hideControls = false,
-  centerLabel = "Lumen Node",
 }: ConstellationProps) {
   const controlsApiRef = useRef<ControlsApi | null>(null);
   const ambienceRef = useRef<AmbienceController | null>(null);
@@ -1189,7 +1204,7 @@ function Scene({
           autoOrbit={isAutoOrbit}
           orbitSpeed={orbitSpeed}
           controlsApiRef={controlsApiRef}
-          centerLabel={centerLabel}
+          peerHovered={!!hoveredPeer}
         />
       </Canvas>
 
@@ -1397,14 +1412,14 @@ function Scene({
         <div className="flex items-center gap-4 text-[#A0A0B0]">
           <div className="flex items-center gap-1.5">
             <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" />{" "}
-            {(centerLabel || "Lumen Node").toUpperCase()} (SUN)
+            SUN
           </div>
           <div className="flex items-center gap-1.5">
             <span className="inline-block w-2 h-2 rounded-full bg-[#8a9bb0]" /> PEER WORLDS
           </div>
         </div>
         <div className="text-[9px] text-[#A0A0B0]/60 mt-1.5">
-          Drag · zoom · hover · F / O / B
+          Drag · zoom · hover pauses orbit · F / O / B
         </div>
       </div>
     </>
@@ -1412,23 +1427,21 @@ function Scene({
 }
 
 export default function Constellation3D(props: ConstellationProps) {
-  const label = props.centerLabel || "Lumen Node";
   return (
     <div className="w-full">
       <div className="canvas-container lumen-viz relative w-full bg-[#010104] overflow-hidden">
         <div className="absolute inset-0 w-full h-full">
-          <Scene {...props} centerLabel={label} />
+          <Scene {...props} />
         </div>
       </div>
       <div className="md:hidden mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[10px] font-mono tracking-wider text-[#A0A0B0]">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" />{" "}
-          {label.toUpperCase()}
+          <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" /> SUN
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full bg-[#8a9bb0]" /> PEERS
         </span>
-        <span className="opacity-50">Pinch · drag · B boom</span>
+        <span className="opacity-50">Pinch · drag · hover · B boom</span>
       </div>
     </div>
   );
