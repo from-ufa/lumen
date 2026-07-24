@@ -2,8 +2,10 @@
 
 **Lumen** is the Ergo Node Dashboard — immersive visualizer for **your** Ergo node: 3D peer constellation, world map (GeoIP), live metrics, real block TX counts, mempool → SigmaSpace, Share Card.
 
-> **Full project handoff (for AI / humans):** see **[LUMEN.md](./LUMEN.md)**  
-> **Server (node + oracles):** `/root/SERVER.md` on production host
+> **Slogan:** The living pulse of your Ergo node  
+> **Full project handoff (for AI / humans):** see **[LUMEN.md](./LUMEN.md)** (legacy pointer: [AETHER.md](./AETHER.md))  
+> **Server (node + oracles):** `/root/SERVER.md` on production host  
+> **Rebrand note:** product name is **Lumen** (formerly Aether). Deploy path `/home/aether` and systemd unit `aether.service` stay for now.
 
 ## Production (this server)
 
@@ -13,7 +15,7 @@
 | Service | `systemctl status aether` |
 | Bind | `0.0.0.0:3000` (`proxy.ts` guards access) |
 | Proxy | `/api/node/*` → Ergo REST `127.0.0.1:9053` |
-| Public Mode | file `.aether-public-password` (chmod 600); set via NODE SETTINGS |
+| Public Mode | file `.lumen-public-password` (chmod 600); set via NODE SETTINGS |
 
 ### Local / SSH tunnel (always works)
 
@@ -38,8 +40,8 @@ Open Lumen on localhost (SSH tunnel) → NODE SETTINGS → Public Access
 Or from the shell:
 
 ```bash
-printf '%s\n' 'your-long-secret' > /home/aether/.aether-public-password
-chmod 600 /home/aether/.aether-public-password
+printf '%s\n' 'your-long-secret' > /home/aether/.lumen-public-password
+chmod 600 /home/aether/.lumen-public-password
 # no rebuild needed — proxy reads the file on every request
 ```
 
@@ -49,11 +51,11 @@ chmod 600 /home/aether/.aether-public-password
 |--------|-----|
 | Browser Basic Auth | `http://YOUR_IP:3000` → any username + public password |
 | One-shot link | `http://YOUR_IP:3000/?password=YOUR_SECRET` (sets httpOnly cookie) |
-| Header | `X-Aether-Password: YOUR_SECRET` |
+| Header | `X-Lumen-Password: YOUR_SECRET` |
 
 4. UI: **PUBLIC** badge when password file is non-empty; **SHARE MY NODE** for link/PNG card.
 
-Empty / missing `.aether-public-password` → remote requests **401**, localhost still works.
+Empty / missing `.lumen-public-password` → remote requests **401**, localhost still works.
 
 > Firewall: ensure port **3000/tcp** is allowed if you want external access.  
 > Do not expose the Ergo REST port (`9053`) without API key / firewall; Lumen proxies it server-side.
@@ -63,9 +65,10 @@ Empty / missing `.aether-public-password` → remote requests **401**, localhost
 ```bash
 cd /home/aether
 npm install    # .npmrc has legacy-peer-deps=true
-# optional: echo 'AETHER_PUBLIC_PASSWORD=devpass' > .env.local
 npm run dev    # or: npm run build && npm start
 ```
+
+Public password is a file (not env): `.lumen-public-password` (legacy `.aether-public-password` still read).
 
 Default node URL in UI: **`/api/node`** (do not use bare `localhost:9053` from a remote browser without tunnel/CORS).
 

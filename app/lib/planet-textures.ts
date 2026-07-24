@@ -1,5 +1,5 @@
 /**
- * Planet / sun textures for Aether constellation.
+ * Planet / sun textures for Lumen constellation.
  *
  * Strategy (bulletproof):
  *  1. Always build a procedural CanvasTexture first (never white, always detailed)
@@ -616,7 +616,7 @@ export async function preloadAllTextures(): Promise<{
 
   if (typeof console !== "undefined") {
     console.info(
-      "[Aether] planet textures",
+      "[Lumen] planet textures",
       status.map((s) => `${s.id}:${s.source}${s.fileOk === false ? "(file-fail)" : ""}`)
     );
   }

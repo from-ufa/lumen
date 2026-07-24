@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   COOKIE_NAME,
+  LEGACY_COOKIE_NAME,
   REALM,
   extractBasicPassword,
   isLocalRequest,
@@ -14,29 +15,47 @@ function unauthorized(): NextResponse {
     headers: {
       "WWW-Authenticate": `Basic realm="${REALM}"`,
       "Cache-Control": "no-store",
-      "X-Aether-Auth": "required",
+      "X-Lumen-Auth": "required",
     },
   });
 }
 
 function publicModeOff(): NextResponse {
   return new NextResponse(
-    "Lumen Public Mode is off (no password file). Set a password from NODE SETTINGS on localhost, or write /home/aether/.aether-public-password",
+    "Lumen Public Mode is off (no password file). Set a password from NODE SETTINGS on localhost, or write /home/aether/.lumen-public-password (legacy .aether-public-password still accepted)",
     {
       status: 401,
       headers: {
         "Cache-Control": "no-store",
         "Content-Type": "text/plain; charset=utf-8",
-        "X-Aether-Auth": "public-off",
+        "X-Lumen-Auth": "public-off",
       },
     }
   );
 }
 
+function setSessionCookie(
+  res: NextResponse,
+  expectedHash: string,
+  req: NextRequest
+) {
+  const opts = {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    path: "/",
+    secure: req.nextUrl.protocol === "https:",
+    maxAge: 60 * 60 * 24 * 7,
+  };
+  res.cookies.set(COOKIE_NAME, expectedHash, opts);
+  // Keep legacy cookie in sync so old bookmarks/sessions keep working
+  res.cookies.set(LEGACY_COOKIE_NAME, expectedHash, opts);
+}
+
 /**
  * Next.js 16 Node proxy.
- * Public password is read from `.aether-public-password` on every request
+ * Public password is read from the password file on every request
  * (not process.env) so UI password changes apply without rebuild.
+ * Accepts Lumen + legacy Aether cookie/header names (rebrand 2026-07).
  */
 export function proxy(req: NextRequest) {
   const password = readPublicPassword();
@@ -46,7 +65,7 @@ export function proxy(req: NextRequest) {
   if (isLocalRequest(req)) {
     const res = NextResponse.next();
     res.headers.set(
-      "X-Aether-Auth",
+      "X-Lumen-Auth",
       publicMode ? "local-bypass" : "local-only-ok"
     );
     return res;
@@ -59,11 +78,13 @@ export function proxy(req: NextRequest) {
 
   const expectedHash = passwordHash(password);
 
-  // Session cookie from prior Basic / ?password= auth
-  const cookie = req.cookies.get(COOKIE_NAME)?.value;
+  // Session cookie from prior Basic / ?password= auth (Lumen or legacy Aether)
+  const cookie =
+    req.cookies.get(COOKIE_NAME)?.value ||
+    req.cookies.get(LEGACY_COOKIE_NAME)?.value;
   if (cookie && cookie === expectedHash) {
     const res = NextResponse.next();
-    res.headers.set("X-Aether-Auth", "cookie-ok");
+    res.headers.set("X-Lumen-Auth", "cookie-ok");
     return res;
   }
 
@@ -73,21 +94,18 @@ export function proxy(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.searchParams.delete("password");
     const res = NextResponse.redirect(url);
-    res.cookies.set(COOKIE_NAME, expectedHash, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      secure: req.nextUrl.protocol === "https:",
-      maxAge: 60 * 60 * 24 * 7,
-    });
-    res.headers.set("X-Aether-Auth", "query-ok");
+    setSessionCookie(res, expectedHash, req);
+    res.headers.set("X-Lumen-Auth", "query-ok");
     return res;
   }
 
-  // Custom header
-  if (req.headers.get("x-aether-password") === password) {
+  // Custom header (Lumen preferred, Aether legacy accepted)
+  const headerPass =
+    req.headers.get("x-lumen-password") ||
+    req.headers.get("x-aether-password");
+  if (headerPass === password) {
     const res = NextResponse.next();
-    res.headers.set("X-Aether-Auth", "header-ok");
+    res.headers.set("X-Lumen-Auth", "header-ok");
     return res;
   }
 
@@ -95,14 +113,8 @@ export function proxy(req: NextRequest) {
   const basicPass = extractBasicPassword(req.headers.get("authorization"));
   if (basicPass === password) {
     const res = NextResponse.next();
-    res.cookies.set(COOKIE_NAME, expectedHash, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      secure: req.nextUrl.protocol === "https:",
-      maxAge: 60 * 60 * 24 * 7,
-    });
-    res.headers.set("X-Aether-Auth", "basic-ok");
+    setSessionCookie(res, expectedHash, req);
+    res.headers.set("X-Lumen-Auth", "basic-ok");
     return res;
   }
 

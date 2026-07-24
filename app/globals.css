@@ -37,20 +37,20 @@ body {
 }
 
 /* Shared canvas height: comfortable on 375–430px, full on desktop */
-.aether-viz {
+.lumen-viz {
   width: 100%;
   height: min(52dvh, 420px);
   min-height: 280px;
   max-height: 780px;
 }
 @media (min-width: 640px) {
-  .aether-viz {
+  .lumen-viz {
     height: min(72vh, 780px);
     min-height: 480px;
   }
 }
 @media (min-width: 1024px) {
-  .aether-viz {
+  .lumen-viz {
     min-height: 520px;
   }
 }
@@ -194,19 +194,19 @@ body {
 }
 
 /* Marker cluster — Bitnodes-style dark bubbles (react-leaflet-cluster) */
-.aether-cluster-icon {
+.lumen-cluster-icon {
   background: transparent !important;
   border: none !important;
 }
-.aether-peer-marker,
-.aether-me-marker {
+.lumen-peer-marker,
+.lumen-me-marker {
   background: transparent !important;
   border: none !important;
 }
-.aether-map .marker-cluster {
+.lumen-map .marker-cluster {
   background: transparent !important;
 }
-.aether-map .marker-cluster div {
+.lumen-map .marker-cluster div {
   background: transparent !important;
 }
 .leaflet-control-attribution {
@@ -227,7 +227,7 @@ body {
   color: #FF7A3D !important;
 }
 .leaflet-popup-content-wrapper,
-.aether-map-popup .leaflet-popup-content-wrapper {
+.lumen-map-popup .leaflet-popup-content-wrapper {
   background: rgba(12, 12, 18, 0.97) !important;
   color: #E8E8F0 !important;
   border-radius: 14px !important;
@@ -235,7 +235,7 @@ body {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55) !important;
 }
 .leaflet-popup-tip,
-.aether-map-popup .leaflet-popup-tip {
+.lumen-map-popup .leaflet-popup-tip {
   background: rgba(12, 12, 18, 0.97) !important;
   border: none !important;
 }
@@ -247,12 +247,12 @@ body {
   color: #FF7A3D !important;
 }
 .leaflet-popup-content,
-.aether-map-popup .leaflet-popup-content {
+.lumen-map-popup .leaflet-popup-content {
   margin: 12px 14px !important;
   line-height: 1.35 !important;
 }
 .leaflet-tooltip,
-.aether-map-tooltip {
+.lumen-map-tooltip {
   background: rgba(12, 12, 18, 0.96) !important;
   border: 1px solid rgba(0, 229, 255, 0.25) !important;
   color: #E8E8F0 !important;
@@ -263,21 +263,21 @@ body {
   white-space: nowrap;
 }
 .leaflet-tooltip-top:before,
-.aether-map-tooltip.leaflet-tooltip-top:before {
+.lumen-map-tooltip.leaflet-tooltip-top:before {
   border-top-color: rgba(12, 12, 18, 0.96) !important;
 }
 /* DivIcon markers must receive pointer events for hover/click */
-.aether-peer-marker,
-.aether-me-marker {
+.lumen-peer-marker,
+.lumen-me-marker {
   background: transparent !important;
   border: none !important;
 }
-.aether-peer-hit {
+.lumen-peer-hit {
   pointer-events: auto !important;
 }
 
 /* === NEW BLOCK boom: 3 long pulses + flying top notice === */
-.aether-boom-wave {
+.lumen-boom-wave {
   position: absolute;
   left: 0;
   top: 0;
@@ -285,7 +285,7 @@ body {
   height: 0;
 }
 
-.aether-boom-ring {
+.lumen-boom-ring {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -301,22 +301,22 @@ body {
   pointer-events: none;
   opacity: 0;
   /* duration set per-element delay; one expansion ~1.25s */
-  animation: aether-boom-expand 1.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: lumen-boom-expand 1.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.aether-boom-ring-2 {
+.lumen-boom-ring-2 {
   border-color: rgba(0, 229, 255, 0.9);
   box-shadow:
     0 0 16px rgba(0, 229, 255, 0.5),
     0 0 28px rgba(0, 229, 255, 0.22);
 }
 
-.aether-boom-ring-3 {
+.lumen-boom-ring-3 {
   border-color: rgba(255, 176, 138, 0.8);
   box-shadow: 0 0 14px rgba(255, 122, 61, 0.35);
 }
 
-.aether-boom-core {
+.lumen-boom-core {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -330,10 +330,10 @@ body {
     0 0 14px rgba(255, 122, 61, 0.85),
     0 0 22px rgba(0, 229, 255, 0.5);
   pointer-events: none;
-  animation: aether-boom-core-pulse ease-out forwards;
+  animation: lumen-boom-core-pulse ease-out forwards;
 }
 
-@keyframes aether-boom-expand {
+@keyframes lumen-boom-expand {
   0% {
     transform: scale(0.35);
     opacity: 0.95;
@@ -347,7 +347,7 @@ body {
   }
 }
 
-@keyframes aether-boom-core-pulse {
+@keyframes lumen-boom-core-pulse {
   0%,
   8% {
     transform: scale(0.7);
@@ -376,53 +376,53 @@ body {
 }
 
 /* Flying notice (starts top, lands on peer) */
-.aether-boom-flight {
+.lumen-boom-flight {
   will-change: left, top, opacity, transform;
 }
 
 /* ── Signal arcs (YOU → connected peers) ── */
-@keyframes aether-signal-dash {
+@keyframes lumen-signal-dash {
   to {
     stroke-dashoffset: -60;
   }
 }
-.leaflet-aetherSignals-pane,
-.leaflet-pane.leaflet-aetherSignals-pane {
+.leaflet-lumenSignals-pane,
+.leaflet-pane.leaflet-lumenSignals-pane {
   z-index: 550 !important;
   pointer-events: none !important;
 }
 /* Ride Leaflet zoom CSS transform — avoid paint thrash mid-anim */
-.leaflet-zoom-anim .leaflet-aetherSignals-pane {
+.leaflet-zoom-anim .leaflet-lumenSignals-pane {
   will-change: transform;
 }
-.aether-signal-svg {
+.lumen-signal-svg {
   overflow: visible !important;
   pointer-events: none !important;
 }
-.aether-signal-core,
-.aether-signal-glow {
+.lumen-signal-core,
+.lumen-signal-glow {
   vector-effect: non-scaling-stroke;
 }
-.aether-signal-core {
+.lumen-signal-core {
   opacity: 1;
 }
-.aether-signal-glow {
+.lumen-signal-glow {
   opacity: 1;
 }
-.aether-signal-packet {
+.lumen-signal-packet {
   pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) {
-  .aether-signal-core {
+  .lumen-signal-core {
     animation: none !important;
     stroke-dasharray: none !important;
   }
-  .aether-signal-packet {
+  .lumen-signal-packet {
     display: none;
   }
 }
 
-.aether-boom-notice {
+.lumen-boom-notice {
   min-width: 160px;
   max-width: min(70vw, 220px);
   padding: 8px 14px 10px;
@@ -442,30 +442,30 @@ body {
   -webkit-backdrop-filter: blur(14px);
 }
 
-.aether-map,
-.aether-map .leaflet-container {
+.lumen-map,
+.lumen-map .leaflet-container {
   width: 100% !important;
   height: 100% !important;
   background: #0A0A0F !important;
   cursor: grab;
 }
-.aether-map .leaflet-container:active {
+.lumen-map .leaflet-container:active {
   cursor: grabbing;
 }
 /* Marker/overlay panes must receive clicks (above tiles) */
-.aether-map .leaflet-marker-pane,
-.aether-map .leaflet-shadow-pane,
-.aether-map .leaflet-overlay-pane,
-.aether-map .leaflet-tooltip-pane,
-.aether-map .leaflet-popup-pane {
+.lumen-map .leaflet-marker-pane,
+.lumen-map .leaflet-shadow-pane,
+.lumen-map .leaflet-overlay-pane,
+.lumen-map .leaflet-tooltip-pane,
+.lumen-map .leaflet-popup-pane {
   /* keep Leaflet pane stacking (do NOT force z-index:auto — it hid signal lines) */
   pointer-events: auto !important;
 }
-.aether-map .leaflet-aetherSignals-pane {
+.lumen-map .leaflet-lumenSignals-pane {
   pointer-events: none !important;
 }
-.aether-map .leaflet-marker-icon,
-.aether-map .leaflet-interactive {
+.lumen-map .leaflet-marker-icon,
+.lumen-map .leaflet-interactive {
   pointer-events: auto !important;
   cursor: pointer !important;
 }

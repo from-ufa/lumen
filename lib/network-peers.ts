@@ -3,6 +3,7 @@ import path from "path";
 import geoip from "geoip-lite";
 
 export const CATALOG_PATH =
+  process.env.LUMEN_NETWORK_CATALOG ||
   process.env.AETHER_NETWORK_CATALOG ||
   path.join(process.cwd(), "data", "network-catalog.json");
 

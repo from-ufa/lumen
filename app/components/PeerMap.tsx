@@ -53,8 +53,8 @@ function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
 
   const hit = 28;
   return L.divIcon({
-    className: "aether-peer-marker",
-    html: `<div class="aether-peer-hit" style="
+    className: "lumen-peer-marker",
+    html: `<div class="lumen-peer-hit" style="
       width:${hit}px;height:${hit}px;
       display:flex;align-items:center;justify-content:center;
       cursor:pointer;
@@ -77,8 +77,8 @@ function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
 function meDivIcon(): L.DivIcon {
   const hit = 32;
   return L.divIcon({
-    className: "aether-me-marker",
-    html: `<div class="aether-peer-hit" style="
+    className: "lumen-me-marker",
+    html: `<div class="lumen-peer-hit" style="
       width:${hit}px;height:${hit}px;
       display:flex;align-items:center;justify-content:center;
       cursor:pointer;
@@ -133,7 +133,7 @@ function peerPopupHtml(
       : state === "reachable"
         ? "#38BDF8"
         : "#F87171";
-  return `<div class="aether-peer-popup" style="min-width:180px;max-width:260px;font-size:12px;line-height:1.4;color:#E8E8F0">
+  return `<div class="lumen-peer-popup" style="min-width:180px;max-width:260px;font-size:12px;line-height:1.4;color:#E8E8F0">
     <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.15em;color:${roleColor};margin-bottom:6px">${
       isMe
         ? "YOUR NODE"
@@ -217,12 +217,12 @@ function ClusteredPeersLayer({
         offset: [0, -12],
         opacity: 1,
         sticky: false,
-        className: "aether-map-tooltip",
+        className: "lumen-map-tooltip",
       });
 
       marker.bindPopup(peerPopupHtml(m, false), {
         maxWidth: 300,
-        className: "aether-map-popup",
+        className: "lumen-map-popup",
         autoPan: true,
         closeButton: true,
         autoClose: true,
@@ -274,12 +274,12 @@ function MeMarkerLayer({
       direction: "top",
       offset: [0, -16],
       opacity: 1,
-      className: "aether-map-tooltip",
+      className: "lumen-map-tooltip",
     });
 
     marker.bindPopup(peerPopupHtml({ ...me, state: "connected" }, true), {
       maxWidth: 300,
-      className: "aether-map-popup",
+      className: "lumen-map-popup",
       autoPan: true,
       closeButton: true,
     });
@@ -326,7 +326,7 @@ function createClusterIcon(cluster: L.MarkerCluster): L.DivIcon {
   }
 
   return L.divIcon({
-    html: `<div class="aether-cluster-bubble" style="
+    html: `<div class="lumen-cluster-bubble" style="
       width:${size}px;height:${size}px;
       border-radius:50%;
       display:flex;align-items:center;justify-content:center;
@@ -340,7 +340,7 @@ function createClusterIcon(cluster: L.MarkerCluster): L.DivIcon {
       letter-spacing:-0.02em;
       backdrop-filter:blur(6px);
     "><span>${count}</span></div>`,
-    className: "aether-cluster-icon",
+    className: "lumen-cluster-icon",
     iconSize: L.point(size, size),
     iconAnchor: L.point(size / 2, size / 2),
   });
@@ -558,7 +558,7 @@ function DefaultView({
   return null;
 }
 
-/** Keep leaflet size in sync with the aether-viz container */
+/** Keep leaflet size in sync with the lumen-viz container */
 function MapResizeGuard() {
   const map = useMap();
 
@@ -617,15 +617,15 @@ function SignalLinesLayer({
     const linkList = linksRef.current;
     if (!meNode || !linkList.length) return;
 
-    let pane = map.getPane("aetherSignals");
+    let pane = map.getPane("lumenSignals");
     if (!pane) {
-      pane = map.createPane("aetherSignals");
+      pane = map.createPane("lumenSignals");
     }
     pane.style.zIndex = "550";
     pane.style.pointerEvents = "none";
 
     const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svgEl.setAttribute("class", "aether-signal-svg");
+    svgEl.setAttribute("class", "lumen-signal-svg");
     svgEl.style.position = "absolute";
     svgEl.style.left = "0";
     svgEl.style.top = "0";
@@ -636,11 +636,11 @@ function SignalLinesLayer({
     pane.appendChild(svgEl);
 
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-    g.setAttribute("class", "aether-signal-layer");
+    g.setAttribute("class", "lumen-signal-layer");
     svgEl.appendChild(g);
 
     const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-    const filterId = `aether-signal-glow-${Date.now().toString(36)}`;
+    const filterId = `lumen-signal-glow-${Date.now().toString(36)}`;
     defs.innerHTML = `
       <filter id="${filterId}" x="-60%" y="-60%" width="220%" height="220%">
         <feGaussianBlur stdDeviation="1.1" result="b"/>
@@ -677,7 +677,7 @@ function SignalLinesLayer({
       pathGlow.setAttribute("stroke-linecap", "round");
       pathGlow.setAttribute("vector-effect", "non-scaling-stroke");
       pathGlow.setAttribute("filter", `url(#${filterId})`);
-      pathGlow.setAttribute("class", "aether-signal-glow");
+      pathGlow.setAttribute("class", "lumen-signal-glow");
 
       const pathCore = document.createElementNS(
         "http://www.w3.org/2000/svg",
@@ -688,9 +688,9 @@ function SignalLinesLayer({
       pathCore.setAttribute("stroke-width", "0.7");
       pathCore.setAttribute("stroke-linecap", "round");
       pathCore.setAttribute("vector-effect", "non-scaling-stroke");
-      pathCore.setAttribute("class", "aether-signal-core");
+      pathCore.setAttribute("class", "lumen-signal-core");
       pathCore.style.strokeDasharray = "3 11";
-      pathCore.style.animation = `aether-signal-dash ${3.2 + (i % 5) * 0.2}s linear infinite`;
+      pathCore.style.animation = `lumen-signal-dash ${3.2 + (i % 5) * 0.2}s linear infinite`;
 
       const packet = document.createElementNS(
         "http://www.w3.org/2000/svg",
@@ -705,7 +705,7 @@ function SignalLinesLayer({
         "style",
         "filter:drop-shadow(0 0 2.5px rgba(0,229,255,0.55))"
       );
-      packet.setAttribute("class", "aether-signal-packet");
+      packet.setAttribute("class", "lumen-signal-packet");
 
       g.appendChild(pathGlow);
       g.appendChild(pathCore);
@@ -921,21 +921,21 @@ function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
           }}
         >
           {Array.from({ length: BOOM_PULSE_COUNT }, (_, wave) => (
-            <div key={wave} className="aether-boom-wave" aria-hidden>
+            <div key={wave} className="lumen-boom-wave" aria-hidden>
               <div
-                className="aether-boom-ring aether-boom-ring-1"
+                className="lumen-boom-ring lumen-boom-ring-1"
                 style={{
                   animationDelay: `${wave * BOOM_PULSE_SEC}s`,
                 }}
               />
               <div
-                className="aether-boom-ring aether-boom-ring-2"
+                className="lumen-boom-ring lumen-boom-ring-2"
                 style={{
                   animationDelay: `${wave * BOOM_PULSE_SEC + 0.16}s`,
                 }}
               />
               <div
-                className="aether-boom-ring aether-boom-ring-3"
+                className="lumen-boom-ring lumen-boom-ring-3"
                 style={{
                   animationDelay: `${wave * BOOM_PULSE_SEC + 0.32}s`,
                 }}
@@ -943,7 +943,7 @@ function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
             </div>
           ))}
           <div
-            className="aether-boom-core"
+            className="lumen-boom-core"
             style={{
               animationDuration: `${BOOM_TOTAL_MS}ms`,
             }}
@@ -954,7 +954,7 @@ function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
       {/* Top notice → flies down to pulse point (synced with 3 pulses) */}
       {mapSize.w > 0 && xy && (
         <motion.div
-          className="aether-boom-flight pointer-events-none absolute z-[720]"
+          className="lumen-boom-flight pointer-events-none absolute z-[720]"
           initial={{
             left: startX,
             top: startY,
@@ -1000,7 +1000,7 @@ function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
             },
           }}
         >
-          <div className="aether-boom-notice">
+          <div className="lumen-boom-notice">
             <div className="text-[9px] font-mono tracking-[0.28em] text-[#00E5FF]/95">
               NEW BLOCK
             </div>
@@ -1242,7 +1242,7 @@ export default function PeerMap({
 
   return (
     <div className="w-full">
-    <div className="canvas-container aether-viz relative w-full bg-[#050508] overflow-hidden">
+    <div className="canvas-container lumen-viz relative w-full bg-[#050508] overflow-hidden">
       <div className="absolute inset-0 z-[1]">
         {!isLoading && !isError && (
           <MapContainer
@@ -1259,7 +1259,7 @@ export default function PeerMap({
             zoomAnimation={true}
             markerZoomAnimation={true}
             fadeAnimation={true}
-            className="h-full w-full aether-map"
+            className="h-full w-full lumen-map"
             style={{
               background: "#0A0A0F",
               height: "100%",

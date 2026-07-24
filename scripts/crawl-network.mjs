@@ -5,7 +5,8 @@
  * Writes data/network-catalog.json for /api/peers/map.
  *
  * Usage: node scripts/crawl-network.mjs
- * Env: ERGO_NODE_URL, AETHER_NETWORK_CATALOG (compat), AETHER_CRAWL_SKIP_PROBE=1
+ * Env: ERGO_NODE_URL, LUMEN_NETWORK_CATALOG (legacy AETHER_NETWORK_CATALOG),
+ *      LUMEN_CRAWL_SKIP_PROBE=1 (legacy AETHER_CRAWL_SKIP_PROBE)
  */
 import fs from "fs";
 import path from "path";
@@ -24,9 +25,12 @@ const ERGO = (process.env.ERGO_NODE_URL || "http://127.0.0.1:9053").replace(
   ""
 );
 const CATALOG_PATH =
+  process.env.LUMEN_NETWORK_CATALOG ||
   process.env.AETHER_NETWORK_CATALOG ||
   path.join(ROOT, "data", "network-catalog.json");
-const SKIP_PROBE = process.env.AETHER_CRAWL_SKIP_PROBE === "1";
+const SKIP_PROBE =
+  process.env.LUMEN_CRAWL_SKIP_PROBE === "1" ||
+  process.env.AETHER_CRAWL_SKIP_PROBE === "1";
 const FANOUT_CONCURRENCY = 4;
 const FANOUT_TIMEOUT_MS = 8000;
 const PROBE_CONCURRENCY = 25;
@@ -371,7 +375,7 @@ async function main() {
       n.lastReachableAt = Date.now();
     }
   } else {
-    log("probe skipped (AETHER_CRAWL_SKIP_PROBE=1)");
+    log("probe skipped (LUMEN_CRAWL_SKIP_PROBE=1)");
   }
 
   // Fill missing geo

@@ -1,23 +1,28 @@
 # Lumen — Ergo Node Dashboard
 
+> **Rebrand 2026-07-24:** product renamed **Aether → Lumen**.  
+> Deploy path stays `/home/aether`, systemd units stay `aether.service` / `aether-crawl.*` (legacy names).  
+> Auth accepts new + old: password files, cookies, `X-Lumen-Password` / `X-Aether-Password`.
+
 **Handoff / context pack for future Grok (or any AI) sessions.**  
 Документ описывает проект целиком: зачем, как устроен, где лежит, как деплоится, что уже сделано.
 
 | | |
 |--|--|
-| **Product** | **Lumen** (formerly Aether) — Ergo Node Dashboard |
-| **Слоган** | The living pulse of your Ergo node |
+| **Продукт** | **Lumen** — Ergo Node Dashboard |
+| **UI header** | `Lumen` + subtitle `Ergo Node Dashboard` |
+| **Слоган** | The living pulse of your Ergo node (Share Card / PWA / README) |
 | **Версия** | 0.1.0 |
 | **Стек** | Next.js 16 · React 19 · R3F/Three · Leaflet + markercluster · TanStack Query · Framer Motion · geoip-lite · html-to-image · qrcode.react |
 | **Продакшен-хост** | `toa.c.hostens.cloud` / `80.209.232.82` (Hostens) |
 | **Каталог** | `/home/aether` |
 | **URL (local / SSH)** | `http://127.0.0.1:3000` |
 | **URL (public)** | `http://80.209.232.82:3000` — auth if Public Mode on |
-| **Public Mode** | file `/home/aether/.aether-public-password` (chmod 600); set/change in NODE SETTINGS or shell |
+| **Public Mode** | file `/home/aether/.lumen-public-password (legacy: .aether-public-password)` (chmod 600); set/change in NODE SETTINGS or shell |
 | **systemd** | `aether.service` (enabled), bind **`0.0.0.0:3000`** |
 | **Auth gate** | `proxy.ts` (Next 16 Node network proxy; not deprecated middleware) |
 | **Связанная дока сервера** | `/root/SERVER.md` |
-| **Снимок handoff** | **2026-07-23** (3D planets + galaxy orbit + music) |
+| **Снимок handoff** | **2026-07-24** (rebrand → Lumen) (3D planets + galaxy orbit + music) |
 | **Network crawler** | `scripts/crawl-network.mjs` + `aether-crawl.timer` (every 12m) |
 | **Catalog** | `/home/aether/data/network-catalog.json` (gitignored) |
 
@@ -25,7 +30,7 @@
 
 ## 1. Что это и зачем
 
-**Lumen** — веб-дашборд (Ergo Node Dashboard) для **владельца Ergo mainnet-ноды**. Показывает:
+**Lumen** — веб-дашборд для **владельца Ergo mainnet-ноды**. Показывает:
 
 - состояние **своей** ноды (height, peers, mempool);
 - **3D constellation** — нода в центре, peers в 3D;
@@ -54,9 +59,9 @@ ssh -L 3000:127.0.0.1:3000 root@80.209.232.82 -N
 
 ```text
 http://80.209.232.82:3000
-Basic Auth: любой user + пароль из .aether-public-password
+Basic Auth: любой user + пароль из .lumen-public-password (legacy: .aether-public-password)
 или: ?password=SECRET  (ставит httpOnly cookie)
-или: X-Aether-Password: SECRET
+или: X-Lumen-Password (legacy: X-Aether-Password): SECRET
 ```
 
 Данные ноды: browser → `/api/node/*` → server proxy → `127.0.0.1:9053`.  
@@ -84,14 +89,14 @@ Basic Auth: любой user + пароль из .aether-public-password
 
 - **Local Host** (`localhost` / `127.0.0.1` / `::1`) → always allow (не путать с bind `0.0.0.0` — locality по **Host header**).
 - Password file empty/missing → remote **401**.
-- Password set → Basic / `?password=` / `X-Aether-Password` / cookie `aether_public_auth` (sha256).
+- Password set → Basic / `?password=` / `X-Lumen-Password (legacy: X-Aether-Password)` / cookie `lumen_public_auth (legacy: aether_public_auth)` (sha256).
 - Password **read from file every request** (смена без rebuild).
 
 ### Public password
 
 | | |
 |--|--|
-| Path | `/home/aether/.aether-public-password` |
+| Path | `/home/aether/.lumen-public-password (legacy: .aether-public-password)` |
 | Mode | `0600`, owner root |
 | Content | one line, secret |
 | UI | NODE SETTINGS → SET / CHANGE PUBLIC PASSWORD (min 10) |
@@ -104,11 +109,11 @@ Basic Auth: любой user + пароль из .aether-public-password
 
 ```
 /home/aether/
-├── LUMEN.md
+├── AETHER.md
 ├── README.md
 ├── proxy.ts                 ← network auth (Next 16)
 ├── lib/public-password.ts   ← read/write password file
-├── .aether-public-password  ← SECRET chmod 600 (not in git)
+├── .lumen-public-password (legacy: .aether-public-password)  ← SECRET chmod 600 (not in git)
 ├── .env.local               ← ERGO_NODE_URL only (no public password)
 ├── app/
 │   ├── manifest.ts          ← PWA
@@ -189,7 +194,7 @@ curl -s http://127.0.0.1:3000/api/public-status
 curl -s -o /dev/null -w "%{http_code}\n" http://80.209.232.82:3000/   # 401 if public mode
 ```
 
-**Не коммитить:** `node_modules/`, `.next/`, `.aether-public-password`, `.env*`.
+**Не коммитить:** `node_modules/`, `.next/`, `.lumen-public-password (legacy: .aether-public-password)`, `.env*`.
 
 ---
 
@@ -269,10 +274,10 @@ Not a full Scorex P2P crawler (Phase B later if needed). Does **not** depend on 
 ## 12. Чеклист для нового чата
 
 ```text
-Проект: Lumen — Ergo Node Dashboard
+Проект: Lumen — Ergo node visualizer
 Путь: /home/aether
-Дока: /home/aether/LUMEN.md + /root/SERVER.md
-Прод: aether.service, 0.0.0.0:3000, proxy.ts auth, password file .aether-public-password
+Дока: /home/aether/AETHER.md + /root/SERVER.md
+Прод: aether.service, 0.0.0.0:3000, proxy.ts auth, password file .lumen-public-password (legacy: .aether-public-password)
 Crawler: aether-crawl.timer → data/network-catalog.json
 Стек: Next 16 + React 19 + R3F 9 + Leaflet cluster + geoip-lite
 Не трогать: ergonode, oracle-core, oracle-core-usd без просьбы
@@ -319,6 +324,14 @@ https://grok.com/share/bGVnYWN5_01882487-4c5e-4e7e-88cf-7d67479d1387
 
 ---
 
+### 2026-07-24 — Rebrand Aether → Lumen
+1. Product name **Lumen** in UI, PWA, Share Card, package.json, console, CSS classes  
+2. Auth dual-compat: `.lumen-public-password` + legacy `.aether-public-password`; cookies & headers  
+3. Env aliases: `LUMEN_*` preferred, `AETHER_*` still accepted  
+4. Docs: `LUMEN.md` primary; `AETHER.md` pointer  
+5. Deploy path `/home/aether` + unit `aether.service` **unchanged** (no downtime rename)
+
+
 ## 14. Dev loop
 
 ```bash
@@ -334,7 +347,7 @@ systemctl is-active aether ergonode oracle-core oracle-core-usd aether-crawl.tim
 
 | | |
 |--|--|
-| aether | **active**, HTTP **200**, publicMode **true** |
+| lumen | **active**, HTTP **200**, publicMode **true** |
 | ergonode | active — mainnet **6.0.2**, height **~1835293**, peers **~114** |
 | oracles | oracle-core + oracle-core-usd **active** |
 | aether-crawl.timer | **active**, catalog fresh |
@@ -345,4 +358,4 @@ systemctl is-active aether ergonode oracle-core oracle-core-usd aether-crawl.tim
 
 **Конец handoff.**  
 Обновляй этот файл при крупных изменениях API/деплоя.  
-Синхронизируй `/root/LUMEN.md` ← `/home/aether/LUMEN.md` и pointer в `/root/SERVER.md`.
+Синхронизируй `/root/AETHER.md` ← `/home/aether/AETHER.md` и pointer в `/root/SERVER.md`.

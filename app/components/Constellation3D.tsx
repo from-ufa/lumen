@@ -854,7 +854,7 @@ function ConstellationWorld({
       if (!alive) return;
       setAtlas(getTextureAtlas());
       setTexTick((n) => n + 1);
-      console.info("[Aether] texture preload done", result.status);
+      console.info("[Lumen] texture preload done", result.status);
     });
     return () => {
       alive = false;
@@ -1045,7 +1045,7 @@ function Scene({
         setMusicMode(ctrl.getMode());
       }
     } catch (err) {
-      console.warn("[Aether] music play failed", err);
+      console.warn("[Lumen] music play failed", err);
       setMusicOn(false);
       setMusicMode("off");
     } finally {
@@ -1097,7 +1097,7 @@ function Scene({
 
   useEffect(() => {
     if (onSimulateBlock) {
-      (window as any).__aetherSimulateBlock = triggerBlockPropagation;
+      (window as any).__lumenSimulateBlock = triggerBlockPropagation;
     }
   }, [onSimulateBlock, triggerBlockPropagation]);
 
@@ -1289,7 +1289,7 @@ function Scene({
                 {musicMode === "file"
                   ? "Playing /audio/stay.* (your file)"
                   : musicMode === "synth"
-                    ? "Aether space pad · M to toggle"
+                    ? "Lumen space pad · M to toggle"
                     : "Press MUSIC or M · place stay.mp3 in /public/audio for your track"}
               </div>
             </div>
@@ -1397,7 +1397,7 @@ function Scene({
 export default function Constellation3D(props: ConstellationProps) {
   return (
     <div className="w-full">
-      <div className="canvas-container aether-viz relative w-full bg-[#010104] overflow-hidden">
+      <div className="canvas-container lumen-viz relative w-full bg-[#010104] overflow-hidden">
         <div className="absolute inset-0 w-full h-full">
           <Scene {...props} />
         </div>

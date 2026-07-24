@@ -13,9 +13,9 @@ import {
  *
  * Allowed from:
  *  - localhost / SSH tunnel (always)
- *  - remote with valid Basic / cookie / X-Aether-Password against CURRENT password
+ *  - remote with valid Basic / cookie / X-Lumen-Password against CURRENT password
  *
- * Writes `/home/aether/.aether-public-password` (chmod 600).
+ * Writes `/home/aether/.lumen-public-password` (chmod 600).
  */
 export async function POST(req: NextRequest) {
   const current = readPublicPassword();

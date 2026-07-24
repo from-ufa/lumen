@@ -1,5 +1,5 @@
 /**
- * Cinematic space ambience for Aether 3D constellation.
+ * Cinematic space ambience for Lumen 3D constellation.
  *
  * 1) If the operator places a licensed track at /public/audio/stay.mp3
  *    (or stay.ogg / constellation.mp3), that file is played on loop.
@@ -187,7 +187,7 @@ export function createAmbienceController(): AmbienceController {
       synth = createSynthAmbience(ctx, master);
       synth.start();
       mode = "synth";
-      sourceLabel = "aether-pad";
+      sourceLabel = "lumen-pad";
       playing = true;
     },
 

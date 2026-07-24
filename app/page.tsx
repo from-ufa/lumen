@@ -31,7 +31,7 @@ const AVG_BLOCK_WINDOW = 100;
 const PeerMap = dynamic(() => import('./components/PeerMap'), {
   ssr: false,
   loading: () => (
-    <div className="canvas-container aether-viz relative w-full flex items-center justify-center font-mono text-xs tracking-[3px] text-[#A0A0B0]">
+    <div className="canvas-container lumen-viz relative w-full flex items-center justify-center font-mono text-xs tracking-[3px] text-[#A0A0B0]">
       LOADING MAP…
     </div>
   ),
@@ -41,7 +41,7 @@ const PeerMap = dynamic(() => import('./components/PeerMap'), {
 // Direct URL e.g. http://127.0.0.1:9053 still works if browser can reach it.
 const DEFAULT_NODE_URL = '/api/node';
 
-export default function AetherDashboard() {
+export default function LumenDashboard() {
   const [nodeUrl, setNodeUrl] = useState(DEFAULT_NODE_URL);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [recentBlocks, setRecentBlocks] = useState<RecentBlock[]>([]);
@@ -56,13 +56,20 @@ export default function AetherDashboard() {
   /** Hide floating Boom/Refresh when any full-screen modal is open */
   const isAnyModalOpen = shareModalOpen || settingsModalOpen;
 
-  // Load saved URL from localStorage
+  // Load saved URL from localStorage (Lumen key, migrate legacy Aether key)
   useEffect(() => {
-    const saved = localStorage.getItem('aether-node-url');
-    if (saved) setNodeUrl(saved);
+    const saved =
+      localStorage.getItem("lumen-node-url") ||
+      localStorage.getItem("aether-node-url");
+    if (saved) {
+      setNodeUrl(saved);
+      if (!localStorage.getItem("lumen-node-url")) {
+        localStorage.setItem("lumen-node-url", saved);
+      }
+    }
   }, []);
 
-  // Public Mode status from server password file (.aether-public-password)
+  // Public Mode status from server password file (.lumen-public-password)
   const refreshPublicMode = async () => {
     try {
       const res = await fetch('/api/public-status', { cache: 'no-store' });
@@ -225,7 +232,7 @@ export default function AetherDashboard() {
             if (list.some((b) => b.height === block.height)) return list;
             return [block, ...list].sort((a, b) => b.height - a.height).slice(0, 9);
           });
-          // New-block toast: only PeerMap's dark Aether toast.custom (no sonner.success)
+          // New-block toast: only PeerMap's dark Lumen toast.custom (no sonner.success)
         }
 
         // Refresh avg block time on every new tip
@@ -291,9 +298,9 @@ export default function AetherDashboard() {
                 <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
               </div>
               <div className="min-w-0">
-                <div className="font-semibold tracking-[-0.5px] text-2xl sm:text-3xl leading-none">Aether</div>
+                <div className="font-semibold tracking-[-0.5px] text-2xl sm:text-3xl leading-none">Lumen</div>
                 <div className="text-[9px] sm:text-[10px] text-[#A0A0B0] mt-0.5 font-mono tracking-[2px] sm:tracking-[3px] truncate">
-                  THE LIVING PULSE OF YOUR ERGO NODE
+                  Ergo Node Dashboard
                 </div>
               </div>
             </div>
@@ -435,8 +442,8 @@ export default function AetherDashboard() {
                 onPeerHover={setSelectedPeer}
                 hideControls={isAnyModalOpen}
                 onSimulateBlock={() => {
-                  if ((window as any).__aetherSimulateBlock) {
-                    (window as any).__aetherSimulateBlock();
+                  if ((window as any).__lumenSimulateBlock) {
+                    (window as any).__lumenSimulateBlock();
                   } else {
                     toast('Block wave simulation triggered in 3D scene');
                   }

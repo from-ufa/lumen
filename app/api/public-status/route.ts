@@ -15,7 +15,7 @@ export async function GET() {
       storage: "file",
       auth: publicMode ? "basic-or-query-or-header" : "localhost-only",
       hint: publicMode
-        ? "Remote access requires Basic Auth (any user), ?password=, or X-Aether-Password header. Change password in NODE SETTINGS."
+        ? "Remote access requires Basic Auth (any user), ?password=, or X-Lumen-Password header. Change password in NODE SETTINGS."
         : "No password set. Open NODE SETTINGS on localhost and set a public password (min 10 chars).",
     },
     {

@@ -49,7 +49,11 @@ export type PeerLink = {
 };
 
 function myPublicIpGuess(): string | null {
-  return process.env.AETHER_PUBLIC_IP || "80.209.232.82";
+  return (
+    process.env.LUMEN_PUBLIC_IP ||
+    process.env.AETHER_PUBLIC_IP ||
+    "80.209.232.82"
+  );
 }
 
 async function fetchPeers(path: string): Promise<any[]> {

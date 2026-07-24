@@ -75,7 +75,7 @@ export default function ConnectionSettings({
   const handleSave = () => {
     if (tempUrl !== nodeUrl) {
       setNodeUrl(tempUrl);
-      localStorage.setItem("aether-node-url", tempUrl);
+      localStorage.setItem("lumen-node-url", tempUrl);
       toast.success("Node URL updated", { description: "Reconnecting..." });
       setTimeout(onReconnect, 120);
     }
@@ -268,7 +268,7 @@ export default function ConnectionSettings({
                     <p className="text-[10px] text-[#A0A0B0]/55 mt-1.5 px-1">
                       Stored in server file{" "}
                       <span className="font-mono text-[#A0A0B0]/80">
-                        .aether-public-password
+                        .lumen-public-password
                       </span>{" "}
                       (chmod 600). Not in env / git.
                     </p>
