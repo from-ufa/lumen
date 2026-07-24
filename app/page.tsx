@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { 
-  Play, Pause, RefreshCw, Zap, Users, Clock, 
-  ArrowRight, ExternalLink, Orbit, Globe2
+  Play, Pause, RefreshCw, Zap,
+  ExternalLink, Orbit, Globe2, Cable
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -23,6 +23,19 @@ import {
   fetchBlockDetails,
   fetchRecentBlocks,
 } from './lib/blocks';
+import type { BridgeStatus, NodeMode } from './lib/node-api';
+import {
+  DEFAULT_LUMEN_NODE_URL,
+  LS_NODE_URL,
+  LS_NODE_URL_LEGACY,
+  fetchBridgeStatus,
+  loadBridgeToken,
+  loadNodeMode,
+  nodeRequestHeaders,
+  resolveNodeBase,
+  saveBridgeToken,
+  saveNodeMode,
+} from './lib/node-api';
 
 /** Headers window for AVG BLOCK TIME (matches MetricsCards sublabel). */
 const AVG_BLOCK_WINDOW = 100;
@@ -39,10 +52,12 @@ const PeerMap = dynamic(() => import('./components/PeerMap'), {
 
 // Same-origin proxy → server talks to local Ergo (works via SSH tunnel).
 // Direct URL e.g. http://127.0.0.1:9053 still works if browser can reach it.
-const DEFAULT_NODE_URL = '/api/node';
+const DEFAULT_NODE_URL = DEFAULT_LUMEN_NODE_URL;
 
 export default function LumenDashboard() {
   const [nodeUrl, setNodeUrl] = useState(DEFAULT_NODE_URL);
+  const [nodeMode, setNodeModeState] = useState<NodeMode>("lumen");
+  const [bridgeToken, setBridgeTokenState] = useState("");
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [recentBlocks, setRecentBlocks] = useState<RecentBlock[]>([]);
   const [lastBlockHeight, setLastBlockHeight] = useState(0);
@@ -56,17 +71,43 @@ export default function LumenDashboard() {
   /** Hide floating Boom/Refresh when any full-screen modal is open */
   const isAnyModalOpen = shareModalOpen || settingsModalOpen;
 
-  // Load saved URL from localStorage (Lumen key, migrate legacy Aether key)
+  const setNodeMode = useCallback((mode: NodeMode) => {
+    setNodeModeState(mode);
+    saveNodeMode(mode);
+  }, []);
+
+  const setBridgeToken = useCallback((token: string) => {
+    setBridgeTokenState(token);
+    saveBridgeToken(token);
+  }, []);
+
+  // Effective REST base: /api/node (Lumen) or /api/bridge/node (My Node)
+  const effectiveNodeUrl = useMemo(
+    () => resolveNodeBase(nodeMode, nodeUrl),
+    [nodeMode, nodeUrl]
+  );
+  const apiHeaders = useMemo(
+    () => nodeRequestHeaders(nodeMode, bridgeToken),
+    [nodeMode, bridgeToken]
+  );
+
+  // My Node mode needs a token to query the bridge proxy
+  const canFetchNode =
+    !isDemoMode && (nodeMode === "lumen" || !!bridgeToken);
+
+  // Load saved URL / mode / token from localStorage
   useEffect(() => {
     const saved =
-      localStorage.getItem("lumen-node-url") ||
-      localStorage.getItem("aether-node-url");
+      localStorage.getItem(LS_NODE_URL) ||
+      localStorage.getItem(LS_NODE_URL_LEGACY);
     if (saved) {
       setNodeUrl(saved);
-      if (!localStorage.getItem("lumen-node-url")) {
-        localStorage.setItem("lumen-node-url", saved);
+      if (!localStorage.getItem(LS_NODE_URL)) {
+        localStorage.setItem(LS_NODE_URL, saved);
       }
     }
+    setNodeModeState(loadNodeMode());
+    setBridgeTokenState(loadBridgeToken());
   }, []);
 
   // Public Mode status from server password file (.lumen-public-password)
@@ -85,49 +126,81 @@ export default function LumenDashboard() {
     void refreshPublicMode();
   }, []);
 
+  // Bridge connection status (poll when we have a token)
+  const {
+    data: bridgeStatus = null,
+    isFetching: bridgeStatusLoading,
+    refetch: refetchBridgeStatus,
+  } = useQuery({
+    queryKey: ["bridgeStatus", bridgeToken],
+    queryFn: async (): Promise<BridgeStatus> => fetchBridgeStatus(bridgeToken),
+    enabled: !!bridgeToken,
+    refetchInterval: 5000,
+    staleTime: 2000,
+  });
+
+  const onRefreshBridgeStatus = useCallback(() => {
+    if (bridgeToken) void refetchBridgeStatus();
+  }, [bridgeToken, refetchBridgeStatus]);
+
   // === REAL NODE DATA ===
   const { data: nodeInfo, isLoading: infoLoading, refetch: refetchInfo, isError: infoError } = useQuery({
-    queryKey: ['nodeInfo', nodeUrl],
+    queryKey: ['nodeInfo', nodeMode, effectiveNodeUrl, bridgeToken],
     queryFn: async (): Promise<NodeInfo> => {
       if (isDemoMode) throw new Error('demo');
-      const res = await fetch(`${nodeUrl}/info`, { 
-        signal: AbortSignal.timeout(6500),
-        headers: { 'Accept': 'application/json' }
+      if (nodeMode === "my" && !bridgeToken) throw new Error("no_bridge_token");
+      const res = await fetch(`${effectiveNodeUrl}/info`, { 
+        signal: AbortSignal.timeout(nodeMode === "my" ? 14000 : 6500),
+        headers: apiHeaders,
+        cache: "no-store",
       });
-      if (!res.ok) throw new Error('Node unreachable');
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || body.message || "Node unreachable");
+      }
       return res.json();
     },
-    enabled: !isDemoMode,
+    enabled: canFetchNode,
     refetchInterval: 7500,
+    retry: nodeMode === "my" ? 1 : 2,
   });
 
   const { data: peers = [], refetch: refetchPeers } = useQuery({
-    queryKey: ['peers', nodeUrl],
+    queryKey: ['peers', nodeMode, effectiveNodeUrl, bridgeToken],
     queryFn: async (): Promise<Peer[]> => {
       if (isDemoMode) return generateDemoPeers();
       // Ergo has no bare /peers — use connected peers list
-      const res = await fetch(`${nodeUrl}/peers/connected`, { signal: AbortSignal.timeout(6500) });
+      const res = await fetch(`${effectiveNodeUrl}/peers/connected`, {
+        signal: AbortSignal.timeout(nodeMode === "my" ? 14000 : 6500),
+        headers: apiHeaders,
+        cache: "no-store",
+      });
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !isDemoMode,
+    enabled: canFetchNode,
     refetchInterval: 14000,
   });
 
   const { data: mempoolData, refetch: refetchMempool } = useQuery({
-    queryKey: ['mempool', nodeUrl],
+    queryKey: ['mempool', nodeMode, effectiveNodeUrl, bridgeToken],
     queryFn: async () => {
       if (isDemoMode) return { size: 47, txs: generateDemoTxs(47) };
-      const res = await fetch(`${nodeUrl}/transactions/unconfirmed`, { signal: AbortSignal.timeout(6500) });
+      const res = await fetch(`${effectiveNodeUrl}/transactions/unconfirmed`, {
+        signal: AbortSignal.timeout(nodeMode === "my" ? 14000 : 6500),
+        headers: apiHeaders,
+        cache: "no-store",
+      });
       if (!res.ok) return { size: 0, txs: [] };
       const txs: any[] = await res.json();
       return { size: txs.length, txs: txs.slice(0, 24).map(t => ({ id: t.id })) };
     },
-    enabled: !isDemoMode,
+    enabled: canFetchNode,
     refetchInterval: 8500,
   });
 
-  const isOnline = !!nodeInfo && !infoError && !isDemoMode;
+  const bridgeOnline = !!bridgeStatus?.connected;
+  const isOnline = !!nodeInfo && !infoError && !isDemoMode && canFetchNode;
   const currentHeight = nodeInfo?.fullHeight || nodeInfo?.headersHeight || 0;
   const mempoolSize = mempoolData?.size || 0;
   const mempoolTxs = mempoolData?.txs || [];
@@ -193,15 +266,28 @@ export default function LumenDashboard() {
   //   GET /blocks/{id}/transactions → { transactions: [...] }
   //   txCount = transactions.length  (NOT random!)
   //
+  // Reset block timeline when switching data source
   useEffect(() => {
-    if (!currentHeight || isDemoMode) return;
+    setRecentBlocks([]);
+    setLastBlockHeight(0);
+    setAvgBlockTime(null);
+    setAvgBlockSamples(0);
+  }, [nodeMode, effectiveNodeUrl, bridgeToken]);
+
+  useEffect(() => {
+    if (!currentHeight || isDemoMode || !canFetchNode) return;
 
     let cancelled = false;
 
     const loadInitial = async () => {
       // First connect or reconnect: pull last 9 blocks with real counts
       if (lastBlockHeight === 0 || recentBlocks.length === 0) {
-        const blocks = await fetchRecentBlocks(nodeUrl, currentHeight, 9);
+        const blocks = await fetchRecentBlocks(
+          effectiveNodeUrl,
+          currentHeight,
+          9,
+          apiHeaders
+        );
         if (cancelled) return;
         if (blocks.length) {
           setRecentBlocks(blocks);
@@ -210,7 +296,11 @@ export default function LumenDashboard() {
           setLastBlockHeight(currentHeight);
         }
         // Real avg from last N headers (one node request)
-        const avg = await fetchAvgBlockTime(nodeUrl, AVG_BLOCK_WINDOW);
+        const avg = await fetchAvgBlockTime(
+          effectiveNodeUrl,
+          AVG_BLOCK_WINDOW,
+          apiHeaders
+        );
         if (!cancelled && avg) {
           setAvgBlockTime(avg.avgSeconds);
           setAvgBlockSamples(avg.samples);
@@ -225,7 +315,7 @@ export default function LumenDashboard() {
 
         // Fill any skipped heights (rare) with real data
         for (let h = prev + 1; h <= currentHeight; h++) {
-          const block = await fetchBlockDetails(nodeUrl, h);
+          const block = await fetchBlockDetails(effectiveNodeUrl, h, apiHeaders);
           if (cancelled) return;
           if (!block) continue;
           setRecentBlocks((list) => {
@@ -236,7 +326,11 @@ export default function LumenDashboard() {
         }
 
         // Refresh avg block time on every new tip
-        const avg = await fetchAvgBlockTime(nodeUrl, AVG_BLOCK_WINDOW);
+        const avg = await fetchAvgBlockTime(
+          effectiveNodeUrl,
+          AVG_BLOCK_WINDOW,
+          apiHeaders
+        );
         if (!cancelled && avg) {
           setAvgBlockTime(avg.avgSeconds);
           setAvgBlockSamples(avg.samples);
@@ -249,21 +343,31 @@ export default function LumenDashboard() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on height / mode / node
-  }, [currentHeight, isDemoMode, nodeUrl]);
+  }, [currentHeight, isDemoMode, effectiveNodeUrl, nodeMode, bridgeToken, canFetchNode]);
 
   // === MANUAL RECONNECT ===
   const handleReconnect = () => {
     refetchInfo();
     refetchPeers();
     refetchMempool();
+    if (bridgeToken) void refetchBridgeStatus();
     // Refresh real avg block time from headers
-    fetchAvgBlockTime(nodeUrl, AVG_BLOCK_WINDOW).then((avg) => {
-      if (avg && !isDemoMode) {
-        setAvgBlockTime(avg.avgSeconds);
-        setAvgBlockSamples(avg.samples);
-      }
-    });
-    toast.loading('Reconnecting to Ergo node...', { id: 'reconnect' });
+    if (canFetchNode) {
+      fetchAvgBlockTime(effectiveNodeUrl, AVG_BLOCK_WINDOW, apiHeaders).then(
+        (avg) => {
+          if (avg && !isDemoMode) {
+            setAvgBlockTime(avg.avgSeconds);
+            setAvgBlockSamples(avg.samples);
+          }
+        }
+      );
+    }
+    toast.loading(
+      nodeMode === "my"
+        ? "Reconnecting via Lumen Bridge..."
+        : "Reconnecting to Ergo node...",
+      { id: "reconnect" }
+    );
     setTimeout(() => toast.dismiss('reconnect'), 1400);
   };
 
@@ -307,7 +411,17 @@ export default function LumenDashboard() {
             {/* Compact status on mobile next to logo */}
             <div className={`sm:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl text-[10px] font-mono tracking-wider border flex-shrink-0 ${isOnline || isDemoMode ? 'border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]' : 'border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]'}`}>
               <div className={`w-1.5 h-1.5 rounded-full ${isOnline || isDemoMode ? 'bg-[#10B981] status-dot' : 'bg-[#EF4444]'}`} />
-              {isDemoMode ? 'DEMO' : isOnline ? 'LIVE' : 'OFF'}
+              {isDemoMode
+                ? "DEMO"
+                : nodeMode === "my"
+                  ? isOnline
+                    ? "MY"
+                    : bridgeOnline
+                      ? "BR"
+                      : "OFF"
+                  : isOnline
+                    ? "LIVE"
+                    : "OFF"}
             </div>
           </div>
 
@@ -315,8 +429,47 @@ export default function LumenDashboard() {
             {/* Status — desktop */}
             <div className={`hidden sm:flex items-center gap-2 px-4 lg:px-5 py-2 rounded-3xl text-sm font-mono tracking-widest border ${isOnline || isDemoMode ? 'border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]' : 'border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]'}`}>
               <div className={`w-1.5 h-1.5 rounded-full ${isOnline || isDemoMode ? 'bg-[#10B981] status-dot' : 'bg-[#EF4444]'}`} />
-              {isDemoMode ? 'DEMO MODE' : isOnline ? 'NODE LIVE' : 'NODE OFFLINE'}
+              {isDemoMode
+                ? "DEMO MODE"
+                : nodeMode === "my"
+                  ? isOnline
+                    ? "MY NODE LIVE"
+                    : bridgeOnline
+                      ? "BRIDGE UP · WAITING"
+                      : "BRIDGE OFFLINE"
+                  : isOnline
+                    ? "NODE LIVE"
+                    : "NODE OFFLINE"}
             </div>
+
+            {/* Mode badge */}
+            {!isDemoMode && (
+              <div
+                className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border ${
+                  nodeMode === "my"
+                    ? bridgeOnline
+                      ? "border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF]"
+                      : "border-[#F59E0B]/35 bg-[#F59E0B]/10 text-[#F59E0B]"
+                    : "border-white/15 bg-white/5 text-[#A0A0B0]"
+                }`}
+                title={
+                  nodeMode === "my"
+                    ? bridgeOnline
+                      ? "Reading your node via Lumen Bridge"
+                      : "My Node selected — Bridge agent offline"
+                    : "Reading this server’s Lumen Ergo node"
+                }
+              >
+                {nodeMode === "my" ? (
+                  <>
+                    <Cable className="w-3 h-3" />
+                    MY NODE{bridgeOnline ? " · BRIDGE" : ""}
+                  </>
+                ) : (
+                  "LUMEN NODE"
+                )}
+              </div>
+            )}
 
             {publicMode && (
               <div
@@ -347,6 +500,13 @@ export default function LumenDashboard() {
                 void refreshPublicMode();
               }}
               onOpenChange={setSettingsModalOpen}
+              nodeMode={nodeMode}
+              setNodeMode={setNodeMode}
+              bridgeToken={bridgeToken}
+              setBridgeToken={setBridgeToken}
+              bridgeStatus={bridgeStatus}
+              bridgeStatusLoading={bridgeStatusLoading}
+              onRefreshBridgeStatus={onRefreshBridgeStatus}
             />
 
             <button 
@@ -381,6 +541,15 @@ export default function LumenDashboard() {
             <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1">
               Your node. Your peers. Real-time beauty.
             </p>
+            {nodeMode === "my" && !isDemoMode && !isOnline && (
+              <p className="mt-3 text-[11px] sm:text-sm font-mono tracking-wide text-[#F59E0B] max-w-xl">
+                {bridgeToken
+                  ? bridgeOnline
+                    ? "Bridge is online but node data is not ready yet — check Ergo REST on the agent side."
+                    : "My Node mode: Bridge offline. Open NODE SETTINGS → run the Bridge command next to your node."
+                  : "My Node mode: no Bridge token. Open NODE SETTINGS → Connect my node."}
+              </p>
+            )}
           </div>
 
           <div className="flex items-end gap-4 sm:gap-8 text-sm flex-wrap">
@@ -585,7 +754,9 @@ export default function LumenDashboard() {
                   try {
                     await openBlockOnSigmaSpace(
                       selectedBlock.height,
-                      nodeUrl
+                      effectiveNodeUrl,
+                      undefined,
+                      apiHeaders
                     );
                   } catch {
                     toast.error("Could not resolve block on SigmaSpace");
