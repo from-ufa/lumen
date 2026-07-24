@@ -306,7 +306,7 @@ export default function ConnectionSettings({
               </div>
 
               <div className="mt-6 sm:mt-8 pt-6 border-t border-white/10 text-xs text-[#A0A0B0]/70 font-mono tracking-[0.5px]">
-                Aether connects to your local Ergo node via REST. Keep your node
+                Lumen connects to your local Ergo node via REST. Keep your node
                 running with{" "}
                 <span className="text-[#FF7A3D]">/info</span> endpoint exposed.
               </div>
