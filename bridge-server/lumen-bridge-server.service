@@ -7,7 +7,8 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/aether/bridge-server
 Environment=NODE_ENV=production
-Environment=HOST=0.0.0.0
+# Bind localhost only — public access via Caddy wss://ergolumen.net/ws/*
+Environment=HOST=127.0.0.1
 Environment=PORT=3100
 Environment=AUTO_REGISTER_TOKENS=0
 EnvironmentFile=-/home/aether/.env.local

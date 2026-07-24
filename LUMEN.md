@@ -12,11 +12,40 @@ Snapshot: **2026-07-24**. Read this first, then code.
 | **Product** | **Lumen** — Ergo Node Dashboard |
 | **Tagline** | The living pulse of your Ergo node |
 | **Version** | 0.1.0 (`package.json` name: `lumen`) |
+| **Domain** | **https://ergolumen.net** (www → same) |
 | **Host** | `toa.c.hostens.cloud` / `80.209.232.82` |
 | **App dir** | `/home/aether` |
 | **GitHub** | `from-ufa/aether` (repo name unchanged) |
-| **UI** | `http://127.0.0.1:3000` (local) · `http://80.209.232.82:3000` (public) |
+| **UI** | Public: **https://ergolumen.net** · Local: `http://127.0.0.1:3000` |
+| **Edge** | **Caddy** HTTPS (Let’s Encrypt) → `127.0.0.1:3000` |
+| **Bridge WSS** | **wss://ergolumen.net/ws/bridge** → `127.0.0.1:3100/bridge` |
 | **Related** | `/root/SERVER.md` (host / Ergo / oracles / Telegram) |
+
+### Public URLs (canonical)
+
+| Use | URL |
+|-----|-----|
+| Dashboard | `https://ergolumen.net` |
+| Bridge install assets | `https://ergolumen.net/bridge/*` (install.sh, context.tar, …) |
+| Bridge WebSocket | `wss://ergolumen.net/ws/bridge` |
+| Bridge hub (loopback only) | `http://127.0.0.1:3100` (not public) |
+| Next (loopback) | `http://127.0.0.1:3000` |
+
+### Caddy
+
+| | |
+|--|--|
+| Config | `/etc/caddy/Caddyfile` |
+| Unit | `caddy.service` (enabled) |
+| Logs | `/var/log/caddy/ergolumen.log` |
+| Certs | automatic Let’s Encrypt for `ergolumen.net` + `www` |
+| Notes | `nginx` on :80 was **stopped/disabled** (config backup `/root/nginx-backup-ergolumen/`). Legacy `/devnet/` proxy kept in Caddy. |
+
+```bash
+systemctl status caddy
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+```
 
 ---
 
@@ -148,12 +177,13 @@ User does **not** open inbound ports. Agent connects **out** to Lumen’s hub; t
                                     └─────────────────────────────┘
 ```
 
-| Piece | Path | Port |
-|-------|------|------|
+| Piece | Path | Port / URL |
+|-------|------|------------|
 | Agent | `/home/aether/bridge` | (client) |
-| Hub | `/home/aether/bridge-server` | **3100** (`lumen-bridge-server.service`) |
-| Next proxy | `app/api/bridge/*` | via :3000 |
-| WS path | `ws://<host>:3100/bridge` | |
+| Hub | `/home/aether/bridge-server` | **127.0.0.1:3100** only |
+| Public WS | Caddy `/ws/*` → hub | **wss://ergolumen.net/ws/bridge** |
+| Next proxy | `app/api/bridge/*` | via :3000 / HTTPS |
+| Install assets | `app/bridge/[file]` | `https://ergolumen.net/bridge/*` |
 
 **Allowlist (GET only):**  
 `/info`, `/peers/connected`, `/transactions/unconfirmed`, `/blocks/*` (incl. `lastHeaders`).
@@ -176,12 +206,12 @@ Token + mode stored in **localStorage** (`lumen-bridge-token`, `lumen-node-mode`
 Dashboard builds a ready command. Equivalent manual form:
 
 ```bash
-docker build -t lumen-bridge http://80.209.232.82:3000/bridge/context.tar && \
+docker build -t lumen-bridge https://ergolumen.net/bridge/context.tar && \
 docker rm -f lumen-bridge 2>/dev/null; \
 docker run -d --name lumen-bridge --restart unless-stopped \
   --network host \
   -e LUMEN_TOKEN=lumen_YOUR_TOKEN \
-  -e LUMEN_SERVER=ws://80.209.232.82:3100/bridge \
+  -e LUMEN_SERVER=wss://ergolumen.net/ws/bridge \
   -e LUMEN_NODE=http://127.0.0.1:9053 \
   lumen-bridge
 ```
@@ -189,23 +219,24 @@ docker run -d --name lumen-bridge --restart unless-stopped \
 | Env | Alias | Meaning |
 |-----|--------|---------|
 | `LUMEN_BRIDGE_TOKEN` | `LUMEN_TOKEN` | Required |
-| `LUMEN_BRIDGE_SERVER` | `LUMEN_SERVER` | WS hub URL |
+| `LUMEN_BRIDGE_SERVER` | `LUMEN_SERVER` | `wss://ergolumen.net/ws/bridge` |
 | `LUMEN_NODE_URL` | `LUMEN_NODE` | Local Ergo REST (default `http://127.0.0.1:9053`) |
 
 - **`--network host`** (Linux): container reaches host `127.0.0.1:9053`
 - Docs: `bridge/DOCKER.md`, `bridge/README.md`
-- Context tarball: `GET /bridge/context.tar` (Dockerfile + bridge.js + package*.json)
+- Context: `https://ergolumen.net/bridge/context.tar`
+- WSS via Caddy → hub on `127.0.0.1:3100`
 
 ### Advanced (no Docker)
 
 ```bash
-curl -fsSL http://80.209.232.82:3000/bridge/install.sh | \
-  LUMEN_BASE=http://80.209.232.82:3000 bash
+curl -fsSL https://ergolumen.net/bridge/install.sh | \
+  LUMEN_BASE=https://ergolumen.net bash
 # installs to ~/lumen-bridge
 
 cd ~/lumen-bridge && node bridge.js \
   --token=lumen_… \
-  --server=ws://80.209.232.82:3100/bridge
+  --server=wss://ergolumen.net/ws/bridge
 ```
 
 ### Create token / status (API)
@@ -311,10 +342,12 @@ Dashboard shows **`NODE · <name>`** from live `/info` so you can verify the act
 
 | Unit | Role |
 |------|------|
-| `aether.service` | Next.js `0.0.0.0:3000` (`npm start` after build) |
-| `lumen-bridge-server.service` | Bridge hub `:3100` |
+| `caddy.service` | HTTPS edge · `ergolumen.net` → :3000 / `/ws` → :3100 |
+| `aether.service` | Next.js `0.0.0.0:3000` (still binds all ifcs; public via Caddy) |
+| `lumen-bridge-server.service` | Bridge hub **`127.0.0.1:3100`** |
 | `aether-crawl.timer` | Network catalog every ~12m |
 | `ergonode.service` | Ergo node (independent) |
+| `nginx` | **disabled** (replaced by Caddy for :80/:443) |
 
 ### Deploy loop (this host)
 
@@ -323,18 +356,19 @@ cd /home/aether
 npm run build
 systemctl restart aether
 systemctl restart lumen-bridge-server   # if hub code changed
-systemctl is-active aether lumen-bridge-server aether-crawl.timer ergonode
+systemctl reload caddy                  # if Caddyfile changed
+systemctl is-active caddy aether lumen-bridge-server aether-crawl.timer ergonode
 ```
 
 ### View
 
 ```bash
-# Always open (no password): SSH tunnel
+# Public HTTPS (Public Mode password if set)
+# https://ergolumen.net
+
+# Always open without password: SSH tunnel
 ssh -L 3000:127.0.0.1:3000 root@80.209.232.82 -N
 # → http://localhost:3000
-
-# Public (Public Mode password required if set)
-# http://80.209.232.82:3000
 ```
 
 ### Git
@@ -404,24 +438,28 @@ ls -la /home/aether/data/network-catalog.json
 
 ```text
 Project: Lumen — Ergo Node Dashboard
+URL:     https://ergolumen.net
 Path:    /home/aether
 Git:     from-ufa/aether (main)
 Handoff: /home/aether/LUMEN.md  (+ /root/SERVER.md for host)
 
 Services:
-  systemctl is-active aether lumen-bridge-server aether-crawl.timer ergonode
+  systemctl is-active caddy aether lumen-bridge-server aether-crawl.timer ergonode
 
 Modes:
   Lumen Node → /api/node/*
   My Node    → /api/bridge/node/* + token (Docker agent recommended)
 
 Bridge:
-  Hub :3100  ·  WS /bridge  ·  agent bridge/  ·  UI NODE SETTINGS
+  Hub 127.0.0.1:3100  ·  public WSS wss://ergolumen.net/ws/bridge
+  agent bridge/  ·  UI NODE SETTINGS
+  assets https://ergolumen.net/bridge/*
 
 Do not:
   - Break Public Mode local bypass
   - Commit .lumen-public-password / .env.local secrets / data/network-catalog.json
   - Open Ergo wallet or send txs from this app
+  - Re-enable nginx on :80 without moving Caddy
 ```
 
 ---
@@ -434,6 +472,7 @@ Do not:
 | 2026-07-24 | Rebrand Aether → Lumen |
 | 2026-07-24 | Bridge backend: agent + hub :3100 + `/api/bridge/*` |
 | 2026-07-24 | Connect UI, Lumen/My Node modes, Docker-first install, copy fix (HTTP), My Node data path + map via Bridge |
+| 2026-07-24 | Domain **ergolumen.net** + **Caddy HTTPS**; Bridge WSS `wss://ergolumen.net/ws/bridge`; hub localhost-only |
 
 Recent commits live on `main` (`git log --oneline -20`).
 

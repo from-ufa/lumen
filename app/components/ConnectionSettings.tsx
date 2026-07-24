@@ -230,7 +230,7 @@ export default function ConnectionSettings({
   const [creatingToken, setCreatingToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [httpBase, setHttpBase] = useState("http://80.209.232.82:3000");
+  const [httpBase, setHttpBase] = useState("https://ergolumen.net");
 
   const bridgeOnline = !!bridgeStatus?.connected;
   const bridgeKnown = bridgeStatus?.known !== false;

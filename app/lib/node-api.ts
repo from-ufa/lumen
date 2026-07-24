@@ -15,11 +15,18 @@ export const LS_NODE_URL_LEGACY = "aether-node-url";
 export const DEFAULT_LUMEN_NODE_URL = "/api/node";
 export const BRIDGE_NODE_BASE = "/api/bridge/node";
 
-/** Public WS endpoint for remote Bridge agents (outbound to this host). */
-export const DEFAULT_BRIDGE_WS_PUBLIC = "ws://80.209.232.82:3100/bridge";
+/** Public product domain (Caddy HTTPS). */
+export const PUBLIC_DOMAIN = "ergolumen.net";
 
-/** Public HTTP base for dashboard + bridge install downloads. */
-export const DEFAULT_LUMEN_HTTP_PUBLIC = "http://80.209.232.82:3000";
+/**
+ * Public WS for remote Bridge agents via Caddy.
+ * Path /ws/* is stripped and proxied to lumen-bridge-server :3100
+ * so wss://ergolumen.net/ws/bridge → ws://127.0.0.1:3100/bridge
+ */
+export const DEFAULT_BRIDGE_WS_PUBLIC = `wss://${PUBLIC_DOMAIN}/ws/bridge`;
+
+/** Public HTTPS base for dashboard + bridge install downloads. */
+export const DEFAULT_LUMEN_HTTP_PUBLIC = `https://${PUBLIC_DOMAIN}`;
 
 /** Default install directory used by install.sh */
 export const BRIDGE_INSTALL_DIR = "~/lumen-bridge";
@@ -39,8 +46,9 @@ export function centerNodeLabelUpper(mode: NodeMode): string {
 }
 
 /**
- * Dashboard HTTP origin for install.sh downloads.
- * On localhost/SSH tunnel → public IP so the user's node machine can curl it.
+ * Dashboard HTTP origin for install.sh / docker context downloads.
+ * Localhost/SSH tunnel → public HTTPS domain so agents can pull over the internet.
+ * Production hostname → same-origin https.
  */
 export function bridgeHttpBase(): string {
   if (typeof window === "undefined") return DEFAULT_LUMEN_HTTP_PUBLIC;
@@ -48,7 +56,15 @@ export function bridgeHttpBase(): string {
   if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
     return DEFAULT_LUMEN_HTTP_PUBLIC;
   }
-  return `${window.location.protocol}//${window.location.host}`;
+  // Prefer canonical domain when opened via raw IP
+  if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) || host.endsWith(".hostens.cloud")) {
+    return DEFAULT_LUMEN_HTTP_PUBLIC;
+  }
+  const proto =
+    window.location.protocol === "https:" || host === PUBLIC_DOMAIN
+      ? "https:"
+      : window.location.protocol;
+  return `${proto}//${window.location.host}`;
 }
 
 /** One-liner: install Bridge next to the user's Ergo node (advanced / no Docker). */
@@ -207,17 +223,26 @@ export async function fetchNodeResource(
   });
 }
 
-/** Suggested WS URL for the Bridge agent on the user's machine. */
+/**
+ * Suggested WS URL for the Bridge agent on the user's machine.
+ * Always prefer wss://ergolumen.net/ws/bridge in production (Caddy → :3100).
+ */
 export function bridgeWsUrlForClient(): string {
   if (typeof window === "undefined") return DEFAULT_BRIDGE_WS_PUBLIC;
   const host = window.location.hostname;
-  if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
+  if (
+    !host ||
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    /^\d{1,3}(?:\.\d{1,3}){3}$/.test(host) ||
+    host.endsWith(".hostens.cloud")
+  ) {
     return DEFAULT_BRIDGE_WS_PUBLIC;
   }
-  // Same host as dashboard; bridge-server listens on 3100
+  // Same host as dashboard via Caddy path /ws → bridge-server
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  // Prefer public IP host when page is served by IP; keep hostname otherwise
-  return `${proto}://${host}:3100/bridge`;
+  return `${proto}://${host}/ws/bridge`;
 }
 
 /** @deprecated prefer bridgeRunCommand — kept for callers that only need node bridge.js … */

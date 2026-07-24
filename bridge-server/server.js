@@ -146,8 +146,8 @@ async function handleHttp(req, res) {
       createdAt: entry.createdAt,
       label: entry.label ?? null,
       connect: {
-        command: `node bridge.js --token=${entry.token} --server=ws://<host>:${PORT}/bridge`,
-        wsUrl: `ws://<host>:${PORT}/bridge`,
+        command: `node bridge.js --token=${entry.token} --server=wss://ergolumen.net/ws/bridge`,
+        wsUrl: `wss://ergolumen.net/ws/bridge`,
       },
     });
     return;

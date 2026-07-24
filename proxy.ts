@@ -65,8 +65,9 @@ export function proxy(req: NextRequest) {
   // Public Bridge install / Docker assets (no secrets) — curl & docker build work remotely
   // GET /bridge/install.sh | bridge.js | package.json | package-lock.json
   //     Dockerfile | DOCKER.md | context.tar
+  // GET + HEAD so curl -I / docker preflight work without Public Mode auth
   if (
-    req.method === "GET" &&
+    (req.method === "GET" || req.method === "HEAD") &&
     (pathname === "/bridge/install.sh" ||
       pathname === "/bridge/bridge.js" ||
       pathname === "/bridge/package.json" ||

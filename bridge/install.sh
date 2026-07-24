@@ -4,17 +4,17 @@
 #   curl -fsSL http://HOST:3000/bridge/install.sh | bash
 #
 # Optional env:
-#   LUMEN_BASE          Dashboard base URL (default: http://80.209.232.82:3000)
+#   LUMEN_BASE          Dashboard base URL (default: https://ergolumen.net)
 #   LUMEN_BRIDGE_DIR    Install directory (default: ~/lumen-bridge)
 #   LUMEN_BRIDGE_TOKEN  If set, prints a ready-to-run start command after install
-#   LUMEN_BRIDGE_SERVER WebSocket hub (default: ws://80.209.232.82:3100/bridge)
+#   LUMEN_BRIDGE_SERVER WebSocket hub (default: wss://ergolumen.net/ws/bridge)
 
 set -euo pipefail
 
-LUMEN_BASE="${LUMEN_BASE:-http://80.209.232.82:3000}"
+LUMEN_BASE="${LUMEN_BASE:-https://ergolumen.net}"
 LUMEN_BASE="${LUMEN_BASE%/}"
 DIR="${LUMEN_BRIDGE_DIR:-$HOME/lumen-bridge}"
-WS_DEFAULT="ws://80.209.232.82:3100/bridge"
+WS_DEFAULT="wss://ergolumen.net/ws/bridge"
 WS="${LUMEN_BRIDGE_SERVER:-$WS_DEFAULT}"
 
 # If install.sh was saved to disk and executed, try to infer LUMEN_BASE from path (skip for pipe)
