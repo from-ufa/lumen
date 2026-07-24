@@ -1,8 +1,8 @@
-# Aether — The living pulse of your Ergo node
+# Lumen — Ergo Node Dashboard
 
-Immersive visualizer for **your** Ergo node: 3D peer constellation, world map (GeoIP), live metrics, real block TX counts, mempool → SigmaSpace, Share Card.
+**Lumen** is the Ergo Node Dashboard — immersive visualizer for **your** Ergo node: 3D peer constellation, world map (GeoIP), live metrics, real block TX counts, mempool → SigmaSpace, Share Card.
 
-> **Full project handoff (for AI / humans):** see **[AETHER.md](./AETHER.md)**  
+> **Full project handoff (for AI / humans):** see **[LUMEN.md](./LUMEN.md)**  
 > **Server (node + oracles):** `/root/SERVER.md` on production host
 
 ## Production (this server)
@@ -31,7 +31,7 @@ Localhost requests skip auth even when Public Mode is on.
 2. Set / change password (easiest):
 
 ```text
-Open Aether on localhost (SSH tunnel) → NODE SETTINGS → Public Access
+Open Lumen on localhost (SSH tunnel) → NODE SETTINGS → Public Access
 → enter password (min 10 chars) → SET / CHANGE PUBLIC PASSWORD
 ```
 
@@ -56,7 +56,7 @@ chmod 600 /home/aether/.aether-public-password
 Empty / missing `.aether-public-password` → remote requests **401**, localhost still works.
 
 > Firewall: ensure port **3000/tcp** is allowed if you want external access.  
-> Do not expose the Ergo REST port (`9053`) without API key / firewall; Aether proxies it server-side.
+> Do not expose the Ergo REST port (`9053`) without API key / firewall; Lumen proxies it server-side.
 
 ## Dev
 

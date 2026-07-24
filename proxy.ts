@@ -9,7 +9,7 @@ import {
 } from "./lib/public-password";
 
 function unauthorized(): NextResponse {
-  return new NextResponse("Authentication required for Aether Public Mode", {
+  return new NextResponse("Authentication required for Lumen Public Mode", {
     status: 401,
     headers: {
       "WWW-Authenticate": `Basic realm="${REALM}"`,
@@ -21,7 +21,7 @@ function unauthorized(): NextResponse {
 
 function publicModeOff(): NextResponse {
   return new NextResponse(
-    "Aether Public Mode is off (no password file). Set a password from NODE SETTINGS on localhost, or write /home/aether/.aether-public-password",
+    "Lumen Public Mode is off (no password file). Set a password from NODE SETTINGS on localhost, or write /home/aether/.aether-public-password",
     {
       status: 401,
       headers: {

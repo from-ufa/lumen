@@ -15,10 +15,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Aether • Ergo Node Visualizer",
+  title: "Lumen • Ergo Node Dashboard",
   description:
-    "The living pulse of your Ergo node. Immersive 3D constellation visualizer for Ergo node runners.",
-  applicationName: "Aether",
+    "Lumen — Ergo Node Dashboard. The living pulse of your Ergo node. Immersive 3D constellation visualizer for Ergo node runners.",
+  applicationName: "Lumen",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Aether",
+    title: "Lumen",
   },
   formatDetection: {
     telephone: false,
