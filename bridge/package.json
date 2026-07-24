@@ -1,0 +1,28 @@
+{
+  "name": "lumen-bridge",
+  "version": "1.0.0",
+  "description": "Lumen Bridge — outbound WebSocket agent that safely proxies Ergo node REST for the Lumen dashboard",
+  "main": "bridge.js",
+  "bin": {
+    "lumen-bridge": "./bridge.js"
+  },
+  "scripts": {
+    "start": "node bridge.js",
+    "bridge": "node bridge.js",
+    "mock-server": "node scripts/mock-server.js",
+    "test:local": "node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ergo",
+    "lumen",
+    "bridge",
+    "websocket"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.3"
+  }
+}

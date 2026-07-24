@@ -8,8 +8,11 @@
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "eslint",
-    "crawl:network": "node scripts/crawl-network.mjs"
+    "crawl:network": "node scripts/crawl-network.mjs",
+    "bridge-server": "npm --prefix bridge-server start",
+    "bridge-server:smoke": "npm --prefix bridge-server run test:smoke"
   },
+
   "dependencies": {
     "@react-three/drei": "9.121.1",
     "@react-three/fiber": "9.6.1",

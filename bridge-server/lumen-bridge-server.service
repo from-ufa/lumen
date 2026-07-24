@@ -1,0 +1,23 @@
+[Unit]
+Description=Lumen Bridge Server (WebSocket hub + token/proxy API)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/aether/bridge-server
+Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
+Environment=PORT=3100
+Environment=AUTO_REGISTER_TOKENS=0
+EnvironmentFile=-/home/aether/.env.local
+ExecStart=/usr/bin/node /home/aether/bridge-server/server.js
+Restart=on-failure
+RestartSec=3
+Nice=10
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

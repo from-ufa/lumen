@@ -258,7 +258,35 @@ Not a full Scorex P2P crawler (Phase B later if needed). Does **not** depend on 
 
 ---
 
-## 11. Ограничения / TODO
+## 11. Lumen Bridge (remote node via outbound WS)
+
+Позволяет **дашборду** читать Ergo REST **чужой** ноды без входящих портов у пользователя.
+
+| | |
+|--|--|
+| **Client** | `/home/aether/bridge/` — `node bridge.js --token=lumen_…` |
+| **Server** | `/home/aether/bridge-server/` — WS hub + tokens + proxy |
+| **Port** | **3100** (`lumen-bridge-server.service`) |
+| **WS** | `ws://<host>:3100/bridge` |
+| **Storage** | in-memory Map (tokens + connections; lost on restart) |
+| **Next proxy** | `POST /api/bridge/tokens`, `GET /api/bridge/status`, `GET /api/bridge/node/*` |
+| **Env** | `LUMEN_BRIDGE_SERVER_URL=http://127.0.0.1:3100` |
+
+```bash
+# token
+curl -s -X POST http://127.0.0.1:3100/tokens -H 'Content-Type: application/json' -d '{"label":"home"}'
+# bridge
+node /home/aether/bridge/bridge.js --token=lumen_… --server=ws://127.0.0.1:3100/bridge
+# status + /info
+curl -s "http://127.0.0.1:3100/status?token=lumen_…"
+curl -s -H "X-Lumen-Bridge-Token: lumen_…" http://127.0.0.1:3000/api/bridge/node/info
+```
+
+Allowlist: `/info`, `/peers/connected`, `/transactions/unconfirmed`, `/blocks/*` (GET only).
+
+---
+
+## 12. Ограничения / TODO
 
 - Peers without public IP still unmapped (NAT / empty address)  
 - Boom peer = hottest connected `lastMessage`, not miner  
@@ -266,12 +294,13 @@ Not a full Scorex P2P crawler (Phase B later if needed). Does **not** depend on 
 - CARTO tiles = исходящий HTTPS из **браузера**  
 - systemd leftover next-server on restart (unit всё равно active)  
 - PWA без service worker  
+- Bridge tokens/connections not persisted (restart = re-issue / reconnect)  
 - Optional: heatmap, oracle metrics UI, full P2P handshake crawler  
 - Server security (mnemonics → EnvironmentFile) — `SERVER.md`
 
 ---
 
-## 12. Чеклист для нового чата
+## 13. Чеклист для нового чата
 
 ```text
 Проект: Lumen — Ergo node visualizer
@@ -287,7 +316,7 @@ Public: http://80.209.232.82:3000 + Basic/password
 
 ---
 
-## 13. История сессий
+## 14. История сессий
 
 ### 2026-07-18 → 2026-07-19
 Прототип → deploy `/home/aether`, proxy, 3D + map + boom, SigmaSpace, real metrics, handoff MD.
@@ -331,8 +360,14 @@ https://grok.com/share/bGVnYWN5_01882487-4c5e-4e7e-88cf-7d67479d1387
 4. Docs: `LUMEN.md` primary; `AETHER.md` pointer  
 5. Deploy path `/home/aether` + unit `aether.service` **unchanged** (no downtime rename)
 
+### 2026-07-24 — Lumen Bridge backend
+1. Client `/home/aether/bridge` (outbound WS agent, allowlist GET proxy)  
+2. Server `/home/aether/bridge-server` on **:3100** + `lumen-bridge-server.service`  
+3. Next routes `/api/bridge/tokens|status|node/*` → bridge-server  
+4. Smoke: create token → bridge connect → `/info` via API  
 
-## 14. Dev loop
+
+## 15. Dev loop
 
 ```bash
 cd /home/aether
@@ -343,7 +378,7 @@ systemctl is-active aether ergonode oracle-core oracle-core-usd aether-crawl.tim
 
 ---
 
-## 15. Снимок (2026-07-23 ~14:00)
+## 16. Снимок (2026-07-23 ~14:00)
 
 | | |
 |--|--|
