@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { isPublicModeEnabled } from "../../../lib/public-password";
 
 /**
- * Tells the UI whether Public Mode is active (password file non-empty).
+ * Tells the UI whether password protection is active (password file non-empty).
  * Never returns the password itself.
+ *
+ * Semantics (2026-07):
+ *  - no password → site fully open on the internet
+ *  - password set → remote visitors need Basic / cookie / header
  */
 export async function GET() {
   const publicMode = isPublicModeEnabled();
@@ -13,10 +17,12 @@ export async function GET() {
       publicMode,
       passwordConfigured: publicMode,
       storage: "file",
-      auth: publicMode ? "basic-or-query-or-header" : "localhost-only",
+      /** open = no password; protected = password required for remote */
+      access: publicMode ? "protected" : "open",
+      auth: publicMode ? "basic-or-query-or-header" : "none",
       hint: publicMode
-        ? "Remote access requires Basic Auth (any user), ?password=, or X-Lumen-Password header. Change password in NODE SETTINGS."
-        : "No password set. Open NODE SETTINGS on localhost and set a public password (min 10 chars).",
+        ? "Password protection ON. Remote visitors need Basic Auth (any user), ?password=, or X-Lumen-Password. Clear password in NODE SETTINGS to open the site."
+        : "Site is fully public (no password). Set a password in NODE SETTINGS to protect remote access.",
     },
     {
       headers: {

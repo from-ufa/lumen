@@ -20,20 +20,6 @@ function unauthorized(): NextResponse {
   });
 }
 
-function publicModeOff(): NextResponse {
-  return new NextResponse(
-    "Lumen Public Mode is off (no password file). Set a password from NODE SETTINGS on localhost, or write /home/aether/.lumen-public-password (legacy .aether-public-password still accepted)",
-    {
-      status: 401,
-      headers: {
-        "Cache-Control": "no-store",
-        "Content-Type": "text/plain; charset=utf-8",
-        "X-Lumen-Auth": "public-off",
-      },
-    }
-  );
-}
-
 function setSessionCookie(
   res: NextResponse,
   expectedHash: string,
@@ -86,14 +72,17 @@ export function proxy(req: NextRequest) {
     const res = NextResponse.next();
     res.headers.set(
       "X-Lumen-Auth",
-      publicMode ? "local-bypass" : "local-only-ok"
+      publicMode ? "local-bypass" : "local-open"
     );
     return res;
   }
 
-  // No password file / empty → Public Mode off for remote
+  // No password file / empty → site is fully public (open internet)
+  // Set a password in NODE SETTINGS to re-enable Basic Auth protection.
   if (!publicMode) {
-    return publicModeOff();
+    const res = NextResponse.next();
+    res.headers.set("X-Lumen-Auth", "open-no-password");
+    return res;
   }
 
   const expectedHash = passwordHash(password);

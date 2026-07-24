@@ -387,14 +387,43 @@ export default function ConnectionSettings({
         });
         return;
       }
-      toast.success("Password updated", {
+      toast.success("Password protection ON", {
         description:
-          "Public Mode active. Remote sessions must re-authenticate with the new password.",
+          "Remote visitors need the new password. Localhost always open.",
       });
       setNewPassword("");
       onPublicModeChange?.(true);
     } catch {
       toast.error("Could not update password", {
+        description: "Network error",
+      });
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleClearPassword = async () => {
+    setSavingPassword(true);
+    try {
+      const res = await fetch("/api/public-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        toast.error("Could not clear password", {
+          description: data.error || `HTTP ${res.status}`,
+        });
+        return;
+      }
+      toast.success("Site is fully public", {
+        description: "No login required. Set a password anytime to protect again.",
+      });
+      setNewPassword("");
+      onPublicModeChange?.(false);
+    } catch {
+      toast.error("Could not clear password", {
         description: "Network error",
       });
     } finally {
@@ -814,21 +843,21 @@ export default function ConnectionSettings({
                     <span
                       className={`text-[10px] font-mono tracking-widest px-2.5 py-1 rounded-full border ${
                         publicMode
-                          ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/10"
-                          : "border-white/15 text-[#A0A0B0] bg-white/5"
+                          ? "border-[#F59E0B]/40 text-[#F59E0B] bg-[#F59E0B]/10"
+                          : "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/10"
                       }`}
                     >
-                      {publicMode ? "ACTIVE" : "LOCAL ONLY"}
+                      {publicMode ? "PROTECTED" : "OPEN"}
                     </span>
                   </div>
 
                   <p className="text-[11px] text-[#A0A0B0] leading-relaxed flex items-start gap-2">
                     {publicMode ? (
                       <>
-                        <Shield className="w-3.5 h-3.5 mt-0.5 text-[#10B981] flex-shrink-0" />
+                        <Shield className="w-3.5 h-3.5 mt-0.5 text-[#F59E0B] flex-shrink-0" />
                         <span>
-                          <span className="text-[#10B981] font-medium">
-                            Password is set
+                          <span className="text-[#F59E0B] font-medium">
+                            Password protection ON
                           </span>
                           {" — "}remote visitors need Basic Auth /{" "}
                           <span className="font-mono text-[#E8E8F0]/80">
@@ -839,12 +868,13 @@ export default function ConnectionSettings({
                       </>
                     ) : (
                       <>
-                        <Info className="w-3.5 h-3.5 mt-0.5 text-[#F59E0B] flex-shrink-0" />
+                        <Info className="w-3.5 h-3.5 mt-0.5 text-[#10B981] flex-shrink-0" />
                         <span>
-                          <span className="text-[#F59E0B] font-medium">
-                            No password set (public access disabled)
+                          <span className="text-[#10B981] font-medium">
+                            Site is fully public
                           </span>
-                          {" — "}only localhost / SSH tunnel.
+                          {" — "}no login required. Set a password below to
+                          protect remote access again.
                         </span>
                       </>
                     )}
@@ -889,6 +919,16 @@ export default function ConnectionSettings({
                         ? "CHANGE PUBLIC PASSWORD"
                         : "SET PUBLIC PASSWORD"}
                   </button>
+                  {publicMode && (
+                    <button
+                      type="button"
+                      onClick={handleClearPassword}
+                      disabled={savingPassword}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-white/15 text-[#A0A0B0] text-[11px] font-mono tracking-widest hover:bg-white/5 hover:text-white disabled:opacity-40"
+                    >
+                      TURN OFF PROTECTION (OPEN SITE)
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex flex-col sm:flex-row gap-3 pt-1">

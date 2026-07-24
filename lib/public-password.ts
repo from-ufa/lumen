@@ -75,6 +75,32 @@ export function writePublicPassword(password: string): void {
   }
 }
 
+/**
+ * Remove public password files → site open without Basic Auth.
+ * Clears both Lumen and legacy Aether paths.
+ */
+export function clearPublicPassword(): void {
+  const paths = [
+    process.env.LUMEN_PASSWORD_FILE,
+    process.env.AETHER_PASSWORD_FILE,
+    "/home/aether/.lumen-public-password",
+    "/home/aether/.aether-public-password",
+  ].filter((p): p is string => Boolean(p && p.trim()));
+
+  for (const p of paths) {
+    try {
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch {
+      // try empty write as fallback
+      try {
+        fs.writeFileSync(p, "", { encoding: "utf8", mode: 0o600 });
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
 export function passwordHash(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }

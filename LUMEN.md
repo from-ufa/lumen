@@ -134,29 +134,35 @@ Does **not** touch `ergonode` / oracle units. Only **allowlisted GET** Ergo REST
 
 ---
 
-## 3. Public Mode
+## 3. Public access & optional password
 
-Optional **remote** access to the dashboard. Localhost always open.
+By default the site is **fully open** on the internet (no login).
+
+| State | Password file | Remote visitors |
+|-------|---------------|-----------------|
+| **OPEN** (default now) | empty / missing | no auth |
+| **PROTECTED** | non-empty | Basic / cookie / header required |
 
 | | |
 |--|--|
 | Password file | `/home/aether/.lumen-public-password` (legacy `.aether-public-password`) |
-| Mode | `0600` |
-| Set UI | **NODE SETTINGS → Public Access** (min 10 chars) |
-| Gate | `proxy.ts` (Next 16 Node proxy; password re-read every request) |
+| Mode | `0600` when present |
+| UI | **NODE SETTINGS → Public Access** — set password or **Turn off protection** |
+| Gate | `proxy.ts` (reads file every request; no rebuild needed) |
 
-**Remote auth (any one):**
+**To protect again:** set a password (min 10 chars) in NODE SETTINGS.  
+**To open again:** NODE SETTINGS → Turn off protection, or `rm` the password file(s).
+
+**When protected, remote auth (any one):**
 
 - HTTP Basic (any username + password)
 - `?password=SECRET` → sets httpOnly cookie
 - Header `X-Lumen-Password` (legacy `X-Aether-Password`)
 - Cookie `lumen_public_auth` (legacy `aether_public_auth`) = sha256(password)
 
-**Local bypass:** `Host` is `localhost` / `127.0.0.1` / `::1` → always allow.
+**Local bypass:** `Host` is `localhost` / `127.0.0.1` / `::1` → always allow (even when protected).
 
-**Public without password:** remote gets 401 (Public Mode off).
-
-**Exception (no auth):** GET install/Docker assets under `/bridge/*` so `curl` / `docker build` work from the internet:
+**Always public (no auth):** GET/HEAD install/Docker assets under `/bridge/*`:
 
 - `/bridge/install.sh`, `bridge.js`, `package.json`, `package-lock.json`
 - `/bridge/Dockerfile`, `DOCKER.md`, `context.tar`
