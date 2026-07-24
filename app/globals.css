@@ -4,7 +4,7 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   
-  /* Aether Design System - Deep Space + Ergo */
+  /* Lumen Design System - Deep Space + Ergo */
   --bg: #0A0A0F;
   --bg-card: #121218;
   --bg-elevated: #1A1A22;
@@ -185,7 +185,7 @@ body {
   outline-offset: 2px;
 }
 
-/* Leaflet dark theme tweaks inside Aether map */
+/* Leaflet dark theme tweaks inside Lumen map */
 .leaflet-container {
   font-family: var(--font-geist-sans), system-ui, sans-serif;
   width: 100% !important;
