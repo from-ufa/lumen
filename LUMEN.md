@@ -4,7 +4,8 @@
 Snapshot: **2026-07-24**. Read this first, then code.
 
 > **Rebrand:** product was **Aether → Lumen** (2026-07-24).  
-> Paths and systemd still use legacy names: `/home/aether`, `aether.service`, `aether-crawl.*`.  
+> **Deploy path:** `/home/lumen` (compat symlink `/home/aether` → `/home/lumen`).  
+> **systemd unit names** still `aether.service` / `aether-crawl.*` (legacy) + `lumen.service` / `lumen-bridge-server`.  
 > Auth accepts Lumen + legacy Aether cookie/header/password file names.
 
 | | |
@@ -14,8 +15,9 @@ Snapshot: **2026-07-24**. Read this first, then code.
 | **Version** | 0.1.0 (`package.json` name: `lumen`) |
 | **Domain** | **https://ergolumen.net** (www → same) |
 | **Host** | `toa.c.hostens.cloud` / `80.209.232.82` |
-| **App dir** | `/home/aether` |
-| **GitHub** | `from-ufa/aether` (repo name unchanged) |
+| **App dir** | `/home/lumen` (legacy symlink: `/home/aether`) |
+| **GitHub** | **https://github.com/from-ufa/lumen** (public) |
+| **Favicon** | `/favicon.ico` + `/icons/icon-{192,512}.png` + apple-touch-icon |
 | **UI** | Public: **https://ergolumen.net** · Local: `http://127.0.0.1:3000` |
 | **Edge** | **Caddy** HTTPS (Let’s Encrypt) → `127.0.0.1:3000` |
 | **Bridge WSS** | **wss://ergolumen.net/ws/bridge** → `127.0.0.1:3100/bridge` |
@@ -47,7 +49,7 @@ Snapshot: **2026-07-24**. Read this first, then code.
 systemctl status caddy
 caddy validate --config /etc/caddy/Caddyfile
 # After editing repo copy:
-#   cp /home/aether/deploy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
+#   cp /home/lumen/deploy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
 ufw status
 curl -I https://ergolumen.net/
 ```
@@ -57,6 +59,10 @@ curl -I https://ergolumen.net/
 ---
 
 ## 1. What Lumen is
+
+**Favicon / PWA icons:** `/favicon.ico`, `/icons/icon-192.png`, `/icons/icon-512.png`, `/icons/apple-touch-icon.png` (Lumen sun monogram).
+
+
 
 **Lumen** is a **read-only** web dashboard for an **Ergo mainnet node** operator.
 
@@ -96,7 +102,7 @@ Does **not** touch `ergonode` / oracle units. Only **allowlisted GET** Ergo REST
 ### Tree (high level)
 
 ```text
-/home/aether/
+/home/lumen/
 ├── app/
 │   ├── page.tsx                 # Dashboard (modes, queries, layout)
 │   ├── proxy.ts                 # → root proxy.ts (Next 16 network proxy)
@@ -145,7 +151,7 @@ By default the site is **fully open** on the internet (no login).
 
 | | |
 |--|--|
-| Password file | `/home/aether/.lumen-public-password` (legacy `.aether-public-password`) |
+| Password file | `/home/lumen/.lumen-public-password` (legacy `.aether-public-password`) |
 | Mode | `0600` when present |
 | UI | **NODE SETTINGS → Public Access** — set password or **Turn off protection** |
 | Gate | `proxy.ts` (reads file every request; no rebuild needed) |
@@ -192,8 +198,8 @@ User does **not** open inbound ports. Agent connects **out** to Lumen’s hub; t
 
 | Piece | Path | Port / URL |
 |-------|------|------------|
-| Agent | `/home/aether/bridge` | (client) |
-| Hub | `/home/aether/bridge-server` | **127.0.0.1:3100** only |
+| Agent | `/home/lumen/bridge` | (client) |
+| Hub | `/home/lumen/bridge-server` | **127.0.0.1:3100** only |
 | Public WS | Caddy `/ws/*` → hub | **wss://ergolumen.net/ws/bridge** |
 | Next proxy | `app/api/bridge/*` | via :3000 / HTTPS |
 | Install assets | `app/bridge/[file]` | `https://ergolumen.net/bridge/*` |
@@ -365,7 +371,7 @@ Dashboard shows **`NODE · <name>`** from live `/info` so you can verify the act
 ### Deploy loop (this host)
 
 ```bash
-cd /home/aether
+cd /home/lumen
 npm run build
 systemctl restart aether
 systemctl restart lumen-bridge-server   # if hub code changed
@@ -387,7 +393,7 @@ ssh -L 3000:127.0.0.1:3000 root@80.209.232.82 -N
 ### Git
 
 ```bash
-cd /home/aether
+cd /home/lumen
 git status
 git add …
 git commit -m "…"
@@ -424,7 +430,7 @@ cd bridge && npm run test:local
 
 # Crawler
 systemctl status aether-crawl.timer
-ls -la /home/aether/data/network-catalog.json
+ls -la /home/lumen/data/network-catalog.json
 ```
 
 ---
@@ -441,7 +447,7 @@ ls -la /home/aether/data/network-catalog.json
 | Public Mode | Single shared password file; not multi-user accounts |
 | PWA | No service worker / offline cache |
 | Repo name | GitHub still `from-ufa/aether`; product name is Lumen |
-| Deploy paths | Still `/home/aether` + `aether.service` (intentional, no downtime rename) |
+| Deploy paths | Still `/home/lumen` + `aether.service` (intentional, no downtime rename) |
 | Copy on HTTP | Clipboard uses fallback (`execCommand`) for plain `http://` (no secure context) |
 | Docker agent | Designed for **Linux `--network host`**; other Docker network modes need different `LUMEN_NODE` |
 
@@ -452,9 +458,9 @@ ls -la /home/aether/data/network-catalog.json
 ```text
 Project: Lumen — Ergo Node Dashboard
 URL:     https://ergolumen.net
-Path:    /home/aether
+Path:    /home/lumen
 Git:     from-ufa/aether (main)
-Handoff: /home/aether/LUMEN.md  (+ /root/SERVER.md for host)
+Handoff: /home/lumen/LUMEN.md  (+ /root/SERVER.md for host)
 
 Services:
   systemctl is-active caddy aether lumen-bridge-server aether-crawl.timer ergonode
@@ -494,7 +500,7 @@ Recent commits live on `main` (`git log --oneline -20`).
 ## 12. Dev loop (local on server)
 
 ```bash
-cd /home/aether
+cd /home/lumen
 npm run build && systemctl restart aether
 # optional hub:
 # systemctl restart lumen-bridge-server

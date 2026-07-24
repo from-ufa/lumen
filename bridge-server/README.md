@@ -9,7 +9,7 @@ Backend hub for **Lumen Bridge** agents.
 ## Run
 
 ```bash
-cd /home/aether/bridge-server
+cd /home/lumen/bridge-server
 npm install
 npm start
 # → http://0.0.0.0:3100  WS: ws://0.0.0.0:3100/bridge
@@ -42,7 +42,7 @@ Allowlisted paths (GET only): `/info`, `/peers/connected`, `/transactions/unconf
 
 Path: **`/bridge`**
 
-Bridge client protocol matches `/home/aether/bridge/bridge.js` (`hello` → `hello_ack`, `request`/`response`/`error`, `ping`/`pong`).
+Bridge client protocol matches `/home/lumen/bridge/bridge.js` (`hello` → `hello_ack`, `request`/`response`/`error`, `ping`/`pong`).
 
 Token may be sent as:
 
@@ -62,7 +62,7 @@ curl -s -X POST http://127.0.0.1:3100/tokens -H 'Content-Type: application/json'
 
 # 3) run bridge (other terminal)
 TOKEN=lumen_...
-cd /home/aether/bridge
+cd /home/lumen/bridge
 node bridge.js --token=$TOKEN --server=ws://127.0.0.1:3100/bridge --node=http://127.0.0.1:9053
 
 # 4) status + proxy
@@ -85,12 +85,12 @@ Dashboard same-origin routes (proxy to this service):
 - `GET  /api/bridge/status?token=`
 - `GET  /api/bridge/node/[...path]` + `X-Lumen-Bridge-Token` / `?token=`
 
-Set `LUMEN_BRIDGE_SERVER_URL=http://127.0.0.1:3100` in `/home/aether/.env.local` (default).
+Set `LUMEN_BRIDGE_SERVER_URL=http://127.0.0.1:3100` in `/home/lumen/.env.local` (default).
 
 ## systemd
 
 ```bash
-cp /home/aether/bridge-server/lumen-bridge-server.service /etc/systemd/system/
+cp /home/lumen/bridge-server/lumen-bridge-server.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now lumen-bridge-server
 systemctl status lumen-bridge-server

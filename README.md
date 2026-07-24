@@ -13,7 +13,7 @@
 |--|--|
 | Domain | **https://ergolumen.net** |
 | Edge | **Caddy** (Let’s Encrypt) → `127.0.0.1:3000` |
-| App | `/home/aether` · `aether.service` |
+| App | `/home/lumen` · `aether.service` |
 | Bridge hub | `lumen-bridge-server` · `127.0.0.1:3100` |
 | Bridge WSS | **wss://ergolumen.net/ws/bridge** |
 | Public Mode | `.lumen-public-password` · NODE SETTINGS |
@@ -49,7 +49,7 @@ See [bridge/DOCKER.md](./bridge/DOCKER.md).
 ## Dev loop
 
 ```bash
-cd /home/aether
+cd /home/lumen
 npm run build && systemctl restart aether
 systemctl is-active caddy aether lumen-bridge-server
 ```

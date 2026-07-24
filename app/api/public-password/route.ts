@@ -19,7 +19,7 @@ import {
  *  - remote with valid Basic / cookie / X-Lumen-Password against CURRENT password
  *  - remote when no password is set (open site)
  *
- * Writes `/home/aether/.lumen-public-password` (chmod 600).
+ * Writes `/home/lumen/.lumen-public-password` (chmod 600).
  */
 export async function POST(req: NextRequest) {
   const current = readPublicPassword();

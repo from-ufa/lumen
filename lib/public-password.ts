@@ -12,8 +12,8 @@ import type { NextRequest } from "next/server";
 const CANDIDATE_PASSWORD_FILES = [
   process.env.LUMEN_PASSWORD_FILE,
   process.env.AETHER_PASSWORD_FILE,
-  "/home/aether/.lumen-public-password",
-  "/home/aether/.aether-public-password",
+  "/home/lumen/.lumen-public-password",
+  "/home/lumen/.aether-public-password",
 ].filter((p): p is string => Boolean(p && p.trim()));
 
 function resolvePasswordFile(): string {
@@ -28,7 +28,7 @@ function resolvePasswordFile(): string {
   return (
     process.env.LUMEN_PASSWORD_FILE ||
     process.env.AETHER_PASSWORD_FILE ||
-    "/home/aether/.lumen-public-password"
+    "/home/lumen/.lumen-public-password"
   );
 }
 
@@ -63,7 +63,7 @@ export function writePublicPassword(password: string): void {
   const path =
     process.env.LUMEN_PASSWORD_FILE ||
     process.env.AETHER_PASSWORD_FILE ||
-    "/home/aether/.lumen-public-password";
+    "/home/lumen/.lumen-public-password";
   fs.writeFileSync(path, `${value}\n`, {
     encoding: "utf8",
     mode: 0o600,
@@ -83,8 +83,8 @@ export function clearPublicPassword(): void {
   const paths = [
     process.env.LUMEN_PASSWORD_FILE,
     process.env.AETHER_PASSWORD_FILE,
-    "/home/aether/.lumen-public-password",
-    "/home/aether/.aether-public-password",
+    "/home/lumen/.lumen-public-password",
+    "/home/lumen/.aether-public-password",
   ].filter((p): p is string => Boolean(p && p.trim()));
 
   for (const p of paths) {
