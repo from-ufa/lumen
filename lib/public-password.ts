@@ -11,7 +11,7 @@ export const PASSWORD_FILE =
 
 export const COOKIE_NAME = "aether_public_auth";
 export const MIN_PASSWORD_LENGTH = 10;
-export const REALM = "Aether Public Mode";
+export const REALM = "Lumen Public Mode";
 
 /** Read public password from file. Empty string = Public Mode off. */
 export function readPublicPassword(): string {
