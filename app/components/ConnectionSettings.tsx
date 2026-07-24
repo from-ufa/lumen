@@ -13,7 +13,6 @@ import {
   KeyRound,
   Eye,
   EyeOff,
-  Link2,
   Copy,
   Check,
   Cable,
@@ -22,12 +21,16 @@ import {
   WifiOff,
   Loader2,
   Sparkles,
+  Download,
+  Terminal,
+  Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { NodeMode, BridgeStatus } from "../lib/node-api";
 import {
-  bridgeConnectCommand,
-  bridgeWsUrlForClient,
+  bridgeHttpBase,
+  bridgeInstallCommand,
+  bridgeRunCommand,
   createBridgeToken,
   saveBridgeToken,
   saveNodeMode,
@@ -39,11 +42,8 @@ interface ConnectionSettingsProps {
   isOnline: boolean;
   onReconnect: () => void;
   publicMode?: boolean;
-  /** Called after password set/change so parent can refresh PUBLIC badge */
   onPublicModeChange?: (enabled: boolean) => void;
-  /** Notify parent when modal opens/closes (hide viz floating controls) */
   onOpenChange?: (open: boolean) => void;
-  /** Lumen Node vs My Node (via Bridge) */
   nodeMode: NodeMode;
   setNodeMode: (mode: NodeMode) => void;
   bridgeToken: string;
@@ -56,17 +56,22 @@ interface ConnectionSettingsProps {
 function CopyButton({
   value,
   label = "Copy",
+  primary = false,
 }: {
   value: string;
   label?: string;
+  primary?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const onCopy = async () => {
+    if (!value) return;
     try {
       await navigator.clipboard.writeText(value);
       setCopied(true);
-      toast.success("Copied", { description: label });
-      setTimeout(() => setCopied(false), 1600);
+      toast.success("Copied — paste into your terminal", {
+        description: label,
+      });
+      setTimeout(() => setCopied(false), 1800);
     } catch {
       toast.error("Could not copy");
     }
@@ -75,12 +80,92 @@ function CopyButton({
     <button
       type="button"
       onClick={onCopy}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/15 hover:bg-white/5 text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white transition-all"
+      disabled={!value}
+      className={
+        primary
+          ? "flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/15 text-[#00E5FF] text-[10px] font-mono tracking-widest hover:bg-[#00E5FF]/25 disabled:opacity-40 transition-all"
+          : "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-white/15 hover:bg-white/5 text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white disabled:opacity-40 transition-all"
+      }
       aria-label={label}
     >
       {copied ? <Check size={12} className="text-[#10B981]" /> : <Copy size={12} />}
       {copied ? "COPIED" : "COPY"}
     </button>
+  );
+}
+
+function StepCard({
+  n,
+  title,
+  subtitle,
+  done,
+  active,
+  children,
+}: {
+  n: number;
+  title: string;
+  subtitle?: string;
+  done?: boolean;
+  active?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={`rounded-2xl border p-4 space-y-3 transition-all ${
+        done
+          ? "border-[#10B981]/30 bg-[#10B981]/5"
+          : active
+            ? "border-[#00E5FF]/30 bg-[#00E5FF]/5"
+            : "border-white/10 bg-black/30"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-mono font-semibold ${
+            done
+              ? "bg-[#10B981] text-black"
+              : active
+                ? "bg-[#00E5FF] text-black"
+                : "bg-white/10 text-[#A0A0B0]"
+          }`}
+        >
+          {done ? <Check size={14} strokeWidth={3} /> : n}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[12px] font-mono tracking-widest text-[#E8E8F0]">
+            {title}
+          </div>
+          {subtitle && (
+            <div className="text-[11px] text-[#A0A0B0] mt-0.5 leading-snug">
+              {subtitle}
+            </div>
+          )}
+        </div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CommandBlock({
+  value,
+  label,
+}: {
+  value: string;
+  label: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-mono tracking-widest text-[#A0A0B0]">
+          {label}
+        </span>
+        <CopyButton value={value} label={label} primary />
+      </div>
+      <pre className="w-full bg-[#0A0A0F] border border-white/15 rounded-xl px-3.5 py-3 font-mono text-[10px] sm:text-[11px] text-[#00E5FF] whitespace-pre-wrap break-all leading-relaxed select-all">
+        {value || "…"}
+      </pre>
+    </div>
   );
 }
 
@@ -113,15 +198,14 @@ export default function ConnectionSettings({
   const [savingPassword, setSavingPassword] = useState(false);
   const [creatingToken, setCreatingToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
+  const [httpBase, setHttpBase] = useState("http://80.209.232.82:3000");
 
   const bridgeOnline = !!bridgeStatus?.connected;
   const bridgeKnown = bridgeStatus?.known !== false;
-  const command =
-    bridgeToken
-      ? bridgeConnectCommand(bridgeToken, bridgeWsUrlForClient())
-      : "";
 
-  // Portal target only exists client-side
+  const installCmd = bridgeInstallCommand(httpBase);
+  const runCmd = bridgeToken ? bridgeRunCommand(bridgeToken) : "";
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -131,11 +215,11 @@ export default function ConnectionSettings({
       setTempUrl(nodeUrl);
       setNewPassword("");
       setShowPassword(false);
+      setHttpBase(bridgeHttpBase());
       onRefreshBridgeStatus?.();
     }
   }, [open, nodeUrl, onRefreshBridgeStatus]);
 
-  // Lock body scroll while modal open
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -158,9 +242,7 @@ export default function ConnectionSettings({
   const handleMode = (mode: NodeMode) => {
     if (mode === nodeMode) return;
     if (mode === "my" && !bridgeToken) {
-      toast.message("Create a Bridge token first", {
-        description: "Use «Connect my node» below, then run the Bridge agent.",
-      });
+      void ensureToken();
     }
     setNodeMode(mode);
     saveNodeMode(mode);
@@ -168,7 +250,7 @@ export default function ConnectionSettings({
       toast.success("My Node mode", {
         description: bridgeOnline
           ? "Dashboard reads your node via Lumen Bridge"
-          : "Waiting for Bridge agent to connect…",
+          : "Follow the 3 steps below to connect Bridge",
       });
     } else {
       toast.success("Lumen Node mode", {
@@ -178,6 +260,40 @@ export default function ConnectionSettings({
     setTimeout(onReconnect, 80);
   };
 
+  const ensureToken = async (): Promise<string | null> => {
+    if (bridgeToken) return bridgeToken;
+    setCreatingToken(true);
+    try {
+      const data = await createBridgeToken("dashboard");
+      setBridgeToken(data.token);
+      saveBridgeToken(data.token);
+      setShowToken(false);
+      onRefreshBridgeStatus?.();
+      return data.token;
+    } catch (err) {
+      toast.error("Could not create token", {
+        description: err instanceof Error ? err.message : "bridge server error",
+      });
+      return null;
+    } finally {
+      setCreatingToken(false);
+    }
+  };
+
+  const handleStartConnect = async () => {
+    const t = await ensureToken();
+    if (t) {
+      toast.success("Your personal token is ready", {
+        description: "Copy step 1, then step 2 into a terminal next to your node.",
+      });
+      // Auto-select My Node so data path is ready when Bridge comes online
+      if (nodeMode !== "my") {
+        setNodeMode("my");
+        saveNodeMode("my");
+      }
+    }
+  };
+
   const handleCreateToken = async () => {
     setCreatingToken(true);
     try {
@@ -185,10 +301,14 @@ export default function ConnectionSettings({
       setBridgeToken(data.token);
       saveBridgeToken(data.token);
       setShowToken(true);
-      toast.success("Bridge token created", {
-        description: "Copy the command and run Bridge next to your Ergo node.",
+      toast.success("New token created", {
+        description: "Copy the Step 2 command again — the old token stops working.",
       });
       onRefreshBridgeStatus?.();
+      if (nodeMode !== "my") {
+        setNodeMode("my");
+        saveNodeMode("my");
+      }
     } catch (err) {
       toast.error("Could not create token", {
         description: err instanceof Error ? err.message : "bridge server error",
@@ -249,15 +369,17 @@ export default function ConnectionSettings({
 
   const statusLine = () => {
     if (nodeMode === "my") {
-      if (bridgeOnline && isOnline) return { text: "● MY NODE · LIVE", ok: true };
+      if (bridgeOnline && isOnline)
+        return { text: "● MY NODE · LIVE", ok: true as const };
       if (bridgeOnline && !isOnline)
-        return { text: "● BRIDGE UP · NODE SLOW", ok: false };
-      if (!bridgeToken) return { text: "● MY NODE · NO TOKEN", ok: false };
+        return { text: "● BRIDGE UP · NODE SLOW", ok: false as const };
+      if (!bridgeToken)
+        return { text: "● MY NODE · NO TOKEN", ok: false as const };
       if (bridgeStatus?.error === "bridge_server_unreachable")
-        return { text: "● BRIDGE SERVER DOWN", ok: false };
+        return { text: "● BRIDGE SERVER DOWN", ok: false as const };
       if (bridgeStatus && !bridgeKnown)
-        return { text: "● TOKEN UNKNOWN · REISSUE", ok: false };
-      return { text: "● MY NODE · BRIDGE OFFLINE", ok: false };
+        return { text: "● TOKEN UNKNOWN · REISSUE", ok: false as const };
+      return { text: "● WAITING FOR BRIDGE…", ok: false as const };
     }
     return {
       text: isOnline ? "● LUMEN NODE · ONLINE" : "● LUMEN NODE · OFFLINE",
@@ -265,6 +387,10 @@ export default function ConnectionSettings({
     };
   };
   const status = statusLine();
+
+  const step1Done = !!bridgeToken; // install is user-side; we mark "ready to install" once flow started
+  const step2Done = bridgeOnline;
+  const step3Done = bridgeOnline;
 
   const modal =
     open &&
@@ -291,7 +417,7 @@ export default function ConnectionSettings({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98, y: 8 }}
               transition={{ ease: [0.23, 1, 0.32, 1] }}
-              className="glass relative z-10 w-full max-w-lg max-h-[min(92dvh,860px)] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5 sm:p-8 border border-white/10 shadow-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+              className="glass relative z-10 w-full max-w-lg max-h-[min(92dvh,900px)] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5 sm:p-8 border border-white/10 shadow-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))]"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-start mb-6 sm:mb-7">
@@ -362,46 +488,22 @@ export default function ConnectionSettings({
                       </span>
                     </button>
                   </div>
-                  {nodeMode === "my" && !bridgeOnline && (
-                    <p className="text-[11px] text-[#F59E0B] leading-relaxed flex items-start gap-2">
-                      <WifiOff className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                      <span>
-                        <span className="font-medium">Bridge offline</span>
-                        {" — "}create a token, run the Bridge agent next to your
-                        node, then switch stays on My Node until it connects.
-                      </span>
-                    </p>
-                  )}
-                  {nodeMode === "my" && bridgeOnline && (
-                    <p className="text-[11px] text-[#10B981] leading-relaxed flex items-start gap-2">
-                      <Wifi className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-                      <span>
-                        <span className="font-medium">Bridge connected</span>
-                        {bridgeStatus?.node
-                          ? ` · agent → ${bridgeStatus.node}`
-                          : ""}
-                        {bridgeStatus?.remoteAddress
-                          ? ` · ${bridgeStatus.remoteAddress}`
-                          : ""}
-                      </span>
-                    </p>
-                  )}
                 </div>
 
-                {/* === LUMEN BRIDGE === */}
+                {/* === CONNECT MY NODE — 3 STEPS === */}
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5 space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <Link2 className="w-4 h-4 text-[#00E5FF]" />
+                      <Cable className="w-4 h-4 text-[#00E5FF]" />
                       <span className="text-xs font-mono tracking-widest text-[#E8E8F0]">
-                        LUMEN BRIDGE
+                        CONNECT MY NODE
                       </span>
                     </div>
                     <span
                       className={`inline-flex items-center gap-1.5 text-[10px] font-mono tracking-widest px-2.5 py-1 rounded-full border ${
                         bridgeOnline
                           ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/10"
-                          : "border-white/15 text-[#A0A0B0] bg-white/5"
+                          : "border-[#F59E0B]/35 text-[#F59E0B] bg-[#F59E0B]/10"
                       }`}
                     >
                       {bridgeStatusLoading ? (
@@ -409,129 +511,204 @@ export default function ConnectionSettings({
                       ) : bridgeOnline ? (
                         <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] status-dot" />
                       ) : (
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#A0A0B0]" />
+                        <WifiOff size={10} />
                       )}
-                      {bridgeOnline ? "ONLINE" : "OFFLINE"}
+                      {bridgeOnline ? "BRIDGE ONLINE" : "BRIDGE OFFLINE"}
                     </span>
                   </div>
 
                   <p className="text-[11px] text-[#A0A0B0] leading-relaxed">
                     Connect <span className="text-[#E8E8F0]">your</span> Ergo
-                    node without opening inbound ports. Run a small outbound
-                    Bridge agent next to the node — Lumen talks through it.
+                    node in about a minute — no open ports. Run two copy-paste
+                    commands on the machine where the node lives.
                   </p>
 
                   {!bridgeToken ? (
                     <button
                       type="button"
-                      onClick={handleCreateToken}
+                      onClick={handleStartConnect}
                       disabled={creatingToken}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-xs font-mono tracking-widest hover:bg-[#00E5FF]/15 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.985] transition-all"
+                      className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-xs font-mono tracking-widest hover:bg-[#00E5FF]/15 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.985] transition-all"
                     >
                       {creatingToken ? (
                         <Loader2 size={15} className="animate-spin" />
                       ) : (
                         <Cable size={15} />
                       )}
-                      {creatingToken ? "CREATING TOKEN…" : "CONNECT MY NODE"}
+                      {creatingToken
+                        ? "PREPARING…"
+                        : "START — GET MY COMMANDS"}
                     </button>
                   ) : (
                     <div className="space-y-3">
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-[10px] font-mono tracking-widest text-[#A0A0B0]">
-                            BRIDGE TOKEN
-                          </label>
-                          <div className="flex items-center gap-1.5">
+                      {/* STEP 1 */}
+                      <StepCard
+                        n={1}
+                        title="INSTALL BRIDGE"
+                        subtitle="Once, on the machine with your Ergo node (Node.js 18+)."
+                        done={step1Done && bridgeOnline}
+                        active={!bridgeOnline}
+                      >
+                        <div className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-[#A0A0B0] mb-1">
+                          <Download size={12} className="text-[#00E5FF]" />
+                          TERMINAL
+                        </div>
+                        <CommandBlock
+                          value={installCmd}
+                          label="STEP 1 · COPY & RUN"
+                        />
+                      </StepCard>
+
+                      {/* STEP 2 */}
+                      <StepCard
+                        n={2}
+                        title="START BRIDGE WITH YOUR TOKEN"
+                        subtitle="Paste this exact command — token and server are already filled in."
+                        done={step2Done}
+                        active={!!bridgeToken && !bridgeOnline}
+                      >
+                        <div className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-[#A0A0B0] mb-1">
+                          <Terminal size={12} className="text-[#00E5FF]" />
+                          TERMINAL
+                        </div>
+                        <CommandBlock
+                          value={runCmd}
+                          label="STEP 2 · COPY & RUN"
+                        />
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <span className="text-[10px] text-[#A0A0B0]/70 font-mono tracking-wider">
+                            TOKEN
+                          </span>
+                          <div className="flex items-center gap-1">
                             <button
                               type="button"
                               onClick={() => setShowToken((v) => !v)}
                               className="p-1.5 text-[#A0A0B0] hover:text-white"
-                              aria-label={showToken ? "Hide token" : "Show token"}
+                              aria-label={
+                                showToken ? "Hide token" : "Show token"
+                              }
                             >
-                              {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                              {showToken ? (
+                                <EyeOff size={14} />
+                              ) : (
+                                <Eye size={14} />
+                              )}
                             </button>
                             <CopyButton value={bridgeToken} label="Token" />
                           </div>
                         </div>
-                        <div className="w-full bg-[#0A0A0F] border border-white/15 rounded-2xl px-4 py-3 font-mono text-[11px] sm:text-xs break-all text-[#E8E8F0]/90">
+                        <div className="font-mono text-[10px] break-all text-[#A0A0B0]/80 bg-black/40 rounded-xl px-3 py-2">
                           {showToken
                             ? bridgeToken
-                            : `${bridgeToken.slice(0, 10)}${"•".repeat(18)}${bridgeToken.slice(-4)}`}
+                            : `${bridgeToken.slice(0, 12)}${"•".repeat(16)}${bridgeToken.slice(-4)}`}
                         </div>
                         {bridgeStatus && !bridgeKnown && (
-                          <p className="text-[10px] text-[#F59E0B] mt-1.5 px-1">
-                            Token not known to bridge-server (restart wipes
-                            memory). Create a new token.
+                          <p className="text-[10px] text-[#F59E0B]">
+                            Token unknown on server (restart cleared memory).
+                            Tap New token below.
                           </p>
                         )}
-                      </div>
+                      </StepCard>
 
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <label className="text-[10px] font-mono tracking-widest text-[#A0A0B0]">
-                            RUN ON YOUR MACHINE
-                          </label>
-                          <CopyButton value={command} label="Command" />
-                        </div>
-                        <pre className="w-full bg-[#0A0A0F] border border-white/15 rounded-2xl px-4 py-3 font-mono text-[10px] sm:text-[11px] text-[#00E5FF]/90 whitespace-pre-wrap break-all leading-relaxed">
-                          {command}
-                        </pre>
-                        <p className="text-[10px] text-[#A0A0B0]/55 mt-1.5 px-1">
-                          From the{" "}
-                          <span className="font-mono text-[#A0A0B0]/80">
-                            bridge/
-                          </span>{" "}
-                          folder (after{" "}
-                          <span className="font-mono">npm install</span>). Default
-                          node REST:{" "}
-                          <span className="font-mono">127.0.0.1:9053</span>.
-                        </p>
-                      </div>
-
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <button
-                          type="button"
-                          onClick={() => onRefreshBridgeStatus?.()}
-                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border border-white/15 hover:bg-white/5 text-[11px] font-mono tracking-widest"
+                      {/* STEP 3 */}
+                      <StepCard
+                        n={3}
+                        title="WAIT FOR ONLINE"
+                        subtitle={
+                          bridgeOnline
+                            ? "Connected. Switch to My Node if you haven’t — data is live."
+                            : "Leave Step 2 running. This status updates automatically."
+                        }
+                        done={step3Done}
+                        active={!!bridgeToken && !bridgeOnline}
+                      >
+                        <div
+                          className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${
+                            bridgeOnline
+                              ? "border-[#10B981]/40 bg-[#10B981]/10"
+                              : "border-[#F59E0B]/30 bg-[#F59E0B]/10"
+                          }`}
                         >
-                          <RefreshCw
-                            size={13}
-                            className={bridgeStatusLoading ? "animate-spin" : ""}
-                          />
-                          CHECK STATUS
-                        </button>
+                          {bridgeOnline ? (
+                            <Wifi className="w-5 h-5 text-[#10B981] flex-shrink-0" />
+                          ) : bridgeStatusLoading ? (
+                            <Loader2 className="w-5 h-5 text-[#F59E0B] animate-spin flex-shrink-0" />
+                          ) : (
+                            <Radio className="w-5 h-5 text-[#F59E0B] flex-shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <div
+                              className={`text-sm font-mono tracking-widest ${
+                                bridgeOnline
+                                  ? "text-[#10B981]"
+                                  : "text-[#F59E0B]"
+                              }`}
+                            >
+                              {bridgeOnline
+                                ? "ONLINE — BRIDGE CONNECTED"
+                                : "OFFLINE — WAITING FOR BRIDGE"}
+                            </div>
+                            <div className="text-[10px] text-[#A0A0B0] mt-0.5 truncate">
+                              {bridgeOnline
+                                ? [
+                                    bridgeStatus?.node,
+                                    bridgeStatus?.remoteAddress,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" · ") || "Agent linked"
+                                : "Run Step 2 and keep the terminal open"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onRefreshBridgeStatus?.()}
+                            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-white/15 hover:bg-white/5 text-[11px] font-mono tracking-widest"
+                          >
+                            <RefreshCw
+                              size={13}
+                              className={
+                                bridgeStatusLoading ? "animate-spin" : ""
+                              }
+                            />
+                            REFRESH STATUS
+                          </button>
+                          {bridgeOnline && nodeMode !== "my" && (
+                            <button
+                              type="button"
+                              onClick={() => handleMode("my")}
+                              className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-[11px] font-mono tracking-widest hover:bg-[#00E5FF]/15"
+                            >
+                              USE MY NODE NOW
+                            </button>
+                          )}
+                        </div>
+                      </StepCard>
+
+                      <div className="flex flex-wrap gap-2 pt-1">
                         <button
                           type="button"
                           onClick={handleCreateToken}
                           disabled={creatingToken}
-                          className="flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border border-[#00E5FF]/25 text-[#00E5FF] hover:bg-[#00E5FF]/10 text-[11px] font-mono tracking-widest disabled:opacity-40"
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white hover:bg-white/5 disabled:opacity-40"
                         >
                           {creatingToken ? (
-                            <Loader2 size={13} className="animate-spin" />
+                            <Loader2 size={12} className="animate-spin" />
                           ) : (
-                            <KeyRound size={13} />
+                            <KeyRound size={12} />
                           )}
                           NEW TOKEN
                         </button>
                         <button
                           type="button"
                           onClick={handleClearToken}
-                          className="sm:flex-none px-4 py-3 rounded-2xl border border-white/10 text-[#A0A0B0] hover:text-white hover:bg-white/5 text-[11px] font-mono tracking-widest"
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-white/10 text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white hover:bg-white/5"
                         >
                           CLEAR
                         </button>
                       </div>
-
-                      {!bridgeOnline && nodeMode !== "my" && (
-                        <button
-                          type="button"
-                          onClick={() => handleMode("my")}
-                          className="w-full py-3 rounded-2xl border border-[#00E5FF]/30 bg-[#00E5FF]/5 text-[#00E5FF] text-[11px] font-mono tracking-widest hover:bg-[#00E5FF]/10"
-                        >
-                          SWITCH TO MY NODE MODE
-                        </button>
-                      )}
                     </div>
                   )}
                 </div>
@@ -552,8 +729,7 @@ export default function ConnectionSettings({
                     <p className="text-[10px] text-[#A0A0B0]/60 mt-2 px-1">
                       Default{" "}
                       <span className="text-[#00E5FF]">/api/node</span> proxies
-                      to this server Ergo REST (:9053). Direct URL only if the
-                      browser can reach the node (CORS).
+                      to this server Ergo REST (:9053).
                     </p>
                   </div>
                 )}
@@ -600,8 +776,7 @@ export default function ConnectionSettings({
                           <span className="text-[#F59E0B] font-medium">
                             No password set (public access disabled)
                           </span>
-                          {" — "}only localhost / SSH tunnel. Set a password
-                          below (min 10 chars) to enable Public Mode.
+                          {" — "}only localhost / SSH tunnel.
                         </span>
                       </>
                     )}
@@ -624,18 +799,13 @@ export default function ConnectionSettings({
                         type="button"
                         onClick={() => setShowPassword((v) => !v)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-[#A0A0B0] hover:text-white"
-                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-label={
+                          showPassword ? "Hide password" : "Show password"
+                        }
                       >
                         {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>
-                    <p className="text-[10px] text-[#A0A0B0]/55 mt-1.5 px-1">
-                      Stored in server file{" "}
-                      <span className="font-mono text-[#A0A0B0]/80">
-                        .lumen-public-password
-                      </span>{" "}
-                      (chmod 600). Not in env / git.
-                    </p>
                   </div>
 
                   <button
@@ -670,8 +840,8 @@ export default function ConnectionSettings({
               </div>
 
               <div className="mt-6 sm:mt-7 pt-5 border-t border-white/10 text-xs text-[#A0A0B0]/70 font-mono tracking-[0.5px]">
-                Lumen reads Ergo REST only (allowlisted GETs). My Node uses
-                outbound Bridge — no inbound ports on your side.
+                Bridge is outbound-only (allowlisted GETs). Install:{" "}
+                <span className="text-[#A0A0B0]">/bridge/install.sh</span>
               </div>
             </motion.div>
           </div>

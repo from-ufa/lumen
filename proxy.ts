@@ -60,6 +60,20 @@ function setSessionCookie(
 export function proxy(req: NextRequest) {
   const password = readPublicPassword();
   const publicMode = password.length > 0;
+  const pathname = req.nextUrl.pathname;
+
+  // Public Bridge install assets (no secrets) — curl one-liner must work remotely
+  // GET /bridge/install.sh | /bridge/bridge.js | /bridge/package.json
+  if (
+    req.method === "GET" &&
+    (pathname === "/bridge/install.sh" ||
+      pathname === "/bridge/bridge.js" ||
+      pathname === "/bridge/package.json")
+  ) {
+    const res = NextResponse.next();
+    res.headers.set("X-Lumen-Auth", "bridge-public-asset");
+    return res;
+  }
 
   // Always allow local access (SSH -L unchanged)
   if (isLocalRequest(req)) {

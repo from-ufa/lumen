@@ -18,8 +18,43 @@ export const BRIDGE_NODE_BASE = "/api/bridge/node";
 /** Public WS endpoint for remote Bridge agents (outbound to this host). */
 export const DEFAULT_BRIDGE_WS_PUBLIC = "ws://80.209.232.82:3100/bridge";
 
+/** Public HTTP base for dashboard + bridge install downloads. */
+export const DEFAULT_LUMEN_HTTP_PUBLIC = "http://80.209.232.82:3000";
+
+/** Default install directory used by install.sh */
+export const BRIDGE_INSTALL_DIR = "~/lumen-bridge";
+
 export function isNodeMode(v: unknown): v is NodeMode {
   return v === "lumen" || v === "my";
+}
+
+/**
+ * Dashboard HTTP origin for install.sh downloads.
+ * On localhost/SSH tunnel → public IP so the user's node machine can curl it.
+ */
+export function bridgeHttpBase(): string {
+  if (typeof window === "undefined") return DEFAULT_LUMEN_HTTP_PUBLIC;
+  const host = window.location.hostname;
+  if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return DEFAULT_LUMEN_HTTP_PUBLIC;
+  }
+  return `${window.location.protocol}//${window.location.host}`;
+}
+
+/** One-liner: install Bridge next to the user's Ergo node. */
+export function bridgeInstallCommand(httpBase?: string): string {
+  const base = (httpBase || bridgeHttpBase()).replace(/\/$/, "");
+  // LUMEN_BASE ensures install.sh downloads assets from the same host
+  return `curl -fsSL ${base}/bridge/install.sh | LUMEN_BASE=${base} bash`;
+}
+
+/**
+ * One-liner: run Bridge with personal token (after install).
+ * Uses ~/lumen-bridge — same default as install.sh.
+ */
+export function bridgeRunCommand(token: string, wsUrl?: string): string {
+  const server = wsUrl || bridgeWsUrlForClient();
+  return `cd ~/lumen-bridge && node bridge.js --token=${token} --server=${server}`;
 }
 
 export function loadNodeMode(): NodeMode {
@@ -103,9 +138,9 @@ export function bridgeWsUrlForClient(): string {
   return `${proto}://${host}:3100/bridge`;
 }
 
+/** @deprecated prefer bridgeRunCommand — kept for callers that only need node bridge.js … */
 export function bridgeConnectCommand(token: string, wsUrl?: string): string {
-  const server = wsUrl || bridgeWsUrlForClient();
-  return `node bridge.js --token=${token} --server=${server}`;
+  return bridgeRunCommand(token, wsUrl);
 }
 
 export type BridgeStatus = {
