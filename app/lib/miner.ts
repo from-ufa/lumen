@@ -148,4 +148,77 @@ export async function fetchBlockMinerById(
   return null;
 }
 
+/**
+ * Attach honest Explorer miner labels to a list of recent blocks.
+ * One tip-window request covers most tips; missing heights are filled
+ * with limited concurrency (never blocks the list forever).
+ */
+export async function enrichBlocksWithMiners<
+  T extends {
+    height: number;
+    id?: string;
+    minerAddress?: string;
+    minerLabel?: string;
+    minerShort?: string;
+  },
+>(blocks: T[], opts?: { signal?: AbortSignal }): Promise<T[]> {
+  if (!blocks.length) return blocks;
+
+  const byHeight = new Map<number, BlockMinerInfo>();
+
+  // Already-known stay
+  for (const b of blocks) {
+    if (b.minerLabel && b.minerAddress) {
+      /* keep; still allow explorer to refresh if we get a hit */
+    }
+  }
+
+  try {
+    // Bulk: recent tip pages (cheap — covers typical Recent Blocks window)
+    for (const offset of [0, 40]) {
+      const page = await fetchBlocksPage(50, offset, opts?.signal);
+      for (const item of page) {
+        const m = toMinerInfo(item);
+        if (m) byHeight.set(m.height, m);
+      }
+    }
+  } catch {
+    /* explorer optional */
+  }
+
+  const missing = blocks.filter(
+    (b) => !byHeight.has(b.height) && !b.minerLabel
+  );
+
+  // Fill gaps (max 6 parallel) without hammering Explorer
+  const concurrency = 4;
+  for (let i = 0; i < missing.length; i += concurrency) {
+    const slice = missing.slice(i, i + concurrency);
+    await Promise.all(
+      slice.map(async (b) => {
+        try {
+          const m = b.id
+            ? await fetchBlockMinerById(b.id, b.height, opts)
+            : await fetchBlockMinerByHeight(b.height, opts);
+          if (m) byHeight.set(b.height, m);
+        } catch {
+          /* ignore one height */
+        }
+      })
+    );
+  }
+
+  return blocks.map((b) => {
+    const m = byHeight.get(b.height);
+    if (!m) return b;
+    return {
+      ...b,
+      minerLabel: m.label,
+      minerAddress: m.address,
+      minerShort: m.short,
+      id: b.id || m.blockId,
+    };
+  });
+}
+
 export { formatMinerLine, resolveMinerDisplay, shortMinerAddress };

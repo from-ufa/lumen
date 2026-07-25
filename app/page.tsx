@@ -30,6 +30,7 @@ import {
   fetchRecentBlocks,
 } from './lib/blocks';
 import {
+  enrichBlocksWithMiners,
   fetchBlockMinerByHeight,
   fetchBlockMinerById,
 } from './lib/miner';
@@ -279,6 +280,14 @@ export default function LumenDashboard() {
         if (blocks.length) {
           setRecentBlocks(blocks);
           setLastBlockHeight(currentHeight);
+          // Always show miner in the list (Explorer bulk enrich — not only on click)
+          void enrichBlocksWithMiners(blocks)
+            .then((enriched) => {
+              if (!cancelled) setRecentBlocks(enriched);
+            })
+            .catch(() => {
+              /* explorer optional */
+            });
         } else {
           setLastBlockHeight(currentHeight);
         }
