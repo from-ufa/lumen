@@ -456,40 +456,64 @@ function buildLumenMap(opts: {
     }
   }
 
+  // Full-catalog status counts (not only geo-mapped markers)
+  let catalogConnected = 0;
+  let catalogLive = 0;
+  let catalogSeen = 0;
+  let catalogGhost = 0;
+  for (const n of Object.values(catalog.nodes)) {
+    const st = resolveCatalogNodeState(n, connectedByIp.has(n.ip));
+    if (st === "connected") catalogConnected++;
+    else if (st === "live") catalogLive++;
+    else if (st === "seen") catalogSeen++;
+    else catalogGhost++;
+  }
+
+  // Map markers: Ghost excluded so the default map stays clean
+  const visibleMarkers = markers.filter((m) => m.state !== "ghost");
+
   const countries: Record<string, number> = {};
-  for (const m of markers) {
+  for (const m of visibleMarkers) {
     const c = m.country || "??";
     countries[c] = (countries[c] || 0) + 1;
   }
 
-  const connectedMapped = markers.filter((m) => m.state === "connected").length;
-  const liveOnlyMapped = markers.filter((m) => m.state === "live").length;
-  const seenMapped = markers.filter((m) => m.state === "seen").length;
-  const ghostMapped = markers.filter((m) => m.state === "ghost").length;
+  const connectedMapped = visibleMarkers.filter((m) => m.state === "connected")
+    .length;
+  const liveOnlyMapped = visibleMarkers.filter((m) => m.state === "live").length;
+  const seenMapped = visibleMarkers.filter((m) => m.state === "seen").length;
   const networkTotal = Object.keys(catalog.nodes).length;
-  /** Live network = connected + answering (map “Live” chip pool) */
-  const liveTotal = connectedMapped + liveOnlyMapped;
+  /** Active catalog = not ghost (connected + live + seen) */
+  const activeTotal = catalogConnected + catalogLive + catalogSeen;
+  /** Live network = connected + answering */
+  const liveTotal = catalogConnected + catalogLive;
+  /** Full history including Ghost */
+  const totalEver = networkTotal;
+  const ghostMapped = catalogGhost;
 
   return {
-    markers,
+    markers: visibleMarkers,
     me,
     links,
     totalPeers: connectedRaw.length,
-    mapped: markers.length,
-    /** Catalog size (discovered IPs) */
+    mapped: visibleMarkers.length,
+    /** Full catalog including Ghost history */
     networkTotal,
-    discovered: networkTotal,
-    networkMapped: markers.length,
-    /** Markers with geo coordinates */
-    withGeo: markers.length,
+    totalEver,
+    /** Active known nodes (excludes Ghost) — primary “Discovered” figure */
+    discovered: activeTotal,
+    activeTotal,
+    networkMapped: visibleMarkers.length,
+    withGeo: visibleMarkers.length,
     connectedMapped,
     /** Answering but not in local connected set */
     liveMapped: liveOnlyMapped,
-    /** connected + live — “who’s up” */
+    /** connected + live — “who’s up” (catalog-level) */
     liveTotal,
     /** @deprecated alias */
     reachableMapped: liveOnlyMapped,
     seenMapped,
+    /** Historical nodes kept in catalog (hidden from map) */
     ghostMapped,
     unmapped,
     countries,

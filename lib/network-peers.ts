@@ -28,6 +28,13 @@ export type NetworkNodeRecord = {
   infoHeight?: number | null;
   infoVersion?: string | null;
   lastInfoAt?: number | null;
+  /**
+   * Historical / long-dead node kept for network memory.
+   * Cleared automatically when the node becomes live again.
+   */
+  ghost?: boolean;
+  ghostSince?: number | null;
+  prunedAt?: number | null;
   sources: string[];
   firstSeenAt: number;
   lastSeenAt: number;
@@ -63,8 +70,13 @@ export type PeerMapStateLegacy = "reachable" | "stale";
 
 /** Live if reachable flag or /info / probe within this window */
 export const LIVE_FRESH_MS = 2 * 60 * 60 * 1000; // 2h
-/** Seen if last catalog observation within this window */
-export const SEEN_FRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7d
+/**
+ * After this without a live signal → Ghost (history).
+ * Aligns with soft-prune default (21d). Gossip lastSeen alone does not count.
+ */
+export const GHOST_AFTER_MS = 21 * 24 * 60 * 60 * 1000; // 21d
+/** @deprecated use GHOST_AFTER_MS — kept for older docs */
+export const SEEN_FRESH_MS = GHOST_AFTER_MS;
 
 export function normalizePeerState(
   s: string | undefined | null
@@ -77,7 +89,12 @@ export function normalizePeerState(
   return "seen";
 }
 
-/** Derive status from catalog row + optional live connection. */
+/**
+ * Derive status from catalog row + optional live connection.
+ *
+ * Ghost = not Connected/Live for a long time (or explicit ghost flag).
+ * Kept in catalog as network history; map hides them by default.
+ */
 export function resolveCatalogNodeState(
   n: NetworkNodeRecord,
   isConnected: boolean,
@@ -94,16 +111,20 @@ export function resolveCatalogNodeState(
     return "live";
   }
 
-  const lastSeen = Math.max(
-    Number(n.lastSeenAt) || 0,
-    Number(n.lastMessage) || 0,
-    Number(n.lastHandshake) || 0,
-    Number(n.firstSeenAt) || 0
-  );
-  if (lastSeen > 0 && now - lastSeen < SEEN_FRESH_MS) {
-    return "seen";
+  // Explicit history flag from soft-prune / long dormancy
+  if (n.ghost) return "ghost";
+
+  // Age without live signal (not gossip)
+  const ageFrom =
+    lastLive > 0
+      ? lastLive
+      : Math.max(Number(n.firstSeenAt) || 0, Number(n.lastProbedAt) || 0);
+  if (ageFrom > 0 && now - ageFrom >= GHOST_AFTER_MS) {
+    return "ghost";
   }
-  return "ghost";
+
+  // Recently known but not answering
+  return "seen";
 }
 
 export function isPrivateIp(ip: string): boolean {

@@ -105,9 +105,9 @@ npm run crawl:network
 | **Connected** | In the active node’s live peer list right now |
 | **Live** | Answering now (open P2P port and/or recent REST `/info`) |
 | **Seen** | Seen in discovery recently, not answering |
-| **Ghost** | Stale for a long time — **hidden** on the map |
+| **Ghost** | Not live for ≥ **21 days** — kept as **network history**, **hidden** on the map |
 
-Visual hierarchy: Connected (bright cyan) → Live (blue) → Seen (dim).
+Visual hierarchy: Connected (bright cyan) → Live (blue) → Seen (dim). Ghost never appears in Live / Linked / All.
 
 ### Map filters (Lumen Node)
 
@@ -115,30 +115,30 @@ Visual hierarchy: Connected (bright cyan) → Live (blue) → Seen (dim).
 |------|--------|
 | **Live** (default) | Connected + Live — clean “who’s up” view |
 | **Linked** | Connected only |
-| **All** | Connected + Live + Seen |
+| **All** | Connected + Live + Seen (still no Ghost) |
 
 My Node does not show these chips (only connected peers exist). Instead:
 
 > **N peers connected to your node**
 
-### Prune (catalog cleanup)
+### Stats on the map
 
-**Prune** keeps the catalog healthy: after each crawl, IPs that have been **dead for a long time** are removed so the map and stats are not flooded with garbage.
+| Metric | Meaning |
+|--------|---------|
+| **Discovered** | Active catalog (Connected + Live + Seen) |
+| **Live** | Answering now (incl. connected) |
+| **Connected** | Linked to the active node |
+| **Ghost** | Historical nodes still stored |
+| **Total ever** | Active + Ghost |
 
-| Rule | Detail |
-|------|--------|
-| **Default age** | **21 days** (`LUMEN_PRUNE_DAYS`) |
-| **Never pruned while live** | `reachable` nodes and nodes with recent probe / REST `/info` |
-| **Age signal** | Last **live** activity — not gossip “seen in someone’s peer list” alone |
-| **Soft mode** | `LUMEN_PRUNE_SOFT=1` marks ghost instead of delete |
-| **Disable** | `LUMEN_PRUNE_DAYS=0` |
+### Ghost history (soft-prune)
 
-**Last prune report:**
+Old nodes are **not deleted** by default. After **21 days** without a live signal they become **Ghost** history (`ghost: true` in the catalog). Connected / Live are never ghosted. If a Ghost answers again, it is revived automatically.
+
+Hard delete (optional): `LUMEN_PRUNE_HARD=1`. Disable: `LUMEN_PRUNE_DAYS=0`.
 
 ```bash
-cat data/catalog-prune-last.json
-# or embedded:
-# data/network-catalog.json → seeds.report.prune
+cat data/catalog-prune-last.json   # ghosted / deleted / revived
 ```
 
 Full ops detail: [LUMEN.md](./LUMEN.md) → *Network map — architecture*.

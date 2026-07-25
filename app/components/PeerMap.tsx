@@ -421,8 +421,11 @@ type MapPayload = {
   totalPeers: number;
   mapped: number;
   networkTotal?: number;
-  /** Alias of networkTotal — known IPs in catalog */
+  /** Active known nodes (excludes Ghost) */
   discovered?: number;
+  activeTotal?: number;
+  /** Catalog including Ghost history */
+  totalEver?: number;
   networkMapped?: number;
   withGeo?: number;
   connectedMapped?: number;
@@ -1235,17 +1238,22 @@ export default function PeerMap({
     seen = data?.seenMapped ?? seen;
     ghost = data?.ghostMapped ?? ghost;
     const live = data?.liveTotal ?? connected + liveOnly;
-    const discovered =
-      data?.discovered ?? data?.networkTotal ?? markers.length;
+    const active =
+      data?.activeTotal ?? data?.discovered ?? connected + liveOnly + seen;
+    const totalEver =
+      data?.totalEver ?? data?.networkTotal ?? active + ghost;
     const withGeo = data?.withGeo ?? data?.mapped ?? markers.length;
     const unmapped = data?.unmapped ?? 0;
     return {
-      discovered,
+      /** Active network memory (no Ghost) */
+      discovered: active,
+      active,
       live,
       liveOnly,
       connected,
       seen,
       ghost,
+      totalEver,
       withGeo,
       unmapped,
       showing: peerMarkers.length,
@@ -1526,6 +1534,22 @@ export default function PeerMap({
                   </span>
                 </span>
               </div>
+              {/* Ghost = network history, never in Live/Linked/All */}
+              <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-black/25 px-3 py-2 text-[10px] font-mono tracking-wide text-[#A0A0B0]">
+                <span>
+                  Ghost{" "}
+                  <span className="text-[#64748B] tabular-nums">
+                    {mapStats.ghost.toLocaleString()}
+                  </span>
+                  <span className="text-[#A0A0B0]/50"> · history</span>
+                </span>
+                <span>
+                  Total ever{" "}
+                  <span className="text-[#E8E8F0]/80 tabular-nums">
+                    {mapStats.totalEver.toLocaleString()}
+                  </span>
+                </span>
+              </div>
 
               {/* Status filters */}
               <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
@@ -1781,9 +1805,19 @@ export default function PeerMap({
                 </div>
               </div>
             </div>
-            <div className="text-[10px] font-mono text-[#A0A0B0] mb-3 text-center">
+            <div className="text-[10px] font-mono text-[#A0A0B0] mb-2 text-center">
               {mapStats.withGeo.toLocaleString()} on map · showing{" "}
               {mapStats.showing}
+            </div>
+            <div className="text-[10px] font-mono text-[#A0A0B0]/80 mb-3 text-center tracking-wide">
+              Ghost{" "}
+              <span className="text-[#64748B] tabular-nums">
+                {mapStats.ghost.toLocaleString()}
+              </span>
+              {" · total ever "}
+              <span className="text-[#E8E8F0]/80 tabular-nums">
+                {mapStats.totalEver.toLocaleString()}
+              </span>
             </div>
             <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
               {(

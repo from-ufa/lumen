@@ -508,6 +508,7 @@ Do not:
 | 2026-07-25 | **Fan-out + prune:** dual-pass fan-out (max 200, dedup REST), prune dead IPs after 21d (live protected) |
 | 2026-07-25 | **Docs:** README + LUMEN.md — multi-seed, statuses, filters, prune report paths |
 | 2026-07-25 | **Network stats HUD:** Discovered / Live / Connected (+ on map) on World Map |
+| 2026-07-25 | **Ghost as history:** soft-prune keeps dead IPs; stats Ghost + Total ever; no hard-delete by default |
 
 ### Block miner attribution (honest)
 
@@ -544,7 +545,7 @@ mainnet knownPeers ──► catalog as P2P endpoints
         ├── open-REST scan (http://IP:9053/info + peers)
         ├── /info enrichment (name, height, version)
         ├── TCP :9030 probe → reachable flag
-        └── prune (drop long-dead IPs)
+        └── soft-prune → Ghost history (optional hard-delete)
         │
         ▼
   network-catalog.json  ──►  GET /api/peers/map  ──►  PeerMap UI
@@ -574,10 +575,11 @@ npm run crawl:network
 |--------|---------|------------|
 | **Connected** | In the active node’s live `/peers/connected` set | Bright cyan + strong glow |
 | **Live** | Answering now (TCP open and/or recent REST `/info`, ~2h window) | Blue, solid |
-| **Seen** | Observed in discovery recently, not answering now (~7d) | Dim slate |
-| **Ghost** | Not observed as live for a long time | Hidden on map |
+| **Seen** | Observed recently, not answering now (until Ghost threshold) | Dim slate |
+| **Ghost** | Not Connected/Live for ≥ **21 days** (network history) | Hidden on map by default |
 
-Logic: `lib/network-peers.ts` → `resolveCatalogNodeState()`.
+Logic: `lib/network-peers.ts` → `resolveCatalogNodeState()`.  
+Ghost rows stay in `network-catalog.json` (`ghost: true`) until they answer again (auto-revive).
 
 #### Map filters (Lumen Node only)
 
@@ -585,7 +587,7 @@ Logic: `lib/network-peers.ts` → `resolveCatalogNodeState()`.
 |------|--------|
 | **Live** (default) | Connected + Live — clean “who’s up” view |
 | **Linked** | Connected only — your current peer links |
-| **All** | Connected + Live + Seen (Ghost still hidden) |
+| **All** | Connected + Live + Seen (**Ghost never included**) |
 
 My Node: no chips — only the user’s connected peers exist, so a single line like **“95 peers connected to your node”** is shown instead.
 
@@ -595,40 +597,39 @@ Live counters from `GET /api/peers/map` (map refetches ~12s):
 
 | Metric | Field | Meaning |
 |--------|--------|---------|
-| **Discovered** | `discovered` / `networkTotal` | IPs in multi-seed catalog |
-| **Live** | `liveTotal` | Connected + answering |
+| **Discovered** | `discovered` / `activeTotal` | Active catalog: Connected + Live + Seen (**no Ghost**) |
+| **Live** | `liveTotal` | Connected + answering now |
 | **Connected** | `connectedMapped` | In active node’s `/peers/connected` |
-| **on map** | `withGeo` | Markers with GeoIP |
-| **showing** | client filter | After Live / Linked / All chip |
+| **Ghost** | `ghostMapped` | Historical nodes kept for memory |
+| **Total ever** | `totalEver` / `networkTotal` | Active + Ghost (full catalog) |
+| **on map / showing** | `withGeo` / client | Geo pins · after filter chip |
 
-Lumen Node: three premium stat tiles + subtle “on map · showing”. My Node: connected count only.
+Lumen Node: three tiles (Discovered / Live / Connected) + Ghost · Total ever. My Node: connected count only.
 
-#### Prune (catalog cleanup)
+#### Ghost history & soft-prune
 
-**What:** after every crawl, remove (or soft-mark) IPs that are long dead so the catalog and map stats do not grow forever with garbage.
+**Goal:** remember the network over time without cluttering the Live map.
 
-**Default age:** **`LUMEN_PRUNE_DAYS=21`** (21 days). Override via env; set `0` to disable.
+**What happens after `LUMEN_PRUNE_DAYS` (default 21):**  
+Nodes that are **not** Connected/Live for that long are marked **`ghost: true`** and kept in the catalog. They are **not deleted** unless `LUMEN_PRUNE_HARD=1`.
 
-**What is never pruned aggressively:**
+**Never marked Ghost while:**
 
-- Nodes with `reachable === true` (Live / TCP ok)
-- Nodes with recent `lastReachableAt` or `lastInfoAt` inside the prune window  
-  (= Connected / Live stay safe)
+- `reachable === true`, or
+- recent `lastReachableAt` / `lastInfoAt` within the window
 
-**Age basis:** last **live** signal (`lastReachableAt` / `lastInfoAt`), **not** gossip `lastSeenAt` alone (peer lists would otherwise keep dead IPs “fresh” forever). Never-live IPs age from `firstSeenAt` after a failed probe.
+**Age basis:** last **live** signal (TCP/REST), not gossip alone.  
+**Revive:** if a Ghost answers again, `ghost` is cleared automatically.
 
-**Soft mode:** `LUMEN_PRUNE_SOFT=1` sets `ghost=true` instead of deleting.
-
-**Where to read the last prune report:**
+**Report files:**
 
 | File | Content |
 |------|---------|
-| `data/catalog-prune-last.json` | Last run: pruned count, soft count, sample IPs, before/after |
-| `data/network-catalog.json` → `seeds.report.prune` | Same summary embedded in catalog |
+| `data/catalog-prune-last.json` | `ghosted`, `deleted`, `revived`, samples |
+| `catalog.seeds.report.prune` | same, last crawl |
 
 ```bash
 cat data/catalog-prune-last.json
-# or
 jq '.seeds.report.prune' data/network-catalog.json
 ```
 

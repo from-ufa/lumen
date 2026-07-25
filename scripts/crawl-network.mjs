@@ -21,8 +21,8 @@
  *   LUMEN_MAX_FANOUT           default 200
  *   LUMEN_SEED_CONCURRENCY     default 4
  *   LUMEN_FANOUT_CONCURRENCY   default 8
- *   LUMEN_PRUNE_DAYS           default 21 (drop dead IPs; 0 = disable)
- *   LUMEN_PRUNE_SOFT=1         mark ghost instead of delete
+ *   LUMEN_PRUNE_DAYS           default 21 → mark Ghost after this many days
+ *   LUMEN_PRUNE_HARD=1         actually DELETE ghosts (default: keep as history)
  */
 import fs from "fs";
 import path from "path";
@@ -61,13 +61,14 @@ const INFO_TIMEOUT_MS = Number(process.env.LUMEN_INFO_TIMEOUT_MS || 5000);
 const MAX_INFO_PROBES = Number(process.env.LUMEN_MAX_INFO_PROBES || 100);
 const PROBE_CONCURRENCY = Number(process.env.LUMEN_PROBE_CONCURRENCY || 30);
 const PROBE_TIMEOUT_MS = Number(process.env.LUMEN_PROBE_TIMEOUT_MS || 1500);
-/** Drop nodes not seen for this many days (never if live/reachable recently) */
+/** Mark as Ghost after this many days without a live signal (0 = disable) */
 const PRUNE_DAYS = Number(
   process.env.LUMEN_PRUNE_DAYS !== undefined
     ? process.env.LUMEN_PRUNE_DAYS
     : 21
 );
-const PRUNE_SOFT = process.env.LUMEN_PRUNE_SOFT === "1";
+/** Hard-delete ghosts instead of keeping history (default off) */
+const PRUNE_HARD = process.env.LUMEN_PRUNE_HARD === "1";
 
 const IPV4_RE = /(\d{1,3}(?:\.\d{1,3}){3})/;
 
@@ -331,77 +332,126 @@ function collectFanoutTargets(catalog, excludeBases) {
 }
 
 /**
- * Prune dead catalog entries.
+ * Ghost history (default) or hard-delete (LUMEN_PRUNE_HARD=1).
  *
- * Live signals (never prune while fresh):
+ * Never touch while Connected/Live:
  *  - reachable === true
  *  - lastReachableAt / lastInfoAt within PRUNE_DAYS
  *
- * Gossip lastSeenAt alone does NOT protect a node (peer lists keep
- * recycling dead IPs forever). Age is measured from last *live* signal,
- * or firstSeenAt if never live.
+ * Age = last *live* signal (not gossip lastSeenAt).
+ * Default: set ghost=true and keep the row as network history.
  */
 function pruneStaleNodes(catalog, now, _runStart) {
   const pruneMs = PRUNE_DAYS > 0 ? PRUNE_DAYS * 24 * 60 * 60 * 1000 : 0;
   if (!pruneMs) {
-    return { pruned: 0, soft: 0, samples: [], disabled: true };
+    return {
+      deleted: 0,
+      ghosted: 0,
+      revived: 0,
+      samples: [],
+      disabled: true,
+    };
   }
 
   const samples = [];
-  let pruned = 0;
-  let soft = 0;
-  let candidates = 0;
+  let deleted = 0;
+  let ghosted = 0;
+  let revived = 0;
+  let alreadyGhost = 0;
 
   for (const [ip, n] of Object.entries(catalog.nodes)) {
-    // Always keep currently live / recently live
-    if (n.reachable === true) continue;
+    // Revive: was ghost, now live again
+    if (n.ghost && n.reachable === true) {
+      n.ghost = false;
+      n.ghostSince = null;
+      n.prunedAt = null;
+      revived++;
+      continue;
+    }
+
+    if (n.reachable === true) {
+      // ensure flag clean
+      if (n.ghost) {
+        n.ghost = false;
+        n.ghostSince = null;
+        revived++;
+      }
+      continue;
+    }
+
     const lastLive = Math.max(
       Number(n.lastReachableAt) || 0,
       Number(n.lastInfoAt) || 0
     );
-    if (lastLive > 0 && now - lastLive < pruneMs) continue;
+    if (lastLive > 0 && now - lastLive < pruneMs) {
+      if (n.ghost) {
+        n.ghost = false;
+        n.ghostSince = null;
+        revived++;
+      }
+      continue;
+    }
 
-    // Never-live: age from firstSeen; once-live: age from lastLive
     const ageFrom =
       lastLive > 0
         ? lastLive
         : Math.max(Number(n.firstSeenAt) || 0, Number(n.lastProbedAt) || 0);
     if (!ageFrom || now - ageFrom < pruneMs) continue;
 
-    // Prefer only pruning nodes we've actually failed to reach at least once
-    // (avoids deleting brand-new unprobed discoveries mid-rollout)
+    // Skip brand-new unprobed rows
     if (n.reachable !== false && lastLive === 0 && !n.lastProbedAt) continue;
 
-    candidates++;
+    if (n.ghost && !PRUNE_HARD) {
+      alreadyGhost++;
+      continue;
+    }
+
     const rec = {
       ip,
       name: n.name,
       lastLiveAt: lastLive || null,
       firstSeenAt: n.firstSeenAt || null,
       reachable: n.reachable,
-      mode: PRUNE_SOFT ? "soft" : "delete",
+      mode: PRUNE_HARD ? "delete" : "ghost",
     };
 
-    if (PRUNE_SOFT) {
-      n.ghost = true;
-      n.prunedAt = now;
-      soft++;
-      if (samples.length < 15) samples.push(rec);
-    } else {
+    if (PRUNE_HARD) {
       if (samples.length < 15) samples.push(rec);
       delete catalog.nodes[ip];
-      pruned++;
+      deleted++;
+    } else {
+      n.ghost = true;
+      n.ghostSince = n.ghostSince || now;
+      n.prunedAt = now;
+      ghosted++;
+      if (samples.length < 15) samples.push(rec);
     }
   }
 
   return {
-    pruned,
-    soft,
-    candidates,
+    deleted,
+    ghosted,
+    revived,
+    alreadyGhost,
     samples,
     pruneDays: PRUNE_DAYS,
-    softMode: PRUNE_SOFT,
+    hardMode: PRUNE_HARD,
+    // legacy aliases for older report readers
+    pruned: deleted,
+    soft: ghosted,
   };
+}
+
+/** Clear ghost when a node becomes reachable / has fresh /info */
+function markNodeLive(n, now) {
+  if (!n) return;
+  n.reachable = true;
+  n.lastReachableAt = now;
+  if (n.ghost) {
+    n.ghost = false;
+    n.ghostSince = null;
+    n.prunedAt = null;
+  }
 }
 
 function tcpProbe(ip, port, timeoutMs) {
@@ -525,14 +575,13 @@ async function harvestRestSeed(catalog, base, sourceTag, now) {
     result.updated = m1.updated + m2.updated;
     result.ok = all.length > 0 || connected.length > 0;
 
-    // Mark seed's connected peers as reachable
+    // Mark seed's connected peers as reachable (+ revive ghosts)
     for (const p of connected) {
       const parsed = extractIpPort(String(p.address || ""));
       if (!parsed) continue;
       const n = catalog.nodes[parsed.ip];
       if (!n) continue;
-      n.reachable = true;
-      n.lastReachableAt = now;
+      markNodeLive(n, now);
       if (p.name) n.name = p.name;
     }
   } catch (e) {
@@ -764,8 +813,8 @@ async function main() {
           info.fullHeight ?? info.headersHeight ?? n.infoHeight ?? null;
         n.infoVersion = info.appVersion || n.infoVersion || null;
         n.lastInfoAt = Date.now();
-        // remember working REST
         n.restApiUrl = n.restApiUrl || base;
+        markNodeLive(n, Date.now());
       }
     } catch {
       infoFail++;
@@ -790,8 +839,7 @@ async function main() {
       n.infoHeight = info.fullHeight ?? info.headersHeight ?? null;
       n.infoVersion = info.appVersion || null;
       n.lastInfoAt = Date.now();
-      n.reachable = true;
-      n.lastReachableAt = Date.now();
+      markNodeLive(n, Date.now());
       // harvest peers from this newly found REST
       try {
         let peers = [];
@@ -829,8 +877,7 @@ async function main() {
       const ok = await tcpProbe(n.ip, port, PROBE_TIMEOUT_MS);
       n.lastProbedAt = Date.now();
       if (ok) {
-        n.reachable = true;
-        n.lastReachableAt = n.lastProbedAt;
+        markNodeLive(n, n.lastProbedAt);
         probeOk++;
       } else if (!n.lastReachableAt || n.lastReachableAt < now) {
         // don't demote if freshly marked connected this run
@@ -904,8 +951,11 @@ async function main() {
     beforeTotal,
     afterTotal,
     delta: afterTotal - beforeTotal,
-    pruned: pruneReport.pruned,
-    prunedSoft: pruneReport.soft,
+    ghosted: pruneReport.ghosted,
+    deleted: pruneReport.deleted,
+    revived: pruneReport.revived,
+    pruned: pruneReport.deleted,
+    prunedSoft: pruneReport.ghosted,
     stats: catalog.stats,
     seedsOk: seedReport.rest.filter((r) => r.ok).length,
     seedsFail: seedReport.rest.filter((r) => !r.ok).length,
