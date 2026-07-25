@@ -41,7 +41,7 @@ function normalizeState(s?: string | null): PeerMapState {
 
 /**
  * Status colors — premium hierarchy (not neon):
- * Connected cyan → Live sky → Seen silver → Ghost muted rose-red
+ * Connected cyan → Live emerald (node-live badge) → Seen silver → Ghost rose-red
  */
 function stateMeta(state: PeerMapState): {
   color: string;
@@ -52,7 +52,8 @@ function stateMeta(state: PeerMapState): {
     case "connected":
       return { color: "#00E5FF", label: "Connected", short: "CONNECTED" };
     case "live":
-      return { color: "#38BDF8", label: "Live", short: "LIVE" };
+      // Same green as NODE LIVE chip — distinct from Connected cyan
+      return { color: "#10B981", label: "Live", short: "LIVE" };
     case "seen":
       // Cool silver-steel — quieter than Live, still readable on dark map
       return { color: "#A8B4C8", label: "Seen", short: "SEEN" };
@@ -91,10 +92,10 @@ function peerDivIcon(
     glow = "0 0 14px rgba(0,229,255,0.9), 0 0 28px rgba(0,229,255,0.35)";
     ring = "2px solid rgba(10,10,15,0.95)";
   } else if (state === "live") {
-    color = "#38BDF8";
+    color = "#10B981";
     size = 11;
-    opacity = 0.88;
-    glow = "0 0 10px rgba(56,189,248,0.55)";
+    opacity = 0.9;
+    glow = "0 0 10px rgba(16,185,129,0.55)";
     ring = "2px solid rgba(10,10,15,0.9)";
   } else if (state === "seen") {
     // Noticeable silver — not near-invisible slate
@@ -1919,8 +1920,8 @@ export default function PeerMap({
                     DISCOVERED
                   </div>
                 </div>
-                <div className="rounded-xl bg-[#38BDF8]/[0.08] border border-[#38BDF8]/20 px-2.5 py-2.5">
-                  <div className="font-mono text-lg sm:text-xl tabular-nums text-[#38BDF8] leading-none tracking-tight">
+                <div className="rounded-xl bg-[#10B981]/[0.08] border border-[#10B981]/25 px-2.5 py-2.5">
+                  <div className="font-mono text-lg sm:text-xl tabular-nums text-[#10B981] leading-none tracking-tight">
                     {mapStats.live.toLocaleString()}
                   </div>
                   <div className="text-[9px] font-mono tracking-wider text-[#A0A0B0] mt-1">
@@ -2039,7 +2040,7 @@ export default function PeerMap({
               </span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#38BDF8] shrink-0 shadow-[0_0_4px_rgba(56,189,248,0.5)]" />
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#10B981] shrink-0 shadow-[0_0_5px_rgba(16,185,129,0.55)]" />
               <span>
                 <span className="text-white font-medium">Live</span>
                 <span className="text-[#A0A0B0]"> — answering now</span>
@@ -2161,7 +2162,7 @@ export default function PeerMap({
                           );
                         if (s === "live")
                           return (
-                            <span className="text-[#38BDF8]">
+                            <span className="text-[#10B981]">
                               Live · answering now
                             </span>
                           );
@@ -2215,7 +2216,8 @@ export default function PeerMap({
           Connected
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" /> Live
+          <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] shadow-[0_0_5px_rgba(16,185,129,0.5)]" />{" "}
+          Live
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#A8B4C8] shadow-[0_0_5px_rgba(168,180,200,0.4)]" />{" "}
@@ -2242,8 +2244,8 @@ export default function PeerMap({
                   DISCOVERED
                 </div>
               </div>
-              <div className="rounded-xl bg-[#38BDF8]/10 px-2 py-2 text-center border border-[#38BDF8]/15">
-                <div className="font-mono text-lg tabular-nums text-[#38BDF8]">
+              <div className="rounded-xl bg-[#10B981]/10 px-2 py-2 text-center border border-[#10B981]/20">
+                <div className="font-mono text-lg tabular-nums text-[#10B981]">
                   {mapStats.live.toLocaleString()}
                 </div>
                 <div className="text-[9px] font-mono text-[#A0A0B0] tracking-wider">
@@ -2329,7 +2331,7 @@ export default function PeerMap({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#38BDF8]" />
+            <span className="w-2 h-2 rounded-full bg-[#10B981]" />
             <span>
               <span className="text-white">Live</span> — answering
             </span>
@@ -2400,7 +2402,7 @@ export default function PeerMap({
               {mapStats.discovered}
             </span>
             {" · live "}
-            <span className="text-[#38BDF8] tabular-nums">{mapStats.live}</span>
+            <span className="text-[#10B981] tabular-nums">{mapStats.live}</span>
             {" · connected "}
             <span className="text-[#00E5FF] tabular-nums">
               {mapStats.connected}

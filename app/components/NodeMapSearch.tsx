@@ -50,7 +50,7 @@ function stateStyle(state: string): { color: string; label: string } {
     case "connected":
       return { color: "#00E5FF", label: "Connected" };
     case "live":
-      return { color: "#38BDF8", label: "Live" };
+      return { color: "#10B981", label: "Live" };
     case "seen":
       return { color: "#A8B4C8", label: "Seen" };
     default:
