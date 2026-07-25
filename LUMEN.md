@@ -509,6 +509,7 @@ Do not:
 | 2026-07-25 | **Docs:** README + LUMEN.md — multi-seed, statuses, filters, prune report paths |
 | 2026-07-25 | **Network stats HUD:** Discovered / Live / Connected (+ on map) on World Map |
 | 2026-07-25 | **Ghost as history:** soft-prune keeps dead IPs; stats Ghost + Total ever; no hard-delete by default |
+| 2026-07-25 | **Premium node search:** right-side live search (name / IP / country / version), fly-to + highlight |
 
 ### Block miner attribution (honest)
 
@@ -590,6 +591,20 @@ Ghost rows stay in `network-catalog.json` (`ghost: true`) until they answer agai
 | **All** | Connected + Live + Seen (**Ghost never included**) |
 
 My Node: no chips — only the user’s connected peers exist, so a single line like **“95 peers connected to your node”** is shown instead.
+
+#### Node search (map)
+
+Premium live search on the **right** side of the World Map (`app/components/NodeMapSearch.tsx`):
+
+| Query | Matches |
+|-------|---------|
+| Name | Node name (prefix preferred) |
+| IP | Full or partial IPv4 |
+| Country / city | e.g. `DE`, `Berlin` |
+| Version | Ergo `appVersion` from `/info` when known (`version` on map markers) |
+
+**UX:** soft dropdown, smooth result scroll, keyboard **↑↓ · Enter · Esc**, empty state “No nodes found”.  
+**On select:** map **flyTo** + pulse ring + pin highlight; filter auto-widens (e.g. Seen → All) so the pin is visible. Status badge Connected / Live / Seen on each row.
 
 #### Network stats (map HUD)
 

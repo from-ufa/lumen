@@ -15,6 +15,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import { AnimatePresence, motion } from "framer-motion";
 import { Globe2, MapPin, RefreshCw, Zap } from "lucide-react";
 import { fetchBlockMinerByHeight } from "../lib/miner";
+import NodeMapSearch, { shortVersion } from "./NodeMapSearch";
 
 function escapeHtml(s: string): string {
   return String(s)
@@ -57,7 +58,11 @@ function stateMeta(state: PeerMapState): {
 }
 
 /** DivIcon — premium hierarchy by status. */
-function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
+function peerDivIcon(
+  state: PeerMapState,
+  isBoom: boolean,
+  isFocus = false
+): L.DivIcon {
   let color = "#475569";
   let size = 8;
   let opacity = 0.4;
@@ -70,6 +75,13 @@ function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
     opacity = 0.95;
     glow = "0 0 14px rgba(255,122,61,0.85)";
     ring = "2px solid rgba(10,10,15,0.9)";
+  } else if (isFocus) {
+    color = "#00E5FF";
+    size = 16;
+    opacity = 1;
+    glow =
+      "0 0 0 3px rgba(0,229,255,0.35), 0 0 18px rgba(0,229,255,0.95), 0 0 36px rgba(0,229,255,0.4)";
+    ring = "2.5px solid rgba(10,10,15,0.95)";
   } else if (state === "connected") {
     color = "#00E5FF";
     size = 14;
@@ -95,7 +107,7 @@ function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
     glow = "none";
   }
 
-  const hit = 28;
+  const hit = isFocus ? 36 : 28;
   return L.divIcon({
     className: "lumen-peer-marker",
     html: `<div class="lumen-peer-hit" style="
@@ -150,6 +162,7 @@ function peerPopupHtml(
     country?: string;
     connectionType?: string;
     state?: PeerMapState;
+    version?: string | null;
   },
   isMe = false,
   /** Active data source label for the center pin, e.g. LUMEN NODE / MY NODE */
@@ -161,6 +174,7 @@ function peerPopupHtml(
   const meta = stateMeta(state);
   const title = escapeHtml(m.name || (isMe ? meRoleLabel : "Peer"));
   const addr = escapeHtml(m.ip) + (m.port ? `:${escapeHtml(m.port)}` : "");
+  const ver = shortVersion(m.version);
   const roleColor = isMe ? "#FF7A3D" : meta.color;
   const roleLine = isMe
     ? escapeHtml(meRoleLabel)
@@ -176,6 +190,11 @@ function peerPopupHtml(
     <div style="font-weight:600;font-size:14px;color:#fff;word-break:break-all">${title}</div>
     <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all;margin-top:6px;color:#E8E8F0">${addr}</div>
     <div style="color:#A0A0B0;margin-top:6px">${escapeHtml(loc)}</div>
+    ${
+      ver
+        ? `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#00E5FF;margin-top:4px;opacity:0.85">v${escapeHtml(ver)}</div>`
+        : ""
+    }
     ${
       isMe
         ? `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#A0A0B0;margin-top:6px">Active data source</div>`
@@ -194,10 +213,12 @@ function ClusteredPeersLayer({
   markers,
   boomIps,
   onSelect,
+  focusId,
 }: {
   markers: PeerMapMarker[];
   boomIps: Set<string>;
   onSelect: (m: PeerMapMarker) => void;
+  focusId?: string | null;
 }) {
   const map = useMap();
 
@@ -221,16 +242,19 @@ function ClusteredPeersLayer({
     for (const m of markers) {
       const state = normalizeState(m.state);
       const isBoom = boomIps.has(m.ip);
+      const isFocus = !!focusId && m.id === focusId;
       const z =
-        state === "connected"
-          ? 600
-          : state === "live"
-            ? 300
-            : state === "seen"
-              ? 100
-              : 0;
+        isFocus
+          ? 1200
+          : state === "connected"
+            ? 600
+            : state === "live"
+              ? 300
+              : state === "seen"
+                ? 100
+                : 0;
       const marker = L.marker([m.lat, m.lon], {
-        icon: peerDivIcon(state, isBoom),
+        icon: peerDivIcon(state, isBoom, isFocus),
         riseOnHover: true,
         keyboard: true,
         title: m.name || m.ip,
@@ -238,11 +262,13 @@ function ClusteredPeersLayer({
       });
 
       const statusTip = stateMeta(state).short;
+      const ver = shortVersion(m.version);
       const tip =
         `${m.name || m.ip}` +
         (m.city || m.country
           ? ` · ${[m.city, m.country].filter(Boolean).join(", ")}`
           : "") +
+        (ver ? ` · v${ver}` : "") +
         ` · ${statusTip}`;
 
       marker.bindTooltip(tip, {
@@ -278,7 +304,67 @@ function ClusteredPeersLayer({
         /* map already unmounted */
       }
     };
-  }, [map, markers, boomIps, onSelect]);
+  }, [map, markers, boomIps, onSelect, focusId]);
+
+  return null;
+}
+
+/** Smooth fly-to + pulsing ring when user picks a node from search / list */
+function FocusNodeLayer({
+  target,
+  focusToken,
+}: {
+  target: PeerMapMarker | null;
+  focusToken: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!target || !focusToken) return;
+    if (!Number.isFinite(target.lat) || !Number.isFinite(target.lon)) return;
+
+    const latlng = L.latLng(target.lat, target.lon);
+    const destZoom = Math.min(
+      MAP_MAX_ZOOM,
+      Math.max(map.getZoom(), target.id === "me" ? 5 : 6.5)
+    );
+
+    map.flyTo(latlng, destZoom, {
+      animate: true,
+      duration: 0.9,
+      easeLinearity: 0.22,
+    });
+
+    const ring = L.marker(latlng, {
+      interactive: false,
+      keyboard: false,
+      zIndexOffset: 2000,
+      icon: L.divIcon({
+        className: "lumen-focus-ring",
+        html: `<div class="lumen-focus-pulse"></div>`,
+        iconSize: [48, 48],
+        iconAnchor: [24, 24],
+      }),
+    });
+    ring.addTo(map);
+
+    const t = window.setTimeout(() => {
+      try {
+        map.removeLayer(ring);
+      } catch {
+        /* ignore */
+      }
+    }, 2800);
+
+    return () => {
+      window.clearTimeout(t);
+      try {
+        map.removeLayer(ring);
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [map, target, focusToken]);
 
   return null;
 }
@@ -403,6 +489,7 @@ type PeerMapMarker = {
   jittered: boolean;
   state?: PeerMapState;
   source?: string;
+  version?: string | null;
 };
 
 type PeerLink = {
@@ -572,12 +659,14 @@ function DefaultView({
       // HUD: top chips / buttons, bottom legend — keep nodes inside safe area
       const padTop = Math.max(64, Math.round(size.y * 0.12));
       const padBottom = Math.max(88, Math.round(size.y * 0.16));
-      const padX = Math.max(32, Math.round(size.x * 0.07));
+      const padLeft = Math.max(32, Math.round(size.x * 0.07));
+      // Extra room on the right for node search panel
+      const padRight = Math.max(48, Math.round(size.x * 0.14));
 
       if (bounds && bounds.isValid()) {
         map.fitBounds(bounds, {
-          paddingTopLeft: L.point(padX, padTop),
-          paddingBottomRight: L.point(padX, padBottom),
+          paddingTopLeft: L.point(padLeft, padTop),
+          paddingBottomRight: L.point(padRight, padBottom),
           maxZoom: FIT_MAX_ZOOM,
           animate: forced,
           duration: forced ? 0.55 : 0,
@@ -1152,6 +1241,8 @@ export default function PeerMap({
   const [booms, setBooms] = useState<BoomEvent[]>([]);
   /** Increment on Refresh to re-apply default setView */
   const [viewToken, setViewToken] = useState(0);
+  /** Increment to re-trigger flyTo + pulse on the focused node */
+  const [focusToken, setFocusToken] = useState(0);
   /**
    * Map display filter:
    * - live (default Lumen): Connected + Live
@@ -1167,6 +1258,8 @@ export default function PeerMap({
   // Reset sensible default when switching Lumen / My Node
   useEffect(() => {
     setMapFilter(nodeMode === "my" ? "connected" : "live");
+    setSelected(null);
+    setFocusToken(0);
   }, [nodeMode]);
 
   /** Refresh peer geo + reset camera to default framed view */
@@ -1190,11 +1283,33 @@ export default function PeerMap({
   /** No peer-IP boom highlight — miner is not a map pin */
   const boomIps = useMemo(() => new Set<string>(), []);
 
-  const handleSelectPeer = useCallback((m: PeerMapMarker) => {
-    setSelected(m);
-  }, []);
-
   const allMarkers = data?.markers ?? EMPTY_MARKERS;
+
+  /** Ensure filter is wide enough for a selected node to appear on the map */
+  const ensureFilterForState = useCallback(
+    (state: PeerMapState | string | undefined | null) => {
+      if (nodeMode === "my") return;
+      const s = normalizeState(state);
+      setMapFilter((prev) => {
+        if (s === "connected") return prev;
+        if (s === "live" && prev === "connected") return "live";
+        if (s === "seen" && prev !== "all") return "all";
+        return prev;
+      });
+    },
+    [nodeMode]
+  );
+
+  const handleSelectPeer = useCallback(
+    (m: PeerMapMarker, opts?: { fly?: boolean }) => {
+      ensureFilterForState(m.state);
+      setSelected(m);
+      if (opts?.fly !== false) {
+        setFocusToken((t) => t + 1);
+      }
+    },
+    [ensureFilterForState]
+  );
 
   /** Apply elegant status filters (Ghost never shown). */
   const peerMarkers = useMemo(() => {
@@ -1207,6 +1322,15 @@ export default function PeerMap({
       return s === "connected" || s === "live" || s === "seen";
     });
   }, [allMarkers, mapFilter]);
+
+  /** Search corpus: all non-ghost mapped nodes (+ me if present) */
+  const searchNodes = useMemo(() => {
+    const list = allMarkers.filter((m) => normalizeState(m.state) !== "ghost");
+    if (data?.me && !list.some((m) => m.id === data.me!.id || m.ip === data.me!.ip)) {
+      return [data.me, ...list];
+    }
+    return list;
+  }, [allMarkers, data?.me]);
 
   const signalLinks = useMemo(() => data?.links ?? [], [data?.links]);
   // Stable identity: IPs only (coords can jitter slightly; geometry updates via redraw)
@@ -1427,16 +1551,19 @@ export default function PeerMap({
             <ClusteredPeersLayer
               markers={peerMarkers}
               boomIps={boomIps}
-              onSelect={handleSelectPeer}
+              onSelect={(m) => handleSelectPeer(m, { fly: false })}
+              focusId={selected?.id}
             />
 
             {data?.me && (
               <MeMarkerLayer
                 me={data.me}
-                onSelect={handleSelectPeer}
+                onSelect={(m) => handleSelectPeer(m, { fly: false })}
                 roleLabel={nodeMode === "my" ? "MY NODE" : "LUMEN NODE"}
               />
             )}
+
+            <FocusNodeLayer target={selected} focusToken={focusToken} />
 
             {/* Boom: 3 pulses on peer + flying notice top→peer */}
             <BoomLayer booms={booms} onDone={dismissBoom} />
@@ -1455,32 +1582,47 @@ export default function PeerMap({
         )}
       </div>
 
-      {/* ── Mobile (< md): only Simulate (left) + Refresh (right) on the map ── */}
-      {!hideControls && (
-        <div className="md:hidden absolute top-0 inset-x-0 z-[40] flex items-start justify-between gap-2 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
-          <button
-            type="button"
-            onClick={simulateBoom}
-            className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono tracking-wider border border-[#FF7A3D]/50 bg-[#0A0A0F]/90 text-[#FF7A3D] shadow-lg backdrop-blur-md active:scale-[0.97]"
-          >
-            <Zap className="w-3.5 h-3.5" /> BOOM
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRefresh()}
-            className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/90 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
-            />
-            REFRESH
-          </button>
-        </div>
-      )}
+      {/* ── Mobile: controls + compact search ── */}
+      <div className="md:hidden absolute top-0 inset-x-0 z-[40] pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] space-y-2">
+        {!hideControls && (
+          <div className="flex items-start justify-between gap-2">
+            <button
+              type="button"
+              onClick={simulateBoom}
+              className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono tracking-wider border border-[#FF7A3D]/50 bg-[#0A0A0F]/90 text-[#FF7A3D] shadow-lg backdrop-blur-md active:scale-[0.97]"
+            >
+              <Zap className="w-3.5 h-3.5" /> BOOM
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleRefresh()}
+              className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/90 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
+              />
+              REFRESH
+            </button>
+          </div>
+        )}
+        <NodeMapSearch
+          nodes={searchNodes}
+          selectedId={selected?.id}
+          compact
+          onSelect={(n) => {
+            const full =
+              allMarkers.find((m) => m.id === n.id) ||
+              (data?.me && data.me.id === n.id ? data.me : null) ||
+              (n as PeerMapMarker);
+            handleSelectPeer(full, { fly: true });
+          }}
+          className="w-full"
+        />
+      </div>
 
-      {/* ── Desktop: full HUD on map ── */}
-      <div className="hidden md:flex absolute top-4 left-4 right-4 z-[40] flex-wrap items-start justify-between gap-3 pointer-events-none">
-        <div className="glass rounded-2xl px-4 py-3.5 border border-white/10 pointer-events-auto max-w-[320px]">
+      {/* ── Desktop: left stats · right search + controls ── */}
+      <div className="hidden md:flex absolute top-4 left-4 right-4 z-[40] items-start justify-between gap-4 pointer-events-none">
+        <div className="glass rounded-2xl px-4 py-3.5 border border-white/10 pointer-events-auto max-w-[320px] shrink-0">
           <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[3px] mb-2.5">
             <Globe2 className="w-3.5 h-3.5" /> ERGO NETWORK MAP
           </div>
@@ -1633,27 +1775,42 @@ export default function PeerMap({
           </div>
         </div>
 
-        {!hideControls && (
-          <div className="flex flex-col gap-2 pointer-events-auto">
-            <button
-              type="button"
-              onClick={() => void handleRefresh()}
-              className="glass px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-[#FF7A3D]/40 flex items-center gap-2"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
-              />
-              REFRESH
-            </button>
-            <button
-              type="button"
-              onClick={simulateBoom}
-              className="glass px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-[#FF7A3D]/35 bg-[#FF7A3D]/10 hover:bg-[#FF7A3D]/20 text-[#FF7A3D] flex items-center gap-2"
-            >
-              <Zap className="w-3.5 h-3.5" /> SIMULATE BOOM
-            </button>
-          </div>
-        )}
+        {/* Right column: search + actions — clean, premium */}
+        <div className="flex flex-col items-stretch gap-2 w-[min(320px,34vw)] shrink-0 pointer-events-none">
+          <NodeMapSearch
+            nodes={searchNodes}
+            selectedId={selected?.id}
+            onSelect={(n) => {
+              const full =
+                allMarkers.find((m) => m.id === n.id) ||
+                (data?.me && data.me.id === n.id ? data.me : null) ||
+                (n as PeerMapMarker);
+              handleSelectPeer(full, { fly: true });
+            }}
+            className="w-full"
+          />
+          {!hideControls && (
+            <div className="flex gap-2 pointer-events-auto justify-end">
+              <button
+                type="button"
+                onClick={() => void handleRefresh()}
+                className="glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-white/10 hover:border-[#FF7A3D]/40 flex items-center gap-1.5 text-[#E8E8F0]"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
+                />
+                REFRESH
+              </button>
+              <button
+                type="button"
+                onClick={simulateBoom}
+                className="glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-[#FF7A3D]/35 bg-[#FF7A3D]/10 hover:bg-[#FF7A3D]/20 text-[#FF7A3D] flex items-center gap-1.5"
+              >
+                <Zap className="w-3.5 h-3.5" /> BOOM
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Top Regions: desktop overlay bottom-left */}
@@ -1663,17 +1820,18 @@ export default function PeerMap({
         </div>
       )}
 
-      {/* Selected peer: desktop overlay only (mobile renders below map) */}
+      {/* Selected peer: desktop — bottom-right under search column */}
       <AnimatePresence>
         {selected && (
           <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            className="hidden md:block absolute bottom-4 right-4 z-[40] glass rounded-2xl px-5 py-4 border border-white/10 min-w-[220px] max-w-[300px]"
+            initial={{ opacity: 0, y: 10, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="hidden md:block absolute bottom-4 right-4 z-[40] glass rounded-2xl px-5 py-4 border border-white/10 min-w-[240px] max-w-[min(320px,34vw)] pointer-events-auto shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
           >
             <div className="flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
                 <div
                   className="font-mono text-[10px] tracking-[2px] mb-1 flex items-center gap-1"
                   style={{
@@ -1697,11 +1855,16 @@ export default function PeerMap({
                   {selected.ip}
                   {selected.port ? `:${selected.port}` : ""}
                 </div>
-                <div className="text-xs mt-2">
+                <div className="text-xs mt-2 text-[#E8E8F0]/90">
                   {[selected.city, selected.country]
                     .filter(Boolean)
                     .join(", ") || "Unknown location"}
                 </div>
+                {shortVersion(selected.version) && (
+                  <div className="text-[10px] font-mono text-[#00E5FF]/75 mt-1">
+                    v{shortVersion(selected.version)}
+                  </div>
+                )}
                 <div className="text-[10px] font-mono text-[#A0A0B0] mt-1">
                   {selected.id !== "me" && (
                     <>
@@ -1746,7 +1909,7 @@ export default function PeerMap({
               <button
                 type="button"
                 onClick={() => setSelected(null)}
-                className="text-[#A0A0B0] hover:text-white text-xs font-mono"
+                className="text-[#A0A0B0] hover:text-white text-xs font-mono shrink-0"
               >
                 CLOSE
               </button>

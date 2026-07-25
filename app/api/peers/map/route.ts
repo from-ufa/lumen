@@ -39,6 +39,8 @@ export type PeerMapMarker = {
   jittered: boolean;
   state: PeerMapState;
   source?: string;
+  /** Ergo node appVersion from /info when known */
+  version?: string | null;
 };
 
 export type PeerLink = {
@@ -383,6 +385,7 @@ function buildLumenMap(opts: {
       jittered: stack > 0,
       state,
       source: n.sources?.[0],
+      version: n.infoVersion || null,
     });
   }
 
