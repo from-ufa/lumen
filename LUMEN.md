@@ -532,12 +532,14 @@ node scripts/watch-unknown-miners.mjs --limit=100 --telegram
 - Output: `data/unknown-miners.json` (gitignored) — top unknowns, counts, sample heights, paste-ready snippets
 - Reads known addresses from `app/lib/mining-pools.ts` (no rebuild required)
 
-**Cron example (not installed — enable only after approval):**
+**Cron (root, enabled):** every 4 hours at :15 → Telegram + log.
 
 ```cron
-# Every 4 hours at :15
 15 */4 * * * cd /home/lumen && /usr/bin/node scripts/watch-unknown-miners.mjs --telegram >> /var/log/lumen-unknown-miners.log 2>&1
 ```
+
+- Log: `/var/log/lumen-unknown-miners.log`
+- Disable: `crontab -e` and remove the line (or `crontab -l | grep -v watch-unknown-miners | crontab -`)
 
 Recent commits live on `main` (`git log --oneline -20`).
 
