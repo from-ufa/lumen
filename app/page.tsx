@@ -432,20 +432,10 @@ export default function LumenDashboard() {
           </div>
 
           {/*
-            Mobile: one full-width row — SHARE · SETTINGS · refresh · LIVE
-            Desktop: status + mode + controls (unchanged flow)
+            Mobile: one full-width equal row — SHARE · SETTINGS · refresh · LIVE
+            Desktop: flex row with status + mode + controls
           */}
-          <div
-            className="
-              grid grid-cols-4 gap-1.5 w-full
-              sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:justify-end sm:w-auto
-              [&_button]:min-h-[2.75rem] sm:[&_button]:min-h-0
-              [&_button]:w-full sm:[&_button]:w-auto
-              [&_button]:justify-center
-              [&_button]:px-1.5 sm:[&_button]:px-4
-              [&_button]:text-[10px] sm:[&_button]:text-xs
-            "
-          >
+          <div className="w-full sm:w-auto sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:justify-end">
             {/* Status — desktop only */}
             <div
               className={`hidden sm:flex items-center gap-2 px-4 lg:px-5 py-2 rounded-3xl text-sm font-mono tracking-widest border ${
@@ -497,62 +487,79 @@ export default function LumenDashboard() {
               )}
             </div>
 
-            <ShareCard
-              nodeInfo={nodeInfo}
-              avgBlockTime={avgBlockTime}
-              isOnline={isOnline}
-              publicMode={publicMode}
-              mempoolSize={mempoolSize}
-              onOpenChange={setShareModalOpen}
-            />
-
-            <ConnectionSettings
-              isOnline={isOnline}
-              onReconnect={handleReconnect}
-              onOpenChange={setSettingsModalOpen}
-              nodeMode={nodeMode}
-              setNodeMode={setNodeMode}
-              bridgeToken={bridgeToken}
-              setBridgeToken={setBridgeToken}
-              bridgeStatus={bridgeStatus}
-              bridgeStatusLoading={bridgeStatusLoading}
-              onRefreshBridgeStatus={onRefreshBridgeStatus}
-            />
-
-            <button
-              type="button"
-              onClick={handleReconnect}
-              className="flex items-center gap-1.5 rounded-2xl glass border border-white/10 hover:bg-white/5 transition-all active:scale-[0.98] text-[#E8E8F0] font-mono tracking-wider"
-              title="Refresh data"
-              aria-label="Refresh data"
-            >
-              <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span className="sm:hidden">SYNC</span>
-            </button>
-
-            {/* LIVE — mobile only (desktop has full status chip) */}
+            {/* Equal cells on mobile; natural width on desktop */}
             <div
-              className={`sm:hidden flex items-center justify-center gap-1 min-h-[2.75rem] px-1.5 rounded-2xl text-[10px] font-mono tracking-wider border ${
-                isOnline
-                  ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]"
-                  : "border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]"
-              }`}
-              title={isOnline ? "Node live" : "Node offline"}
+              className="
+                grid grid-cols-4 gap-1.5 w-full
+                sm:contents
+                [&_button]:h-11 sm:[&_button]:h-auto
+                [&_button]:w-full sm:[&_button]:w-auto
+                [&_button]:justify-center
+                [&_button]:px-1 sm:[&_button]:px-4
+                [&_button]:text-[10px] sm:[&_button]:text-xs
+                [&_button]:box-border
+              "
             >
+              <div className="min-w-0 sm:contents">
+                <ShareCard
+                  nodeInfo={nodeInfo}
+                  avgBlockTime={avgBlockTime}
+                  isOnline={isOnline}
+                  publicMode={publicMode}
+                  mempoolSize={mempoolSize}
+                  onOpenChange={setShareModalOpen}
+                />
+              </div>
+              <div className="min-w-0 sm:contents">
+                <ConnectionSettings
+                  isOnline={isOnline}
+                  onReconnect={handleReconnect}
+                  onOpenChange={setSettingsModalOpen}
+                  nodeMode={nodeMode}
+                  setNodeMode={setNodeMode}
+                  bridgeToken={bridgeToken}
+                  setBridgeToken={setBridgeToken}
+                  bridgeStatus={bridgeStatus}
+                  bridgeStatusLoading={bridgeStatusLoading}
+                  onRefreshBridgeStatus={onRefreshBridgeStatus}
+                />
+              </div>
+              <div className="min-w-0 sm:contents">
+                <button
+                  type="button"
+                  onClick={handleReconnect}
+                  className="flex items-center gap-1 rounded-2xl glass border border-white/10 hover:bg-white/5 transition-all active:scale-[0.98] text-[#E8E8F0] font-mono tracking-wider"
+                  title="Refresh data"
+                  aria-label="Refresh data"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="sm:hidden">SYNC</span>
+                </button>
+              </div>
+              {/* LIVE — mobile only (desktop has full status chip above) */}
               <div
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                  isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                className={`sm:hidden flex items-center justify-center gap-1 h-11 px-1 rounded-2xl text-[10px] font-mono tracking-wider border box-border ${
+                  isOnline
+                    ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]"
+                    : "border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]"
                 }`}
-              />
-              {nodeMode === "my"
-                ? isOnline
-                  ? "MY"
-                  : bridgeOnline
-                    ? "BR"
-                    : "OFF"
-                : isOnline
-                  ? "LIVE"
-                  : "OFF"}
+                title={isOnline ? "Node live" : "Node offline"}
+              >
+                <div
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                  }`}
+                />
+                {nodeMode === "my"
+                  ? isOnline
+                    ? "MY"
+                    : bridgeOnline
+                      ? "BR"
+                      : "OFF"
+                  : isOnline
+                    ? "LIVE"
+                    : "OFF"}
+              </div>
             </div>
           </div>
         </div>
