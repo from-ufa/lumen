@@ -126,6 +126,26 @@ body {
   filter: drop-shadow(0 0 4px currentColor);
 }
 
+/* Consensus Singularity stage */
+.oracle-singularity {
+  width: 100%;
+  height: min(68dvh, 560px);
+  min-height: 360px;
+  max-height: 720px;
+}
+@media (min-width: 640px) {
+  .oracle-singularity {
+    height: min(72vh, 680px);
+    min-height: 480px;
+  }
+}
+@media (min-width: 1024px) {
+  .oracle-singularity {
+    min-height: 520px;
+    height: min(74vh, 720px);
+  }
+}
+
 .status-dot {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

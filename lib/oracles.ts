@@ -91,9 +91,18 @@ export interface OracleFeedSnapshot {
   /** Posted oracle boxes near tip (from local metrics, if available) */
   activeOracles: number | null;
   totalOracles: number | null;
+  /** Individual oracle operators (from local metrics when available) */
+  nodes: OracleNodeInfo[];
   history: OracleHistoryPoint[];
   source: "explorer" | "metrics" | "none";
   error?: string;
+}
+
+export interface OracleNodeInfo {
+  address: string;
+  /** Last posted box height */
+  height: number | null;
+  status: OracleStatus;
 }
 
 export interface OraclesResponse {
@@ -274,11 +283,19 @@ async function fetchPoolBox(poolNft: string): Promise<{
   };
 }
 
-/** Optional: active posted oracles near chain tip from local metrics */
+/**
+ * Optional: parse local oracle-core Prometheus metrics for per-operator health.
+ * Used by Consensus Singularity to place real gravitational nodes.
+ */
 async function fetchMetricsHealth(
   port: number | undefined,
-  tipHeight: number | null
-): Promise<{ active: number; total: number } | null> {
+  tipHeight: number | null,
+  epochLength: number
+): Promise<{
+  active: number;
+  total: number;
+  nodes: OracleNodeInfo[];
+} | null> {
   if (!port) return null;
   try {
     const ctrl = new AbortController();
@@ -290,24 +307,34 @@ async function fetchMetricsHealth(
     clearTimeout(t);
     if (!res.ok) return null;
     const text = await res.text();
-    // Count active posted oracles within ~2 epochs of tip
+    // ergo_oracle_active_oracle_box_height{box_type="posted",oracle_address="9…"} 1836992
     const re =
-      /ergo_oracle_active_oracle_box_height\{box_type="posted"[^}]*\}\s+(\d+)/g;
+      /ergo_oracle_active_oracle_box_height\{box_type="posted",oracle_address="([^"]+)"\}\s+(\d+)/g;
     let m: RegExpExecArray | null;
-    let total = 0;
-    let active = 0;
-    const window = tipHeight != null ? 40 : 0;
+    const nodes: OracleNodeInfo[] = [];
     while ((m = re.exec(text))) {
-      total++;
-      const h = Number(m[1]);
-      if (tipHeight != null && Number.isFinite(h)) {
-        if (tipHeight - h <= window) active++;
-      } else {
-        active++;
-      }
+      const address = m[1];
+      const height = Number(m[2]);
+      const age =
+        tipHeight != null && Number.isFinite(height)
+          ? Math.max(0, tipHeight - height)
+          : null;
+      let status: OracleStatus = "live";
+      if (age == null) status = "live";
+      else if (age <= epochLength * 2) status = "live";
+      else if (age <= epochLength * 10) status = "stale";
+      else status = "offline";
+      nodes.push({
+        address,
+        height: Number.isFinite(height) ? height : null,
+        status,
+      });
     }
-    if (total === 0) return null;
-    return { active, total };
+    if (nodes.length === 0) return null;
+    // Stable order for deterministic 3D placement
+    nodes.sort((a, b) => a.address.localeCompare(b.address));
+    const active = nodes.filter((n) => n.status === "live").length;
+    return { active, total: nodes.length, nodes };
   } catch {
     return null;
   }
@@ -373,6 +400,7 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
         explorerUrl: `https://explorer.ergoplatform.com/en/token/${cfg.poolNft}`,
         activeOracles: null,
         totalOracles: null,
+        nodes: [],
         history: historyFile[cfg.id] ?? [],
         source: "none",
       };
@@ -403,7 +431,11 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
         const hist = pushHistory(historyFile, cfg.id, point);
         if (hist !== base.history) historyDirty = true;
 
-        const health = await fetchMetricsHealth(cfg.metricsPort, tipHeight);
+        const health = await fetchMetricsHealth(
+          cfg.metricsPort,
+          tipHeight,
+          cfg.epochLength
+        );
 
         return {
           ...base,
@@ -424,6 +456,7 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
             : base.explorerUrl,
           activeOracles: health?.active ?? null,
           totalOracles: health?.total ?? null,
+          nodes: health?.nodes ?? [],
           history: hist,
           source: "explorer" as const,
         };

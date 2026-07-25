@@ -76,7 +76,7 @@ It shows:
 - **Mempool** sample + SigmaSpace links
 - **AVG BLOCK TIME** from `GET /blocks/lastHeaders/100`
 - **Share My Node** card (QR, copy link/text, PNG)
-- **Oracles** (`/oracles`) — premium **ERG/USD** + **ERG/XAU** network feeds (on-chain pool boxes)
+- **Oracles** (`/oracles`) — **Consensus Singularity** 3D visualizer + **ERG/USD** / **ERG/XAU** feeds (on-chain pool boxes)
 - **Public Mode** — optional remote access with a password
 - **PWA** manifest/icons (no service worker)
 - **Lumen Bridge** — connect a *remote* user node without inbound ports
@@ -107,7 +107,7 @@ Does **not** control `ergonode` / `oracle-core` units. Only **allowlisted GET** 
 /home/lumen/
 ├── app/
 │   ├── page.tsx                 # Dashboard (modes, queries, layout)
-│   ├── oracles/page.tsx         # Oracle MVP (ERG/USD + ERG/XAU)
+│   ├── oracles/page.tsx         # Consensus Singularity + ERG/USD · ERG/XAU
 │   ├── proxy.ts                 # → root proxy.ts (Next 16 network proxy)
 │   ├── components/              # UI: settings, map, 3D, metrics, share, oracles…
 │   ├── lib/                     # node-api, blocks, copy-text, bridge-server client
@@ -519,6 +519,7 @@ Do not:
 | 2026-07-25 | **Premium node search:** right-side live search (name / IP / country / version), fly-to + highlight |
 | 2026-07-25 | **systemd rename:** primary unit `aether.service` → **`lumen.service`** (`Alias=aether.service` for compat); bind remains `127.0.0.1:3000` |
 | 2026-07-26 | **Oracle MVP:** `/oracles` — premium ERG/USD + ERG/XAU cards (live/stale/offline, sparkline, epoch); API `/api/oracles` |
+| 2026-07-26 | **Consensus Singularity:** R3F oracle visualizer — gravity nodes, data comets, epoch rings, price flash; feed switch USD/XAU |
 
 ### Block miner attribution (honest)
 
