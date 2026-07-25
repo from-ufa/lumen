@@ -7,6 +7,7 @@ import {
   lookupGeo,
   mergePeerList,
   recomputeStats,
+  resolveCatalogNodeState,
   type NetworkCatalog,
   type PeerMapState,
 } from "@/lib/network-peers";
@@ -352,10 +353,7 @@ function buildLumenMap(opts: {
     }
 
     const conn = connectedByIp.get(n.ip);
-    let state: PeerMapState = "stale";
-    if (conn) state = "connected";
-    else if (n.reachable === true) state = "reachable";
-    else state = "stale";
+    const state: PeerMapState = resolveCatalogNodeState(n, !!conn);
 
     const cell = `${Number(lat).toFixed(2)},${Number(lon).toFixed(2)}`;
     const stack = byCell.get(cell) || 0;
@@ -460,6 +458,11 @@ function buildLumenMap(opts: {
     countries[c] = (countries[c] || 0) + 1;
   }
 
+  const connectedMapped = markers.filter((m) => m.state === "connected").length;
+  const liveMapped = markers.filter((m) => m.state === "live").length;
+  const seenMapped = markers.filter((m) => m.state === "seen").length;
+  const ghostMapped = markers.filter((m) => m.state === "ghost").length;
+
   return {
     markers,
     me,
@@ -468,8 +471,13 @@ function buildLumenMap(opts: {
     mapped: markers.length,
     networkTotal: Object.keys(catalog.nodes).length,
     networkMapped: markers.length,
-    connectedMapped: markers.filter((m) => m.state === "connected").length,
-    reachableMapped: markers.filter((m) => m.state === "reachable").length,
+    connectedMapped,
+    /** live only (not counting connected) */
+    liveMapped,
+    /** @deprecated alias — connected + live */
+    reachableMapped: liveMapped,
+    seenMapped,
+    ghostMapped,
     unmapped,
     countries,
     catalogUpdatedAt: catalog.updatedAt || null,

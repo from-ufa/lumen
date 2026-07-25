@@ -24,6 +24,10 @@ export type NetworkNodeRecord = {
   reachable: boolean | null;
   lastReachableAt: number | null;
   lastProbedAt: number | null;
+  /** Optional enrichment from REST /info */
+  infoHeight?: number | null;
+  infoVersion?: string | null;
+  lastInfoAt?: number | null;
   sources: string[];
   firstSeenAt: number;
   lastSeenAt: number;
@@ -42,7 +46,65 @@ export type NetworkCatalog = {
   };
 };
 
-export type PeerMapState = "connected" | "reachable" | "stale";
+/**
+ * Map node status (Lumen Node catalog + live peers):
+ * - connected — currently linked to the active data node (Lumen or My Node)
+ * - live      — answering now (TCP open and/or recent REST /info)
+ * - seen      — observed recently, not answering
+ * - ghost     — not seen for a long time (usually hidden)
+ *
+ * Legacy aliases still accepted when reading older payloads:
+ *   reachable → live, stale → seen
+ */
+export type PeerMapState = "connected" | "live" | "seen" | "ghost";
+
+/** @deprecated use "live" */
+export type PeerMapStateLegacy = "reachable" | "stale";
+
+/** Live if reachable flag or /info / probe within this window */
+export const LIVE_FRESH_MS = 2 * 60 * 60 * 1000; // 2h
+/** Seen if last catalog observation within this window */
+export const SEEN_FRESH_MS = 7 * 24 * 60 * 60 * 1000; // 7d
+
+export function normalizePeerState(
+  s: string | undefined | null
+): PeerMapState {
+  if (s === "connected" || s === "live" || s === "seen" || s === "ghost") {
+    return s;
+  }
+  if (s === "reachable") return "live";
+  if (s === "stale") return "seen";
+  return "seen";
+}
+
+/** Derive status from catalog row + optional live connection. */
+export function resolveCatalogNodeState(
+  n: NetworkNodeRecord,
+  isConnected: boolean,
+  now = Date.now()
+): PeerMapState {
+  if (isConnected) return "connected";
+
+  const lastLive = Math.max(
+    Number(n.lastReachableAt) || 0,
+    Number(n.lastInfoAt) || 0,
+    n.reachable === true ? Number(n.lastProbedAt) || 0 : 0
+  );
+  if (n.reachable === true || (lastLive > 0 && now - lastLive < LIVE_FRESH_MS)) {
+    return "live";
+  }
+
+  const lastSeen = Math.max(
+    Number(n.lastSeenAt) || 0,
+    Number(n.lastMessage) || 0,
+    Number(n.lastHandshake) || 0,
+    Number(n.firstSeenAt) || 0
+  );
+  if (lastSeen > 0 && now - lastSeen < SEEN_FRESH_MS) {
+    return "seen";
+  }
+  return "ghost";
+}
 
 export function isPrivateIp(ip: string): boolean {
   if (

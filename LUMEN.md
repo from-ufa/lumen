@@ -504,6 +504,7 @@ Do not:
 | 2026-07-24 | Bridge agent assets from **GitHub** (Docker `git#main:bridge`, raw install.sh); detailed root README |
 | 2026-07-25 | **Honest block miner:** Explorer API `miner.address` + pool map; boom no longer fakes a peer as miner |
 | 2026-07-25 | **Multi-seed map discovery:** `network-seeds.json` + open-REST scan; catalog ~443 → ~800+ nodes |
+| 2026-07-25 | **Map statuses + filters:** Connected / Live / Seen / Ghost; chips Live · Linked · All |
 
 ### Block miner attribution (honest)
 
@@ -538,6 +539,18 @@ node scripts/crawl-network.mjs
 Tune: `LUMEN_MAX_FANOUT`, `LUMEN_SEED_CONCURRENCY`, `LUMEN_OPEN_REST_MAX`, `LUMEN_CRAWL_SKIP_PROBE=1`.
 
 Each node keeps `sources[]` (e.g. `seed:eutxo:connected`, `open-rest:1.2.3.4`).
+
+**Map statuses (Lumen Node):**
+
+| Status | Meaning | Default filter |
+|--------|---------|----------------|
+| **Connected** | Linked to the active node right now | shown in Live + Linked |
+| **Live** | Answering (TCP / recent REST) | shown in Live |
+| **Seen** | Seen recently, not answering | only in All |
+| **Ghost** | Stale for 7d+ | always hidden |
+
+Filter chips on the map: **Live** (default) · **Linked** · **All**.  
+My Node mode defaults to **Linked** (connected peers only). Visual hierarchy: Connected brightest → Live → Seen dim.
 
 ### Unknown miners watcher
 

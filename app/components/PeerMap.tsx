@@ -24,31 +24,75 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-type PeerMapState = "connected" | "reachable" | "stale";
+/** connected | live | seen | ghost (+ legacy reachable/stale normalized) */
+type PeerMapState = "connected" | "live" | "seen" | "ghost";
 
-/** DivIcon — linked cyan, online blue, offline red, boom orange. */
+type MapFilter = "live" | "connected" | "all";
+
+function normalizeState(s?: string | null): PeerMapState {
+  if (s === "connected" || s === "live" || s === "seen" || s === "ghost") {
+    return s;
+  }
+  if (s === "reachable") return "live";
+  if (s === "stale") return "seen";
+  return "seen";
+}
+
+function stateMeta(state: PeerMapState): {
+  color: string;
+  label: string;
+  short: string;
+} {
+  switch (state) {
+    case "connected":
+      return { color: "#00E5FF", label: "Connected", short: "CONNECTED" };
+    case "live":
+      return { color: "#38BDF8", label: "Live", short: "LIVE" };
+    case "seen":
+      return { color: "#94A3B8", label: "Seen", short: "SEEN" };
+    case "ghost":
+    default:
+      return { color: "#475569", label: "Ghost", short: "GHOST" };
+  }
+}
+
+/** DivIcon — premium hierarchy by status. */
 function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
-  // Offline (known, not answering) — red so status is obvious
-  let color = "#F87171";
-  let size = 10;
-  let opacity = 0.72;
-  let glow = "0 0 6px rgba(248,113,113,0.45)";
+  let color = "#475569";
+  let size = 8;
+  let opacity = 0.4;
+  let glow = "none";
+  let ring = "1.5px solid rgba(10,10,15,0.85)";
 
   if (isBoom) {
     color = "#FF7A3D";
     size = 16;
     opacity = 0.95;
     glow = "0 0 14px rgba(255,122,61,0.85)";
+    ring = "2px solid rgba(10,10,15,0.9)";
   } else if (state === "connected") {
     color = "#00E5FF";
-    size = 13;
-    opacity = 0.96;
-    glow = "0 0 12px rgba(0,229,255,0.85)";
-  } else if (state === "reachable") {
+    size = 14;
+    opacity = 1;
+    glow = "0 0 14px rgba(0,229,255,0.9), 0 0 28px rgba(0,229,255,0.35)";
+    ring = "2px solid rgba(10,10,15,0.95)";
+  } else if (state === "live") {
     color = "#38BDF8";
     size = 11;
-    opacity = 0.78;
-    glow = "0 0 8px rgba(56,189,248,0.45)";
+    opacity = 0.88;
+    glow = "0 0 10px rgba(56,189,248,0.55)";
+    ring = "2px solid rgba(10,10,15,0.9)";
+  } else if (state === "seen") {
+    color = "#64748B";
+    size = 9;
+    opacity = 0.55;
+    glow = "0 0 4px rgba(100,116,139,0.25)";
+  } else {
+    // ghost
+    color = "#334155";
+    size = 7;
+    opacity = 0.35;
+    glow = "none";
   }
 
   const hit = 28;
@@ -61,7 +105,7 @@ function peerDivIcon(state: PeerMapState, isBoom: boolean): L.DivIcon {
     "><div style="
       width:${size}px;height:${size}px;border-radius:50%;
       background:${color};
-      border:2px solid rgba(10,10,15,0.9);
+      border:${ring};
       box-shadow:${glow};
       opacity:${opacity};
       pointer-events:none;
@@ -113,37 +157,20 @@ function peerPopupHtml(
 ): string {
   const loc =
     [m.city, m.country].filter(Boolean).join(", ") || "Unknown location";
-  const state = m.state || "stale";
-  const statusColor =
-    state === "connected"
-      ? "#00E5FF"
-      : state === "reachable"
-        ? "#38BDF8"
-        : "#F87171";
-  const statusLabel =
-    state === "connected"
-      ? "ONLINE · MY PEER"
-      : state === "reachable"
-        ? "ONLINE"
-        : "OFFLINE";
-  const title = escapeHtml(
-    m.name || (isMe ? meRoleLabel : "Peer")
-  );
+  const state = normalizeState(m.state);
+  const meta = stateMeta(state);
+  const title = escapeHtml(m.name || (isMe ? meRoleLabel : "Peer"));
   const addr = escapeHtml(m.ip) + (m.port ? `:${escapeHtml(m.port)}` : "");
-  const roleColor = isMe
-    ? "#FF7A3D"
-    : state === "connected"
-      ? "#00E5FF"
-      : state === "reachable"
-        ? "#38BDF8"
-        : "#F87171";
+  const roleColor = isMe ? "#FF7A3D" : meta.color;
   const roleLine = isMe
     ? escapeHtml(meRoleLabel)
     : state === "connected"
-      ? "MY PEER"
-      : state === "reachable"
-        ? "ONLINE NODE"
-        : "OFFLINE NODE";
+      ? "CONNECTED · MY PEER"
+      : state === "live"
+        ? "LIVE NODE"
+        : state === "seen"
+          ? "SEEN · NOT ANSWERING"
+          : "GHOST";
   return `<div class="lumen-peer-popup" style="min-width:180px;max-width:260px;font-size:12px;line-height:1.4;color:#E8E8F0">
     <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.15em;color:${roleColor};margin-bottom:6px">${roleLine}</div>
     <div style="font-weight:600;font-size:14px;color:#fff;word-break:break-all">${title}</div>
@@ -154,7 +181,7 @@ function peerPopupHtml(
         ? `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#A0A0B0;margin-top:6px">Active data source</div>`
         : `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#A0A0B0;margin-top:6px">${escapeHtml(
             m.connectionType || "—"
-          )} · <span style="color:${statusColor}">${statusLabel}</span></div>`
+          )} · <span style="color:${meta.color}">${meta.short}</span></div>`
     }
   </div>`;
 }
@@ -192,22 +219,25 @@ function ClusteredPeersLayer({
     });
 
     for (const m of markers) {
-      const state: PeerMapState = m.state || "stale";
+      const state = normalizeState(m.state);
       const isBoom = boomIps.has(m.ip);
+      const z =
+        state === "connected"
+          ? 600
+          : state === "live"
+            ? 300
+            : state === "seen"
+              ? 100
+              : 0;
       const marker = L.marker([m.lat, m.lon], {
         icon: peerDivIcon(state, isBoom),
         riseOnHover: true,
         keyboard: true,
         title: m.name || m.ip,
-        zIndexOffset: state === "connected" ? 500 : 0,
+        zIndexOffset: z,
       });
 
-      const statusTip =
-        state === "connected"
-          ? "MY PEER"
-          : state === "reachable"
-            ? "ONLINE"
-            : "OFFLINE";
+      const statusTip = stateMeta(state).short;
       const tip =
         `${m.name || m.ip}` +
         (m.city || m.country
@@ -393,7 +423,10 @@ type MapPayload = {
   networkTotal?: number;
   networkMapped?: number;
   connectedMapped?: number;
+  liveMapped?: number;
   reachableMapped?: number;
+  seenMapped?: number;
+  ghostMapped?: number;
   unmapped: number;
   countries: Record<string, number>;
   catalogUpdatedAt?: number | null;
@@ -469,9 +502,10 @@ function boundsForMapView(
 
   if (me) push(me.lat, me.lon);
 
-  const linkedOrLive = markers.filter(
-    (m) => m.state === "connected" || m.state === "reachable"
-  );
+  const linkedOrLive = markers.filter((m) => {
+    const s = normalizeState(m.state);
+    return s === "connected" || s === "live";
+  });
   const pool =
     linkedOrLive.length >= 3 ? linkedOrLive : markers.length ? markers : [];
 
@@ -1110,8 +1144,22 @@ export default function PeerMap({
   const [booms, setBooms] = useState<BoomEvent[]>([]);
   /** Increment on Refresh to re-apply default setView */
   const [viewToken, setViewToken] = useState(0);
+  /**
+   * Map display filter:
+   * - live (default Lumen): Connected + Live
+   * - connected: only peers linked to the active node
+   * - all: + Seen (Ghost still hidden)
+   */
+  const [mapFilter, setMapFilter] = useState<MapFilter>(
+    nodeMode === "my" ? "connected" : "live"
+  );
   const lastHeightRef = useRef<number>(0);
   const bootstrapped = useRef(false);
+
+  // Reset sensible default when switching Lumen / My Node
+  useEffect(() => {
+    setMapFilter(nodeMode === "my" ? "connected" : "live");
+  }, [nodeMode]);
 
   /** Refresh peer geo + reset camera to default framed view */
   const handleRefresh = useCallback(async () => {
@@ -1138,8 +1186,20 @@ export default function PeerMap({
     setSelected(m);
   }, []);
 
-  // Stable list reference for native layer (rebuild when ids/geo change)
-  const peerMarkers = data?.markers ?? EMPTY_MARKERS;
+  const allMarkers = data?.markers ?? EMPTY_MARKERS;
+
+  /** Apply elegant status filters (Ghost never shown). */
+  const peerMarkers = useMemo(() => {
+    return allMarkers.filter((m) => {
+      const s = normalizeState(m.state);
+      if (s === "ghost") return false;
+      if (mapFilter === "connected") return s === "connected";
+      if (mapFilter === "live") return s === "connected" || s === "live";
+      // all: connected + live + seen
+      return s === "connected" || s === "live" || s === "seen";
+    });
+  }, [allMarkers, mapFilter]);
+
   const signalLinks = useMemo(() => data?.links ?? [], [data?.links]);
   // Stable identity: IPs only (coords can jitter slightly; geometry updates via redraw)
   const signalLinksKey = useMemo(
@@ -1151,16 +1211,39 @@ export default function PeerMap({
     [signalLinks]
   );
 
-  /** Clear counts for the map legend card */
+  /** Counts from full catalog (not just filtered view) */
   const mapStats = useMemo(() => {
-    const onMap = data?.networkMapped ?? data?.mapped ?? 0;
-    const myPeers = data?.connectedMapped ?? signalLinks.length;
-    const onlineOther = data?.reachableMapped ?? 0;
-    // My peers are online too
-    const online = myPeers + onlineOther;
-    const offline = Math.max(0, onMap - online);
-    return { onMap, myPeers, online, onlineOther, offline };
-  }, [data, signalLinks.length]);
+    const markers = allMarkers;
+    let connected = 0;
+    let live = 0;
+    let seen = 0;
+    let ghost = 0;
+    for (const m of markers) {
+      const s = normalizeState(m.state);
+      if (s === "connected") connected++;
+      else if (s === "live") live++;
+      else if (s === "seen") seen++;
+      else ghost++;
+    }
+    // Prefer API counts when present
+    connected = data?.connectedMapped ?? connected;
+    live = data?.liveMapped ?? data?.reachableMapped ?? live;
+    seen = data?.seenMapped ?? seen;
+    ghost = data?.ghostMapped ?? ghost;
+    const onMap = connected + live + seen; // default visible pool
+    const catalogTotal = data?.networkMapped ?? data?.mapped ?? markers.length;
+    return {
+      catalogTotal,
+      onMap,
+      connected,
+      live,
+      seen,
+      ghost,
+      showing: peerMarkers.length,
+      myPeers: connected,
+      online: connected + live,
+    };
+  }, [allMarkers, data, peerMarkers.length]);
 
   /**
    * Visual epicenter for boom pulses — map "you" pin if known, else geometric
@@ -1387,39 +1470,62 @@ export default function PeerMap({
             <Globe2 className="w-3.5 h-3.5" /> ERGO NETWORK MAP
           </div>
 
+          {/* Filter chips */}
+          <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
+            {(
+              [
+                { id: "live" as const, label: "Live" },
+                { id: "connected" as const, label: "Linked" },
+                { id: "all" as const, label: "All" },
+              ] as const
+            ).map((f) => {
+              const active = mapFilter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setMapFilter(f.id)}
+                  className={`flex-1 px-2 py-1.5 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
+                    active
+                      ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
+                      : "text-[#A0A0B0] hover:text-[#E8E8F0]"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Numbers */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-3">
             <div>
               <div className="font-mono text-xl tabular-nums text-white leading-none">
-                {mapStats.onMap}
+                {mapStats.showing}
               </div>
-              <div className="text-[10px] text-[#A0A0B0] mt-0.5">
-                nodes on map
-              </div>
+              <div className="text-[10px] text-[#A0A0B0] mt-0.5">showing</div>
             </div>
             <div>
               <div className="font-mono text-xl tabular-nums text-[#00E5FF] leading-none">
-                {mapStats.myPeers}
+                {mapStats.connected}
               </div>
-              <div className="text-[10px] text-[#A0A0B0] mt-0.5">
-                my peers · lines
-              </div>
+              <div className="text-[10px] text-[#A0A0B0] mt-0.5">connected</div>
             </div>
             <div>
               <div className="font-mono text-xl tabular-nums text-[#38BDF8] leading-none">
-                {mapStats.online}
+                {mapStats.live}
               </div>
-              <div className="text-[10px] text-[#A0A0B0] mt-0.5">online</div>
+              <div className="text-[10px] text-[#A0A0B0] mt-0.5">live</div>
             </div>
             <div>
-              <div className="font-mono text-xl tabular-nums text-[#F87171] leading-none">
-                {mapStats.offline}
+              <div className="font-mono text-xl tabular-nums text-[#94A3B8] leading-none">
+                {mapStats.seen}
               </div>
-              <div className="text-[10px] text-[#A0A0B0] mt-0.5">offline</div>
+              <div className="text-[10px] text-[#A0A0B0] mt-0.5">seen</div>
             </div>
           </div>
 
-          {/* Simple legend */}
+          {/* Legend */}
           <div className="border-t border-white/10 pt-2.5 space-y-1.5 text-[11px] leading-snug">
             <div className="flex items-start gap-2">
               <span className="mt-1 w-2 h-2 rounded-full bg-[#FF7A3D] shrink-0 shadow-[0_0_6px_rgba(255,122,61,0.7)]" />
@@ -1428,40 +1534,29 @@ export default function PeerMap({
                   {nodeMode === "my" ? "My Node" : "Lumen Node"}
                 </span>
                 <span className="text-[#A0A0B0]">
-                  {nodeMode === "my"
-                    ? " — via Bridge"
-                    : " — this Lumen server"}
+                  {nodeMode === "my" ? " — via Bridge" : " — center"}
                 </span>
               </span>
             </div>
             <div className="flex items-start gap-2">
               <span className="mt-1 w-2 h-2 rounded-full bg-[#00E5FF] shrink-0 shadow-[0_0_6px_rgba(0,229,255,0.7)]" />
               <span>
-                <span className="text-white font-medium">My peer</span>
-                <span className="text-[#A0A0B0]">
-                  {" "}
-                  — online & linked to you (cyan lines)
-                </span>
+                <span className="text-white font-medium">Connected</span>
+                <span className="text-[#A0A0B0]"> — linked to you</span>
               </span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#38BDF8] shrink-0" />
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#38BDF8] shrink-0 shadow-[0_0_4px_rgba(56,189,248,0.5)]" />
               <span>
-                <span className="text-white font-medium">Online</span>
-                <span className="text-[#A0A0B0]">
-                  {" "}
-                  — up in the network, not your peer
-                </span>
+                <span className="text-white font-medium">Live</span>
+                <span className="text-[#A0A0B0]"> — answering now</span>
               </span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#F87171] shrink-0" />
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#64748B] shrink-0" />
               <span>
-                <span className="text-white font-medium">Offline</span>
-                <span className="text-[#A0A0B0]">
-                  {" "}
-                  — known before, not answering now
-                </span>
+                <span className="text-white font-medium">Seen</span>
+                <span className="text-[#A0A0B0]"> — recent, quiet</span>
               </span>
             </div>
           </div>
@@ -1514,11 +1609,7 @@ export default function PeerMap({
                     color:
                       selected.id === "me"
                         ? "#FF7A3D"
-                        : selected.state === "connected"
-                          ? "#00E5FF"
-                          : selected.state === "reachable"
-                            ? "#38BDF8"
-                            : "#F87171",
+                        : stateMeta(normalizeState(selected.state)).color,
                   }}
                 >
                   <MapPin className="w-3 h-3" />{" "}
@@ -1526,11 +1617,7 @@ export default function PeerMap({
                     ? nodeMode === "my"
                       ? "MY NODE"
                       : "LUMEN NODE"
-                    : selected.state === "connected"
-                      ? "MY PEER"
-                      : selected.state === "reachable"
-                        ? "ONLINE"
-                        : "OFFLINE"}
+                    : stateMeta(normalizeState(selected.state)).short}
                 </div>
                 <div className="font-semibold text-sm break-all">
                   {selected.name}
@@ -1547,19 +1634,30 @@ export default function PeerMap({
                 <div className="text-[10px] font-mono text-[#A0A0B0] mt-1">
                   {selected.id !== "me" && (
                     <>
-                      {selected.state === "connected" ? (
-                        <span className="text-[#00E5FF]">
-                          Online · linked to you
-                        </span>
-                      ) : selected.state === "reachable" ? (
-                        <span className="text-[#38BDF8]">
-                          Online · not your peer
-                        </span>
-                      ) : (
-                        <span className="text-[#F87171]">
-                          Offline · not answering
-                        </span>
-                      )}
+                      {(() => {
+                        const s = normalizeState(selected.state);
+                        if (s === "connected")
+                          return (
+                            <span className="text-[#00E5FF]">
+                              Connected · linked to you
+                            </span>
+                          );
+                        if (s === "live")
+                          return (
+                            <span className="text-[#38BDF8]">
+                              Live · answering now
+                            </span>
+                          );
+                        if (s === "seen")
+                          return (
+                            <span className="text-[#94A3B8]">
+                              Seen · not answering
+                            </span>
+                          );
+                        return (
+                          <span className="text-[#64748B]">Ghost · stale</span>
+                        );
+                      })()}
                       {selected.connectionType
                         ? ` · ${selected.connectionType}`
                         : ""}
@@ -1586,54 +1684,80 @@ export default function PeerMap({
         )}
       </AnimatePresence>
 
-      {/* Compact color key — detail is in the top-left card */}
+      {/* Compact color key */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[40] glass rounded-2xl px-4 py-2 text-[10px] font-mono tracking-wider border border-white/10 hidden md:flex items-center gap-3.5 text-[#A0A0B0]">
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" />{" "}
-          {nodeMode === "my" ? "My Node" : "Lumen Node"}
+          {nodeMode === "my" ? "My Node" : "Lumen"}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF]" /> My peer
+          <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF] shadow-[0_0_6px_rgba(0,229,255,0.6)]" />{" "}
+          Connected
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" /> Online
+          <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" /> Live
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#F87171]" /> Offline
+          <span className="w-2.5 h-2.5 rounded-full bg-[#64748B]" /> Seen
         </span>
       </div>
     </div>
 
-    {/* ── Mobile: legend + regions + selected peer UNDER the map ── */}
+    {/* ── Mobile: filters + legend UNDER the map ── */}
     <div className="md:hidden mt-3 space-y-2.5">
-      <div className="glass rounded-2xl px-4 py-3 border border-white/10">
+      <div className="glass rounded-2xl px-3 py-3 border border-white/10">
+        <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
+          {(
+            [
+              { id: "live" as const, label: "Live" },
+              { id: "connected" as const, label: "Linked" },
+              { id: "all" as const, label: "All" },
+            ] as const
+          ).map((f) => {
+            const active = mapFilter === f.id;
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setMapFilter(f.id)}
+                className={`flex-1 px-2 py-2 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
+                  active
+                    ? "bg-white/10 text-white"
+                    : "text-[#A0A0B0]"
+                }`}
+              >
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
         <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[2px] mb-2">
-          <Globe2 className="w-3.5 h-3.5" /> MAP LEGEND
+          <Globe2 className="w-3.5 h-3.5" /> MAP
         </div>
         <div className="grid grid-cols-2 gap-2 text-center mb-3">
           <div className="rounded-xl bg-white/5 px-2 py-2">
             <div className="font-mono text-lg tabular-nums text-white">
-              {mapStats.onMap}
+              {mapStats.showing}
             </div>
-            <div className="text-[10px] text-[#A0A0B0]">on map</div>
+            <div className="text-[10px] text-[#A0A0B0]">showing</div>
           </div>
           <div className="rounded-xl bg-white/5 px-2 py-2">
             <div className="font-mono text-lg tabular-nums text-[#00E5FF]">
-              {mapStats.myPeers}
+              {mapStats.connected}
             </div>
-            <div className="text-[10px] text-[#A0A0B0]">my peers</div>
+            <div className="text-[10px] text-[#A0A0B0]">connected</div>
           </div>
           <div className="rounded-xl bg-white/5 px-2 py-2">
             <div className="font-mono text-lg tabular-nums text-[#38BDF8]">
-              {mapStats.online}
+              {mapStats.live}
             </div>
-            <div className="text-[10px] text-[#A0A0B0]">online</div>
+            <div className="text-[10px] text-[#A0A0B0]">live</div>
           </div>
           <div className="rounded-xl bg-white/5 px-2 py-2">
-            <div className="font-mono text-lg tabular-nums text-[#F87171]">
-              {mapStats.offline}
+            <div className="font-mono text-lg tabular-nums text-[#94A3B8]">
+              {mapStats.seen}
             </div>
-            <div className="text-[10px] text-[#A0A0B0]">offline</div>
+            <div className="text-[10px] text-[#A0A0B0]">seen</div>
           </div>
         </div>
         <div className="space-y-1.5 text-[11px] text-[#A0A0B0]">
@@ -1643,25 +1767,25 @@ export default function PeerMap({
               <span className="text-white">
                 {nodeMode === "my" ? "My Node" : "Lumen Node"}
               </span>
-              {nodeMode === "my" ? " — via Bridge" : " — this Lumen server"}
+              {nodeMode === "my" ? " — via Bridge" : " — center"}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
             <span>
-              <span className="text-white">My peer</span> — linked (cyan lines)
+              <span className="text-white">Connected</span> — linked
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#38BDF8]" />
             <span>
-              <span className="text-white">Online</span> — up, not your peer
+              <span className="text-white">Live</span> — answering
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#F87171]" />
+            <span className="w-2 h-2 rounded-full bg-[#64748B]" />
             <span>
-              <span className="text-white">Offline</span> — not answering
+              <span className="text-white">Seen</span> — recent, quiet
             </span>
           </div>
         </div>
@@ -1675,19 +1799,17 @@ export default function PeerMap({
                 className="font-mono text-[10px] tracking-[2px] mb-1 flex items-center gap-1"
                 style={{
                   color:
-                    selected.state === "connected"
-                      ? "#00E5FF"
-                      : selected.state === "reachable"
-                        ? "#38BDF8"
-                        : "#F87171",
+                    selected.id === "me"
+                      ? "#FF7A3D"
+                      : stateMeta(normalizeState(selected.state)).color,
                 }}
               >
                 <MapPin className="w-3 h-3" />{" "}
-                {selected.state === "connected"
-                  ? "MY PEER"
-                  : selected.state === "reachable"
-                    ? "ONLINE"
-                    : "OFFLINE"}
+                {selected.id === "me"
+                  ? nodeMode === "my"
+                    ? "MY NODE"
+                    : "LUMEN NODE"
+                  : stateMeta(normalizeState(selected.state)).short}
               </div>
               <div className="font-semibold text-sm break-all">{selected.name}</div>
               <div className="font-mono text-xs text-[#A0A0B0] mt-1 break-all">
