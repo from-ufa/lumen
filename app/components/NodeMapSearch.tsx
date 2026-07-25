@@ -283,12 +283,7 @@ export default function NodeMapSearch({
               ? `${listId}-opt-${activeIdx}`
               : undefined
           }
-          className={`
-            flex-1 min-w-0 bg-transparent outline-none border-0
-            text-[#E8E8F0] placeholder:text-[#A0A0B0]/55
-            font-mono tracking-wide
-            ${compact ? "text-[11px]" : "text-[12px]"}
-          `}
+          className="lumen-search-input flex-1 min-w-0 bg-transparent outline-none border-0 text-[#E8E8F0] placeholder:text-[#A0A0B0]/55 font-mono tracking-wide"
         />
         <AnimatePresence>
           {query ? (

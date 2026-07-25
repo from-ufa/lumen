@@ -486,6 +486,23 @@ body {
   display: none;
 }
 
+/*
+ * Search inputs: iOS Safari auto-zooms focused fields with font-size < 16px.
+ * Keep ≥16px on touch / small screens; compact mono look on desktop (md+).
+ * Shared by World Map + 3D Constellation (NodeMapSearch).
+ */
+.lumen-search-input {
+  font-size: 16px !important;
+  line-height: 1.35;
+  /* Avoid accidental page pan when focusing the field */
+  touch-action: manipulation;
+}
+@media (min-width: 768px) {
+  .lumen-search-input {
+    font-size: 12px !important;
+  }
+}
+
 /* Premium node search results — soft scrollbar */
 .lumen-search-scroll {
   scrollbar-width: thin;
