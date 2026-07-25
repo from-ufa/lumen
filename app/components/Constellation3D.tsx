@@ -22,6 +22,7 @@ import {
   type AmbienceController,
   type AmbienceMode,
 } from "../lib/space-ambience";
+import NodeMapSearch, { type SearchableNode } from "./NodeMapSearch";
 
 /* ─── Types ─────────────────────────────────────────────────────────────── */
 
@@ -40,10 +41,21 @@ interface ConstellationProps {
 type PeerHoverFn = (peer: Peer | null, pos?: THREE.Vector3) => void;
 
 type ControlsApi = {
+  /** Reset camera to default overview of the sun */
   focus: () => void;
+  /** Smooth fly to a peer planet (by address key) + accent it */
+  focusPeer: (address: string) => void;
+  clearPeerFocus: () => void;
   setAutoOrbit: (on: boolean) => void;
   setOrbitSpeed: (speed: number) => void;
 };
+
+/** Shared HUD panel width — left search & right controls stay symmetric */
+const HUD_PANEL_W = "w-[min(280px,32vw)]";
+const HUD_CARD =
+  "glass rounded-2xl border border-white/10 px-4 py-3 w-full box-border";
+const HUD_BTN =
+  "glass w-full h-11 px-4 rounded-2xl text-[11px] font-mono tracking-widest border border-white/10 hover:border-white/25 flex items-center justify-center gap-2 transition-all active:scale-[0.985] box-border";
 
 /** Base galaxy spin (rad/s at 1.0×). Visible without being frantic. */
 const GALAXY_BASE_SPEED = 0.12;
@@ -83,6 +95,36 @@ function getDeterministicPosition(address: string, index: number): THREE.Vector3
     radius * Math.sin(theta) * 0.48,
     radius * Math.sin(phi) * Math.cos(theta)
   );
+}
+
+/** Parse peer address → SearchableNode for premium search UI */
+function peerToSearchable(peer: Peer, index: number): SearchableNode {
+  const address = peer.address || `peer-${index}`;
+  const m = address.match(/(\d{1,3}(?:\.\d{1,3}){3})(?::(\d+))?/);
+  const active = Date.now() - peerLastMs(peer.lastMessage) < 120_000;
+  return {
+    id: address,
+    ip: m?.[1] || address.replace(/^\//, ""),
+    port: m?.[2] || null,
+    name: peer.name || address.replace(/^\//, ""),
+    city: peer.connectionType || undefined,
+    country: undefined,
+    state: active ? "connected" : "seen",
+    version: null,
+    lat: 0,
+    lon: 0,
+  };
+}
+
+function smoothstep(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  return x * x * (3 - 2 * x);
+}
+
+/** Ease-in-out cubic — smoother camera ease */
+function easeInOutCubic(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
 
 // Shared geometries
@@ -442,6 +484,7 @@ function PeerPlanet({
   propagationStart,
   map,
   ringMap,
+  focused = false,
 }: {
   peer: Peer;
   position: THREE.Vector3;
@@ -450,9 +493,13 @@ function PeerPlanet({
   propagationStart: number;
   map: THREE.Texture;
   ringMap: THREE.Texture;
+  /** Premium search focus — champagne accent, not status colors */
+  focused?: boolean;
 }) {
   const groupRef = useRef<THREE.Group>(null!);
   const bodyRef = useRef<THREE.Mesh>(null!);
+  const focusRingRef = useRef<THREE.Mesh>(null!);
+  const focusRing2Ref = useRef<THREE.Mesh>(null!);
   const [hovered, setHovered] = useState(false);
 
   const address = peer.address || `peer-${index}`;
@@ -483,11 +530,29 @@ function PeerPlanet({
     if (bodyRef.current) bodyRef.current.rotation.y = t * spin;
     if (groupRef.current) {
       const hoverBoost = hovered ? 1.06 : 1;
+      const focusBoost = focused ? 1.1 : 1;
       const flash = boom > 0 ? 1 + boom * 0.04 : 1;
-      groupRef.current.scale.setScalar(hoverBoost * flash);
+      groupRef.current.scale.setScalar(hoverBoost * focusBoost * flash);
       groupRef.current.position.x = position.x + Math.sin(t * 0.24 + phase) * 0.02;
       groupRef.current.position.y = position.y + Math.cos(t * 0.21 + phase) * 0.015;
       groupRef.current.position.z = position.z + Math.sin(t * 0.18 + phase) * 0.02;
+    }
+    // Champagne focus rings breathe independently of status colors
+    if (focused && focusRingRef.current) {
+      const pulse = 1 + Math.sin(t * 2.2) * 0.06;
+      focusRingRef.current.scale.setScalar(size * 1.55 * pulse);
+      focusRingRef.current.rotation.x = Math.PI / 2;
+      focusRingRef.current.rotation.z = t * 0.35;
+      (focusRingRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.55 + Math.sin(t * 2.2) * 0.15;
+    }
+    if (focused && focusRing2Ref.current) {
+      const pulse2 = 1 + Math.sin(t * 2.2 + 1.1) * 0.1;
+      focusRing2Ref.current.scale.setScalar(size * 2.15 * pulse2);
+      focusRing2Ref.current.rotation.x = Math.PI / 2;
+      focusRing2Ref.current.rotation.z = -t * 0.22;
+      (focusRing2Ref.current.material as THREE.MeshBasicMaterial).opacity =
+        0.28 + Math.sin(t * 2.2 + 1.1) * 0.1;
     }
   });
 
@@ -505,7 +570,13 @@ function PeerPlanet({
 
   // Never multiply map by a Color — that caused washed-out / white look.
   // Stale peers get a slight darkening via material color only as gray multiplier < 1.
-  const colorMul = isActive ? (hovered ? 1.05 : 1.0) : 0.78;
+  const colorMul = isActive
+    ? hovered || focused
+      ? 1.08
+      : 1.0
+    : focused
+      ? 0.9
+      : 0.78;
 
   return (
     <group ref={groupRef} position={position} rotation={[tilt, 0, tilt * 0.35]}>
@@ -525,14 +596,44 @@ function PeerPlanet({
       </mesh>
 
       <Atmosphere
-        color={arch.atmosphere}
-        scale={size * 1.05}
+        color={focused ? "#F5E6C8" : arch.atmosphere}
+        scale={size * (focused ? 1.12 : 1.05)}
         intensity={
-          (hovered ? arch.atmosphereIntensity * 0.7 : arch.atmosphereIntensity * 0.45) *
-          (isActive ? 1 : 0.4)
+          (focused
+            ? 0.85
+            : hovered
+              ? arch.atmosphereIntensity * 0.7
+              : arch.atmosphereIntensity * 0.45) * (isActive ? 1 : 0.55)
         }
-        power={3.8}
+        power={focused ? 2.8 : 3.8}
       />
+
+      {focused && (
+        <>
+          <mesh ref={focusRingRef} rotation={[Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[1.0, 1.08, 64]} />
+            <meshBasicMaterial
+              color="#F5E6C8"
+              transparent
+              opacity={0.65}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+          <mesh ref={focusRing2Ref} rotation={[Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[1.0, 1.05, 64]} />
+            <meshBasicMaterial
+              color="#E8C97A"
+              transparent
+              opacity={0.35}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+        </>
+      )}
 
       {arch.hasRings && (
         <SaturnRings scale={size} tilt={ringTilt} ringMap={ringMap} />
@@ -800,6 +901,8 @@ function ConstellationWorld({
   orbitSpeed,
   controlsApiRef,
   peerHovered = false,
+  focusAddress = null,
+  onFocusAddressChange,
 }: {
   peers: Peer[];
   myNodeHeight: number;
@@ -817,6 +920,9 @@ function ConstellationWorld({
   controlsApiRef: React.MutableRefObject<ControlsApi | null>;
   /** When true, galaxy spin eases to a stop (read peer tooltip) */
   peerHovered?: boolean;
+  /** Address of planet selected via search */
+  focusAddress?: string | null;
+  onFocusAddressChange?: (address: string | null) => void;
 }) {
   const controlsRef = useRef<any>(null);
   const galaxyRef = useRef<THREE.Group>(null!);
@@ -825,11 +931,26 @@ function ConstellationWorld({
   /** Smooth 0..1 multiplier — eases out on planet hover, eases in on leave */
   const orbitFactorRef = useRef(autoOrbit ? 1 : 0);
   const peerHoveredRef = useRef(peerHovered);
-  const { gl } = useThree();
+  const focusAddressRef = useRef(focusAddress);
+  const onFocusAddressChangeRef = useRef(onFocusAddressChange);
+  const { gl, camera } = useThree();
   const [atlas, setAtlas] = useState<ReturnType<typeof getTextureAtlas> | null>(
     null
   );
   const [texTick, setTexTick] = useState(0);
+
+  type FlyState = {
+    t0: number;
+    dur: number;
+    cam0: THREE.Vector3;
+    cam1: THREE.Vector3;
+    tgt0: THREE.Vector3;
+    tgt1: THREE.Vector3;
+  };
+  const flyRef = useRef<FlyState | null>(null);
+  const peerDataRef = useRef<
+    Array<{ peer: Peer; position: THREE.Vector3; address: string }>
+  >([]);
 
   useEffect(() => {
     orbitOnRef.current = autoOrbit;
@@ -840,6 +961,12 @@ function ConstellationWorld({
   useEffect(() => {
     peerHoveredRef.current = peerHovered;
   }, [peerHovered]);
+  useEffect(() => {
+    focusAddressRef.current = focusAddress;
+  }, [focusAddress]);
+  useEffect(() => {
+    onFocusAddressChangeRef.current = onFocusAddressChange;
+  }, [onFocusAddressChange]);
 
   useEffect(() => {
     gl.toneMapping = THREE.NoToneMapping;
@@ -865,6 +992,7 @@ function ConstellationWorld({
       const address = peer.address || `peer-${index}`;
       return {
         peer,
+        address,
         position: getDeterministicPosition(address, index),
         isActive: Date.now() - peerLastMs(peer.lastMessage) < 180_000,
         kind: kindFromAddress(address),
@@ -872,14 +1000,79 @@ function ConstellationWorld({
     });
   }, [peers]);
 
+  useEffect(() => {
+    peerDataRef.current = peerData.map((p) => ({
+      peer: p.peer,
+      position: p.position,
+      address: p.address,
+    }));
+  }, [peerData]);
+
   const ends = useMemo(() => peerData.map((p) => p.position), [peerData]);
   const activeFlags = useMemo(() => peerData.map((p) => p.isActive), [peerData]);
+
+  const startFlyToWorld = useCallback(
+    (worldPos: THREE.Vector3, duration = 1.15) => {
+      if (!controlsRef.current) return;
+      const controls = controlsRef.current;
+      const cam = controls.object as THREE.PerspectiveCamera;
+
+      const dist = worldPos.length();
+      const radial =
+        dist > 0.001
+          ? worldPos.clone().normalize()
+          : new THREE.Vector3(0, 0.2, 1).normalize();
+      const up = new THREE.Vector3(0, 1, 0);
+      let side = new THREE.Vector3().crossVectors(radial, up);
+      if (side.lengthSq() < 1e-6) side = new THREE.Vector3(1, 0, 0);
+      side.normalize();
+      const lift = new THREE.Vector3().crossVectors(side, radial).normalize();
+
+      // Camera sits outside the planet along a pleasant viewing angle
+      const approach = Math.min(22, Math.max(14, dist * 0.55 + 10));
+      const cam1 = worldPos
+        .clone()
+        .add(radial.clone().multiplyScalar(approach * 0.55))
+        .add(lift.clone().multiplyScalar(approach * 0.42))
+        .add(side.clone().multiplyScalar(approach * 0.28));
+
+      // Keep within orbit limits
+      const camDist = cam1.length();
+      if (camDist < 12) cam1.multiplyScalar(12 / Math.max(camDist, 0.01));
+      if (camDist > 95) cam1.multiplyScalar(95 / camDist);
+
+      flyRef.current = {
+        t0: performance.now(),
+        dur: duration * 1000,
+        cam0: cam.position.clone(),
+        cam1,
+        tgt0: controls.target.clone(),
+        tgt1: worldPos.clone(),
+      };
+    },
+    []
+  );
 
   // Rotate the whole galaxy (planets + links) around the sun.
   // Smoothly pause when hovering a peer so tooltips are readable.
   useFrame((_, delta) => {
+    // Camera fly-to (search) — highest priority, runs even while galaxy is paused
+    const fly = flyRef.current;
+    if (fly && controlsRef.current) {
+      const u = easeInOutCubic((performance.now() - fly.t0) / fly.dur);
+      const controls = controlsRef.current;
+      controls.object.position.lerpVectors(fly.cam0, fly.cam1, u);
+      controls.target.lerpVectors(fly.tgt0, fly.tgt1, u);
+      controls.update();
+      if (u >= 1) flyRef.current = null;
+    }
+
     if (!galaxyRef.current) return;
-    const wantSpin = orbitOnRef.current && !peerHoveredRef.current;
+    const wantSpin =
+      orbitOnRef.current &&
+      !peerHoveredRef.current &&
+      !focusAddressRef.current &&
+      !flyRef.current;
     const target = wantSpin ? 1 : 0;
     // ~0.35s ease (exponential smoothstep)
     const blend = 1 - Math.exp(-delta * 5.5);
@@ -901,9 +1094,36 @@ function ConstellationWorld({
     controlsApiRef.current = {
       focus: () => {
         if (!controlsRef.current) return;
-        controlsRef.current.target.set(0, 0, 0);
-        controlsRef.current.object.position.set(0, 22, 42);
-        controlsRef.current.update();
+        onFocusAddressChangeRef.current?.(null);
+        const controls = controlsRef.current;
+        flyRef.current = {
+          t0: performance.now(),
+          dur: 950,
+          cam0: controls.object.position.clone(),
+          cam1: new THREE.Vector3(0, 22, 42),
+          tgt0: controls.target.clone(),
+          tgt1: new THREE.Vector3(0, 0, 0),
+        };
+      },
+      focusPeer: (address: string) => {
+        if (!galaxyRef.current || !controlsRef.current) return;
+        const entry = peerDataRef.current.find(
+          (p) =>
+            p.address === address ||
+            p.peer.address === address ||
+            p.address.replace(/^\//, "") === address.replace(/^\//, "")
+        );
+        if (!entry) return;
+        // Local planet pos → world (accounts for live galaxy rotation)
+        const world = entry.position.clone();
+        galaxyRef.current.updateMatrixWorld(true);
+        galaxyRef.current.localToWorld(world);
+        onFocusAddressChangeRef.current?.(entry.address);
+        startFlyToWorld(world, 1.2);
+      },
+      clearPeerFocus: () => {
+        flyRef.current = null;
+        onFocusAddressChangeRef.current?.(null);
       },
       setAutoOrbit: (on: boolean) => {
         orbitOnRef.current = on;
@@ -915,7 +1135,10 @@ function ConstellationWorld({
     return () => {
       controlsApiRef.current = null;
     };
-  }, [controlsApiRef]);
+  }, [controlsApiRef, startFlyToWorld]);
+
+  void camera;
+  void smoothstep;
 
   return (
     <>
@@ -958,7 +1181,7 @@ function ConstellationWorld({
         )}
 
         {atlas &&
-          peerData.map(({ peer, position, kind }, index) => (
+          peerData.map(({ peer, position, kind, address }, index) => (
             <PeerPlanet
               key={`${peer.address || `peer-${index}`}-${texTick}`}
               peer={peer}
@@ -968,6 +1191,13 @@ function ConstellationWorld({
               propagationStart={propagationStart}
               map={atlas.planets[kind] ?? getPlanetTexture(kind)}
               ringMap={atlas.ring ?? getRingTexture()}
+              focused={
+                !!focusAddress &&
+                (address === focusAddress ||
+                  peer.address === focusAddress ||
+                  address.replace(/^\//, "") ===
+                    focusAddress.replace(/^\//, ""))
+              }
             />
           ))}
 
@@ -1028,6 +1258,8 @@ function Scene({
   const [musicVol, setMusicVol] = useState(0.4);
   const [musicMode, setMusicMode] = useState<AmbienceMode>("off");
   const [musicBusy, setMusicBusy] = useState(false);
+  /** Search-focused peer address (champagne accent + camera fly) */
+  const [focusAddress, setFocusAddress] = useState<string | null>(null);
 
   // Ambient music — user gesture required by browsers to start
   useEffect(() => {
@@ -1077,6 +1309,35 @@ function Scene({
     }));
   }, [peers]);
 
+  const searchNodes = useMemo(
+    () => peers.map((p, i) => peerToSearchable(p, i)),
+    [peers]
+  );
+
+  const handleSearchSelect = useCallback(
+    (node: SearchableNode) => {
+      const address = node.id;
+      setIsAutoOrbit(false);
+      controlsApiRef.current?.setAutoOrbit(false);
+      // Defer one frame so controls API is ready after orbit off
+      requestAnimationFrame(() => {
+        controlsApiRef.current?.focusPeer(address);
+      });
+      const peer =
+        peers.find(
+          (p, i) =>
+            (p.address || `peer-${i}`) === address ||
+            p.address === address ||
+            p.name === node.name
+        ) || null;
+      if (peer) {
+        setHoveredPeer(peer);
+        onPeerHover?.(peer);
+      }
+    },
+    [peers, onPeerHover]
+  );
+
   const triggerBlockPropagation = useCallback(() => {
     if (peers.length === 0) return;
     setIsPropagating(true);
@@ -1122,13 +1383,21 @@ function Scene({
   );
 
   const focusOnMyNode = () => {
+    setFocusAddress(null);
+    controlsApiRef.current?.clearPeerFocus();
     controlsApiRef.current?.focus();
     setIsAutoOrbit(false);
+    controlsApiRef.current?.setAutoOrbit(false);
   };
 
   const toggleAutoOrbit = () => {
     setIsAutoOrbit((v) => {
       const next = !v;
+      if (next) {
+        // Resume spin — drop search lock so galaxy can move again
+        setFocusAddress(null);
+        controlsApiRef.current?.clearPeerFocus();
+      }
       controlsApiRef.current?.setAutoOrbit(next);
       return next;
     });
@@ -1188,40 +1457,102 @@ function Scene({
           autoOrbit={isAutoOrbit}
           orbitSpeed={orbitSpeed}
           controlsApiRef={controlsApiRef}
-          peerHovered={!!hoveredPeer}
+          peerHovered={!!hoveredPeer || !!focusAddress}
+          focusAddress={focusAddress}
+          onFocusAddressChange={setFocusAddress}
         />
       </Canvas>
 
+      {/* ── Mobile: controls + search ── */}
       {!hideControls && (
-        <div className="md:hidden absolute top-0 inset-x-0 z-20 flex items-start justify-between gap-2 p-2.5 pointer-events-none">
-          {onSimulateBlock && (
+        <div className="md:hidden absolute top-0 inset-x-0 z-20 pointer-events-none p-2.5 space-y-2">
+          <div className="flex items-start justify-between gap-2">
+            {onSimulateBlock && (
+              <button
+                type="button"
+                onClick={triggerBlockPropagation}
+                className="pointer-events-auto flex items-center gap-1.5 h-10 px-3 rounded-2xl text-[10px] font-mono tracking-wider border border-[#E8C48A]/40 bg-[#0A0A0F]/90 text-[#E8C48A] shadow-lg backdrop-blur-md active:scale-[0.97]"
+              >
+                ✧ BOOM
+              </button>
+            )}
             <button
               type="button"
-              onClick={triggerBlockPropagation}
-              className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono tracking-wider border border-[#E8C48A]/40 bg-[#0A0A0F]/90 text-[#E8C48A] shadow-lg backdrop-blur-md active:scale-[0.97]"
+              onClick={focusOnMyNode}
+              className="pointer-events-auto ml-auto flex items-center gap-1.5 h-10 px-3 rounded-2xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/90 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
             >
-              ✧ BOOM
+              FOCUS
             </button>
-          )}
-          <button
-            type="button"
-            onClick={focusOnMyNode}
-            className="pointer-events-auto ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/90 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
-          >
-            FOCUS
-          </button>
+          </div>
+          <NodeMapSearch
+            nodes={searchNodes}
+            selectedId={focusAddress}
+            compact
+            onSelect={handleSearchSelect}
+            className="w-full"
+          />
         </div>
       )}
 
+      {/* ── Desktop left: premium node search ── */}
       {!hideControls && (
-        /* Fixed width so Music ON/OFF helper text never resizes the whole stack */
-        <div className="hidden md:flex absolute top-4 right-4 z-20 flex-col gap-2 w-[220px] max-w-[220px]">
+        <div
+          className={`hidden md:flex absolute top-4 left-4 z-20 flex-col gap-2 ${HUD_PANEL_W} pointer-events-none`}
+        >
+          <NodeMapSearch
+            nodes={searchNodes}
+            selectedId={focusAddress}
+            onSelect={handleSearchSelect}
+            className="w-full"
+          />
+          {focusAddress && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`${HUD_CARD} pointer-events-auto border-[#E8C97A]/25 bg-[#0A0A0F]/75`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[9px] font-mono tracking-[0.2em] text-[#E8C97A] mb-1">
+                    FOUND
+                  </div>
+                  <div className="text-[12px] font-medium text-white truncate">
+                    {peers.find((p) => p.address === focusAddress)?.name ||
+                      focusAddress.replace(/^\//, "")}
+                  </div>
+                  <div className="text-[10px] font-mono text-[#A0A0B0] mt-0.5 truncate">
+                    {focusAddress.replace(/^\//, "")}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFocusAddress(null);
+                    controlsApiRef.current?.clearPeerFocus();
+                    setHoveredPeer(null);
+                    onPeerHover?.(null);
+                  }}
+                  className="text-[10px] font-mono text-[#A0A0B0] hover:text-white shrink-0"
+                >
+                  CLEAR
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </div>
+      )}
+
+      {/* ── Desktop right: unified control stack ── */}
+      {!hideControls && (
+        <div
+          className={`hidden md:flex absolute top-4 right-4 z-20 flex-col gap-2 ${HUD_PANEL_W}`}
+        >
           {/* Auto orbit + galaxy speed */}
-          <div className="glass rounded-xl border border-white/10 px-4 py-3 space-y-2.5 w-full box-border">
+          <div className={`${HUD_CARD} space-y-2.5 min-h-[132px]`}>
             <button
               type="button"
               onClick={toggleAutoOrbit}
-              className="w-full flex items-center gap-2 text-xs font-mono tracking-widest transition-all active:scale-[0.985]"
+              className="w-full h-9 flex items-center gap-2 text-[11px] font-mono tracking-widest transition-all active:scale-[0.985]"
             >
               <span className={isAutoOrbit ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>
                 ◉
@@ -1260,13 +1591,13 @@ function Scene({
             </div>
           </div>
 
-          {/* Music / ambience */}
-          <div className="glass rounded-xl border border-white/10 px-4 py-3 space-y-2.5 w-full box-border">
+          {/* Music / ambience — same card footprint */}
+          <div className={`${HUD_CARD} space-y-2.5 min-h-[132px]`}>
             <button
               type="button"
               onClick={() => void toggleMusic()}
               disabled={musicBusy}
-              className="w-full flex items-center gap-2 text-xs font-mono tracking-widest transition-all active:scale-[0.985] disabled:opacity-50"
+              className="w-full h-9 flex items-center gap-2 text-[11px] font-mono tracking-widest transition-all active:scale-[0.985] disabled:opacity-50"
             >
               <span className={musicOn ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>
                 {musicOn ? "♪" : "♩"}
@@ -1300,7 +1631,6 @@ function Scene({
                 className="w-full h-1.5 appearance-none rounded-full bg-white/10 accent-[#E8C48A] cursor-pointer"
                 aria-label="Music volume"
               />
-              {/* Fixed min-height so ON/OFF caption length never shifts panel height */}
               <div className="text-[9px] font-mono text-[#A0A0B0]/55 leading-relaxed min-h-[2.5em] break-words">
                 {musicMode === "file"
                   ? "Playing /audio/stay.* (your file)"
@@ -1314,7 +1644,7 @@ function Scene({
           <button
             type="button"
             onClick={focusOnMyNode}
-            className="btn-cinematic glass w-full px-4 py-2 rounded-xl text-xs font-mono tracking-widest border border-white/10 hover:border-white/30 flex items-center justify-center gap-2 transition-all active:scale-[0.985] box-border"
+            className={`${HUD_BTN} btn-cinematic hover:border-white/30 text-[#E8E8F0]`}
           >
             FOCUS ON MY NODE
           </button>
@@ -1322,7 +1652,7 @@ function Scene({
             <button
               type="button"
               onClick={triggerBlockPropagation}
-              className="btn-cinematic glass w-full px-4 py-2 rounded-xl text-xs font-mono tracking-[2px] bg-[#E8C48A]/08 border border-[#E8C48A]/25 hover:bg-[#E8C48A]/14 text-[#E8C48A] flex items-center justify-center gap-2 transition-all active:scale-[0.985] box-border"
+              className={`${HUD_BTN} btn-cinematic bg-[#E8C48A]/08 border-[#E8C48A]/25 hover:bg-[#E8C48A]/14 text-[#E8C48A]`}
             >
               ✧ SIMULATE BLOCK WAVE
             </button>
@@ -1331,7 +1661,7 @@ function Scene({
       )}
 
       <AnimatePresence>
-        {hoveredPeer && hoveredPos && (
+        {hoveredPeer && hoveredPos && !focusAddress && (
           <div
             className="absolute z-30 pointer-events-none"
             style={{
@@ -1343,7 +1673,7 @@ function Scene({
               initial={{ opacity: 0, y: 8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.98 }}
-              className="glass rounded-2xl px-5 py-4 text-sm min-w-[220px] border border-white/10"
+              className="glass rounded-2xl px-5 py-4 text-sm min-w-[220px] max-w-[280px] border border-white/10"
             >
               <div className="font-mono text-[#C8D0E0] text-xs tracking-[2px] mb-1">
                 PEER
@@ -1392,18 +1722,24 @@ function Scene({
         )}
       </AnimatePresence>
 
-      <div className="hidden md:block absolute bottom-4 left-4 z-20 glass rounded-2xl px-4 py-3 text-[10px] font-mono tracking-widest border border-white/10">
-        <div className="flex items-center gap-4 text-[#A0A0B0]">
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" />{" "}
-            SUN
+      {/* Legend — same card language, bottom center-left under search */}
+      <div
+        className={`hidden md:block absolute bottom-4 left-4 z-20 ${HUD_PANEL_W} pointer-events-none`}
+      >
+        <div className={`${HUD_CARD} text-[10px] font-mono tracking-widest`}>
+          <div className="flex items-center gap-4 text-[#A0A0B0]">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" />{" "}
+              SUN
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#8a9bb0]" />{" "}
+              PEER WORLDS
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-[#8a9bb0]" /> PEER WORLDS
+          <div className="text-[9px] text-[#A0A0B0]/60 mt-1.5 tracking-wide">
+            Search · drag · zoom · F / O / B
           </div>
-        </div>
-        <div className="text-[9px] text-[#A0A0B0]/60 mt-1.5">
-          Drag · zoom · hover pauses orbit · F / O / B
         </div>
       </div>
     </>
