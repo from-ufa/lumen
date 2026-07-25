@@ -84,7 +84,7 @@ export default function MetricsCards({
       
       <MetricCard 
         icon={Users} 
-        label="CONNECTED PEERS" 
+        label="MY P2P SESSIONS" 
         value={info?.peersCount || 0} 
         subValue={isOnline ? "LIVE" : "OFFLINE"}
         accent={isOnline}

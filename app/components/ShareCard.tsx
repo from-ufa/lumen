@@ -359,7 +359,7 @@ export default function ShareCard({
                       height ? height.toLocaleString() : "—",
                       "#FF7A3D"
                     )}
-                    {metric("CONNECTED PEERS", peers, "#E8E8F0")}
+                    {metric("MY P2P SESSIONS", peers, "#E8E8F0")}
                     {metric("AVG BLOCK TIME", avgLabel, "#00E5FF")}
                     {metric("MEMPOOL", mempool, "#E8E8F0")}
                   </div>
