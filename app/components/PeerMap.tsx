@@ -39,6 +39,10 @@ function normalizeState(s?: string | null): PeerMapState {
   return "seen";
 }
 
+/**
+ * Status colors — premium hierarchy (not neon):
+ * Connected cyan → Live sky → Seen silver → Ghost muted rose-red
+ */
 function stateMeta(state: PeerMapState): {
   color: string;
   label: string;
@@ -50,10 +54,12 @@ function stateMeta(state: PeerMapState): {
     case "live":
       return { color: "#38BDF8", label: "Live", short: "LIVE" };
     case "seen":
-      return { color: "#94A3B8", label: "Seen", short: "SEEN" };
+      // Cool silver-steel — quieter than Live, still readable on dark map
+      return { color: "#A8B4C8", label: "Seen", short: "SEEN" };
     case "ghost":
     default:
-      return { color: "#475569", label: "Ghost", short: "GHOST" };
+      // Muted rose-red — historical / inactive, not acid
+      return { color: "#C45C5C", label: "Ghost", short: "GHOST" };
   }
 }
 
@@ -66,7 +72,7 @@ function peerDivIcon(
   isBoom: boolean,
   isFocus = false
 ): L.DivIcon {
-  let color = "#475569";
+  let color = "#C45C5C";
   let size = 8;
   let opacity = 0.4;
   let glow = "none";
@@ -91,16 +97,19 @@ function peerDivIcon(
     glow = "0 0 10px rgba(56,189,248,0.55)";
     ring = "2px solid rgba(10,10,15,0.9)";
   } else if (state === "seen") {
-    color = "#64748B";
-    size = 9;
-    opacity = 0.55;
-    glow = "0 0 4px rgba(100,116,139,0.25)";
+    // Noticeable silver — not near-invisible slate
+    color = "#A8B4C8";
+    size = 10;
+    opacity = 0.82;
+    glow = "0 0 7px rgba(168,180,200,0.4)";
+    ring = "1.5px solid rgba(10,10,15,0.88)";
   } else {
-    // ghost
-    color = "#334155";
-    size = 7;
-    opacity = 0.35;
-    glow = "none";
+    // Ghost — soft rose-red, clearly "old / history"
+    color = "#C45C5C";
+    size = 9;
+    opacity = 0.78;
+    glow = "0 0 8px rgba(196,92,92,0.45)";
+    ring = "1.5px solid rgba(10,10,15,0.9)";
   }
 
   // Focus: keep true status color; slightly larger + soft pearl frame only
@@ -1960,7 +1969,7 @@ export default function PeerMap({
               <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-black/25 px-3 py-2 text-[10px] font-mono tracking-wide text-[#A0A0B0]">
                 <span>
                   Ghost{" "}
-                  <span className="text-[#64748B] tabular-nums">
+                  <span className="text-[#C45C5C] tabular-nums">
                     {mapStats.ghost.toLocaleString()}
                   </span>
                   <span className="text-[#A0A0B0]/50"> · history</span>
@@ -2046,10 +2055,17 @@ export default function PeerMap({
               </span>
             </div>
             <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#64748B] shrink-0" />
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#A8B4C8] shrink-0 shadow-[0_0_5px_rgba(168,180,200,0.45)]" />
               <span>
                 <span className="text-white font-medium">Seen</span>
                 <span className="text-[#A0A0B0]"> — recent, quiet</span>
+              </span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="mt-1 w-2 h-2 rounded-full bg-[#C45C5C] shrink-0 shadow-[0_0_5px_rgba(196,92,92,0.4)]" />
+              <span>
+                <span className="text-white font-medium">Ghost</span>
+                <span className="text-[#A0A0B0]"> — history (hidden by default)</span>
               </span>
             </div>
           </div>
@@ -2160,12 +2176,12 @@ export default function PeerMap({
                           );
                         if (s === "seen")
                           return (
-                            <span className="text-[#94A3B8]">
+                            <span className="text-[#A8B4C8]">
                               Seen · not answering
                             </span>
                           );
                         return (
-                          <span className="text-[#64748B]">Ghost · stale</span>
+                          <span className="text-[#C45C5C]">Ghost · history</span>
                         );
                       })()}
                       {selected.connectionType
@@ -2211,7 +2227,12 @@ export default function PeerMap({
           <span className="w-2.5 h-2.5 rounded-full bg-[#38BDF8]" /> Live
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#64748B]" /> Seen
+          <span className="w-2.5 h-2.5 rounded-full bg-[#A8B4C8] shadow-[0_0_5px_rgba(168,180,200,0.4)]" />{" "}
+          Seen
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#C45C5C] shadow-[0_0_5px_rgba(196,92,92,0.4)]" />{" "}
+          Ghost
         </span>
       </div>
     </div>
@@ -2253,7 +2274,7 @@ export default function PeerMap({
             </div>
             <div className="text-[10px] font-mono text-[#A0A0B0]/80 mb-3 text-center tracking-wide">
               Ghost{" "}
-              <span className="text-[#64748B] tabular-nums">
+              <span className="text-[#C45C5C] tabular-nums">
                 {mapStats.ghost.toLocaleString()}
               </span>
               {" · total ever "}
@@ -2323,9 +2344,15 @@ export default function PeerMap({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#64748B]" />
+            <span className="w-2 h-2 rounded-full bg-[#A8B4C8]" />
             <span>
               <span className="text-white">Seen</span> — recent, quiet
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#C45C5C]" />
+            <span>
+              <span className="text-white">Ghost</span> — history
             </span>
           </div>
         </div>

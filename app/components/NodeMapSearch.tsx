@@ -52,9 +52,9 @@ function stateStyle(state: string): { color: string; label: string } {
     case "live":
       return { color: "#38BDF8", label: "Live" };
     case "seen":
-      return { color: "#94A3B8", label: "Seen" };
+      return { color: "#A8B4C8", label: "Seen" };
     default:
-      return { color: "#64748B", label: "Ghost" };
+      return { color: "#C45C5C", label: "Ghost" };
   }
 }
 
