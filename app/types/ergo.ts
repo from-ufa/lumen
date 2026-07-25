@@ -35,4 +35,9 @@ export interface RecentBlock {
   timestamp: number;
   txCount: number;
   id?: string;
+  /** Honest miner from Explorer API (never from peers). */
+  minerAddress?: string;
+  /** Resolved label: pool name / Solo / Unknown pool */
+  minerLabel?: string;
+  minerShort?: string;
 }

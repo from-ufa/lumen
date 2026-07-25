@@ -15,6 +15,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import { AnimatePresence, motion } from "framer-motion";
 import { Globe2, MapPin, RefreshCw, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { fetchBlockMinerByHeight } from "../lib/miner";
 
 function escapeHtml(s: string): string {
   return String(s)
@@ -402,13 +403,15 @@ type MapPayload = {
 
 type BoomEvent = {
   id: string;
+  /** Visual epicenter only (map center / you) — NOT the miner location */
   lat: number;
   lon: number;
   height: number;
-  peerName: string;
-  peerIp: string;
-  country: string;
-  city: string;
+  /** Honest miner from Explorer — never a peer name */
+  minerLabel: string;
+  minerShort: string;
+  minerAddress?: string;
+  blockId?: string;
   createdAt: number;
 };
 
@@ -878,12 +881,10 @@ const BOOM_TOTAL_MS = Math.round(BOOM_PULSE_SEC * BOOM_PULSE_COUNT * 1000); // 3
 const BOOM_FLIGHT_SEC = BOOM_PULSE_SEC * BOOM_PULSE_COUNT - 0.35; // travel while pulsing
 
 /**
- * Boom choreography:
- * 1) Notice appears at top of map
- * 2) 3 noticeable pulse rings on hottest peer
- * 3) Notice slowly descends to the peer while pulses run
- * 4) Both fade out together
- * No bottom glass plaque.
+ * Boom choreography (honest — no peer-as-miner):
+ * 1) Notice at top with Explorer miner attribution
+ * 2) Decorative pulse at map center (or optional visual pin) — not "the miner"
+ * 3) Notice drifts toward the pulse and fades
  */
 function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
   const map = useMap();
@@ -912,9 +913,7 @@ function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
     };
   }, [map, boom, onDone]);
 
-  const place =
-    [boom.city, boom.country].filter(Boolean).join(", ") || null;
-  const nodeLabel = boom.peerName || boom.peerIp || "peer";
+  const minerLine = `${boom.minerLabel} · ${boom.minerShort}`;
   const startX = mapSize.w > 0 ? mapSize.w / 2 : 0;
   const startY = 18;
   const endX = xy?.x ?? startX;
@@ -922,7 +921,7 @@ function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
 
   return (
     <>
-      {/* 3 pulse waves on hottest peer */}
+      {/* Decorative pulse — visual only, not miner geolocation */}
       {xy && (
         <div
           className="pointer-events-none absolute z-[700]"
@@ -963,7 +962,6 @@ function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
         </div>
       )}
 
-      {/* Top notice → flies down to pulse point (synced with 3 pulses) */}
       {mapSize.w > 0 && xy && (
         <motion.div
           className="lumen-boom-flight pointer-events-none absolute z-[720]"
@@ -1019,11 +1017,8 @@ function BoomLabel({ boom, onDone }: { boom: BoomEvent; onDone: () => void }) {
             <div className="mt-0.5 font-mono text-lg sm:text-xl tabular-nums tracking-tight text-white font-semibold">
               #{boom.height.toLocaleString()}
             </div>
-            <div className="mt-1 text-[10px] sm:text-[11px] font-mono text-[#A0A0B0] max-w-[200px] truncate text-center">
-              <span className="text-[#FF7A3D]">{nodeLabel}</span>
-              {place && (
-                <span className="text-[#00E5FF]/80"> · {place}</span>
-              )}
+            <div className="mt-1 text-[10px] sm:text-[11px] font-mono text-[#A0A0B0] max-w-[220px] truncate text-center">
+              <span className="text-[#FF7A3D]">{minerLine}</span>
             </div>
           </div>
         </motion.div>
@@ -1085,21 +1080,6 @@ function BoomLabelPortal({
   return createPortal(<BoomLabel boom={boom} onDone={onDone} />, host);
 }
 
-function pickBoomSource(
-  markers: PeerMapMarker[],
-  me: PeerMapMarker | null
-): PeerMapMarker | null {
-  if (!markers.length) return me;
-  // Prefer currently connected peers (our live links); then freshest lastMessage
-  const connected = markers.filter((m) => m.state === "connected");
-  const pool = connected.length ? connected : markers;
-  const sorted = [...pool].sort(
-    (a, b) => peerLastMs(b.lastMessage) - peerLastMs(a.lastMessage)
-  );
-  const fresh = sorted.find((m) => isActive(m.lastMessage)) || sorted[0];
-  return fresh || me;
-}
-
 export default function PeerMap({
   blockHeight = 0,
   hideControls = false,
@@ -1152,10 +1132,8 @@ export default function PeerMap({
       .slice(0, 8);
   }, [data]);
 
-  const boomIps = useMemo(
-    () => new Set(booms.map((b) => b.peerIp).filter(Boolean)),
-    [booms]
-  );
+  /** No peer-IP boom highlight — miner is not a map pin */
+  const boomIps = useMemo(() => new Set<string>(), []);
 
   const handleSelectPeer = useCallback((m: PeerMapMarker) => {
     setSelected(m);
@@ -1185,24 +1163,71 @@ export default function PeerMap({
     return { onMap, myPeers, online, onlineOther, offline };
   }, [data, signalLinks.length]);
 
+  /**
+   * Visual epicenter for boom pulses — map "you" pin if known, else geometric
+   * center of markers. Never implies this peer mined the block.
+   */
+  const visualBoomCenter = useCallback((): { lat: number; lon: number } => {
+    if (data?.me && Number.isFinite(data.me.lat) && Number.isFinite(data.me.lon)) {
+      return { lat: data.me.lat, lon: data.me.lon };
+    }
+    // Fallback: Ergo-ish default view center
+    return { lat: 30, lon: 20 };
+  }, [data?.me]);
+
   const fireBoom = useCallback(
-    (height: number, source: PeerMapMarker | null) => {
-      if (!source) return;
-      const boom: BoomEvent = {
-        id: `${height}-${Date.now()}`,
-        lat: source.lat,
-        lon: source.lon,
+    async (height: number) => {
+      const epicenter = visualBoomCenter();
+      // Optimistic boom; fill miner when Explorer answers
+      const id = `${height}-${Date.now()}`;
+      const pending: BoomEvent = {
+        id,
+        lat: epicenter.lat,
+        lon: epicenter.lon,
         height,
-        peerName: source.name,
-        peerIp: source.ip,
-        country: source.country,
-        city: source.city,
+        minerLabel: "…",
+        minerShort: "fetching",
         createdAt: Date.now(),
       };
-      // Single in-map choreography (notice flies top→peer + 3 pulses). No sonner, no bottom plaque.
-      setBooms((prev) => [...prev.slice(-1), boom]);
+      setBooms((prev) => [...prev.slice(-1), pending]);
+
+      try {
+        const miner = await fetchBlockMinerByHeight(height);
+        if (miner) {
+          setBooms((prev) =>
+            prev.map((b) =>
+              b.id === id
+                ? {
+                    ...b,
+                    minerLabel: miner.label,
+                    minerShort: miner.short,
+                    minerAddress: miner.address,
+                    blockId: miner.blockId,
+                  }
+                : b
+            )
+          );
+          // Toast is fired from the dashboard (page) so it also shows in 3D view
+        } else {
+          setBooms((prev) =>
+            prev.map((b) =>
+              b.id === id
+                ? { ...b, minerLabel: "Unknown", minerShort: "—" }
+                : b
+            )
+          );
+        }
+      } catch {
+        setBooms((prev) =>
+          prev.map((b) =>
+            b.id === id
+              ? { ...b, minerLabel: "Unknown", minerShort: "—" }
+              : b
+          )
+        );
+      }
     },
-    []
+    [visualBoomCenter]
   );
 
   // Detect new blocks from parent height
@@ -1214,20 +1239,13 @@ export default function PeerMap({
       return;
     }
     if (blockHeight > lastHeightRef.current) {
-      const prev = lastHeightRef.current;
       lastHeightRef.current = blockHeight;
-      // Fire for each skipped height (usually 1)
-      const source = pickBoomSource(data?.markers || [], data?.me || null);
-      fireBoom(blockHeight, source);
-      // Refresh peer geo shortly after
+      void fireBoom(blockHeight);
       setTimeout(() => refetch(), 800);
-      if (blockHeight - prev > 1) {
-        // only animate latest if many skipped
-      }
     } else if (blockHeight < lastHeightRef.current) {
       lastHeightRef.current = blockHeight;
     }
-  }, [blockHeight, data?.markers, data?.me, fireBoom, refetch]);
+  }, [blockHeight, fireBoom, refetch]);
 
   const dismissBoom = useCallback((id: string) => {
     setBooms((prev) => prev.filter((b) => b.id !== id));
@@ -1235,12 +1253,7 @@ export default function PeerMap({
 
   const simulateBoom = () => {
     const h = blockHeight || lastHeightRef.current || 0;
-    const source = pickBoomSource(data?.markers || [], data?.me || null);
-    if (!source) {
-      toast.error("No mapped peers yet");
-      return;
-    }
-    fireBoom(h || Date.now() % 1_000_000, source);
+    void fireBoom(h || Date.now() % 1_000_000);
   };
 
   const topRegionsBlock =

@@ -76,7 +76,7 @@ export default function BlocksTimeline({
                     : "border-white/10 hover:border-white/30 bg-white/[0.015]"
                 }`}
             >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+              <div className="flex items-center gap-3 sm:gap-4 min-w-0 flex-1">
                 <div
                   className={`font-mono text-xl sm:text-2xl font-semibold tracking-tighter tabular-nums flex-shrink-0 ${
                     isNewest ? "text-[#FF7A3D]" : "text-white"
@@ -86,8 +86,13 @@ export default function BlocksTimeline({
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs text-[#A0A0B0] truncate">{timeAgo}</div>
-                  <div className="text-[10px] font-mono text-[#A0A0B0]/70 mt-px">
+                  <div className="text-[10px] font-mono text-[#A0A0B0]/70 mt-px truncate">
                     {block.txCount} TXS
+                    {block.minerLabel
+                      ? ` · ${block.minerLabel}${
+                          block.minerShort ? ` · ${block.minerShort}` : ""
+                        }`
+                      : ""}
                   </div>
                 </div>
               </div>

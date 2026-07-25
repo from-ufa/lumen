@@ -1,6 +1,7 @@
-/** SigmaSpace explorer links (Ergo). */
+/** SigmaSpace + official Ergo Explorer links. */
 
 export const SIGMASPACE = "https://sigmaspace.io";
+export const ERGO_EXPLORER_WEB = "https://explorer.ergoplatform.com";
 
 export function sigmaTxUrl(txId: string): string {
   return `${SIGMASPACE}/en/transaction/${txId}`;
@@ -9,6 +10,14 @@ export function sigmaTxUrl(txId: string): string {
 /** Block page needs header / block id (hex), not height. */
 export function sigmaBlockUrl(blockId: string): string {
   return `${SIGMASPACE}/en/block/${blockId}`;
+}
+
+export function officialExplorerBlockUrl(blockId: string): string {
+  return `${ERGO_EXPLORER_WEB}/en/blocks/${blockId}`;
+}
+
+export function officialExplorerAddressUrl(address: string): string {
+  return `${ERGO_EXPLORER_WEB}/en/addresses/${address}`;
 }
 
 /**

@@ -17,12 +17,21 @@ import MempoolFlow from './components/MempoolFlow';
 import ConnectionSettings from './components/ConnectionSettings';
 import ShareCard from './components/ShareCard';
 import type { NodeInfo, Peer, RecentBlock } from './types/ergo';
-import { openBlockOnSigmaSpace, sigmaBlockUrl } from './lib/explorer';
+import {
+  openBlockOnSigmaSpace,
+  officialExplorerAddressUrl,
+  officialExplorerBlockUrl,
+  sigmaBlockUrl,
+} from './lib/explorer';
 import {
   fetchAvgBlockTime,
   fetchBlockDetails,
   fetchRecentBlocks,
 } from './lib/blocks';
+import {
+  fetchBlockMinerByHeight,
+  fetchBlockMinerById,
+} from './lib/miner';
 import type { BridgeStatus, NodeMode } from './lib/node-api';
 import {
   DEFAULT_LUMEN_NODE_URL,
@@ -265,24 +274,58 @@ export default function LumenDashboard() {
         return;
       }
 
-      // New tip height → append real block
+      // New tip height → append real block + honest Explorer miner
       if (currentHeight > lastBlockHeight) {
         const prev = lastBlockHeight;
         setLastBlockHeight(currentHeight);
 
-        // Fill any skipped heights (rare) with real data
         for (let h = prev + 1; h <= currentHeight; h++) {
           const block = await fetchBlockDetails(blockBase, h, blockHeaders);
           if (cancelled) return;
           if (!block) continue;
+
+          // Miner attribution: Explorer only (never peers)
+          let minerLabel: string | undefined;
+          let minerAddress: string | undefined;
+          let minerShort: string | undefined;
+          try {
+            const miner = block.id
+              ? await fetchBlockMinerById(block.id, block.height)
+              : await fetchBlockMinerByHeight(block.height);
+            if (miner) {
+              minerLabel = miner.label;
+              minerAddress = miner.address;
+              minerShort = miner.short;
+              if (!cancelled && h === currentHeight) {
+                toast.success(miner.line, {
+                  description: "Miner from Explorer API · not a map peer",
+                  duration: 5000,
+                });
+              }
+            }
+          } catch {
+            /* explorer optional */
+          }
+
+          const enriched = {
+            ...block,
+            minerLabel,
+            minerAddress,
+            minerShort,
+          };
+
           setRecentBlocks((list) => {
-            if (list.some((b) => b.height === block.height)) return list;
-            return [block, ...list].sort((a, b) => b.height - a.height).slice(0, 9);
+            if (list.some((b) => b.height === enriched.height)) {
+              return list.map((b) =>
+                b.height === enriched.height ? { ...b, ...enriched } : b
+              );
+            }
+            return [enriched, ...list]
+              .sort((a, b) => b.height - a.height)
+              .slice(0, 9);
           });
-          // New-block toast: only PeerMap's dark Lumen toast.custom (no sonner.success)
         }
 
-        // Refresh avg block time on every new tip
         const avg = await fetchAvgBlockTime(
           blockBase,
           AVG_BLOCK_WINDOW,
@@ -335,9 +378,34 @@ export default function LumenDashboard() {
   // === BLOCK DETAIL MODAL (simple beautiful) ===
   const [selectedBlock, setSelectedBlock] = useState<RecentBlock | null>(null);
 
-  /** Open block preview modal only — SigmaSpace is opened via button inside modal */
+  /** Open block preview; backfill honest miner from Explorer if missing */
   const openBlockDetail = (block: RecentBlock) => {
     setSelectedBlock(block);
+    if (block.minerAddress && block.minerLabel) return;
+    void (async () => {
+      try {
+        const miner = block.id
+          ? await fetchBlockMinerById(block.id, block.height)
+          : await fetchBlockMinerByHeight(block.height);
+        if (!miner) return;
+        const patch = {
+          minerAddress: miner.address,
+          minerLabel: miner.label,
+          minerShort: miner.short,
+          id: block.id || miner.blockId,
+        };
+        setSelectedBlock((prev) =>
+          prev && prev.height === block.height ? { ...prev, ...patch } : prev
+        );
+        setRecentBlocks((list) =>
+          list.map((b) =>
+            b.height === block.height ? { ...b, ...patch } : b
+          )
+        );
+      } catch {
+        /* optional */
+      }
+    })();
   };
 
   const effectivePeers = peers;
@@ -673,6 +741,29 @@ export default function LumenDashboard() {
                 <span className="text-[#A0A0B0]">TRANSACTIONS</span>
                 <span className="font-mono text-[#FF7A3D] text-xl tracking-tighter">{selectedBlock.txCount}</span>
               </div>
+              <div className="flex justify-between py-3 border-b border-white/10 gap-4">
+                <span className="text-[#A0A0B0] flex-shrink-0">MINER</span>
+                <span className="font-mono text-right text-[#E8E8F0]">
+                  {selectedBlock.minerLabel || "—"}
+                  {selectedBlock.minerShort
+                    ? ` · ${selectedBlock.minerShort}`
+                    : ""}
+                </span>
+              </div>
+              {selectedBlock.minerAddress && (
+                <div className="flex justify-between py-3 gap-4 border-b border-white/10">
+                  <span className="text-[#A0A0B0] flex-shrink-0">REWARD ADDR</span>
+                  <a
+                    href={officialExplorerAddressUrl(selectedBlock.minerAddress)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-right text-[11px] text-[#00E5FF] break-all hover:underline"
+                  >
+                    {selectedBlock.minerAddress.slice(0, 14)}…
+                    {selectedBlock.minerAddress.slice(-10)}
+                  </a>
+                </div>
+              )}
               <div className="flex justify-between py-3 border-b border-white/10">
                 <span className="text-[#A0A0B0]">TIME SINCE</span>
                 <span className="font-mono">{Math.floor((Date.now() - selectedBlock.timestamp) / 1000)} seconds ago</span>
@@ -687,33 +778,45 @@ export default function LumenDashboard() {
               )}
             </div>
 
-            <a
-              href={
-                selectedBlock.id
-                  ? sigmaBlockUrl(selectedBlock.id)
-                  : `https://sigmaspace.io/en/blocks`
-              }
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={async (e) => {
-                if (!selectedBlock.id) {
-                  e.preventDefault();
-                  try {
-                    await openBlockOnSigmaSpace(
-                      selectedBlock.height,
-                      effectiveNodeUrl,
-                      undefined,
-                      apiHeaders
-                    );
-                  } catch {
-                    toast.error("Could not resolve block on SigmaSpace");
-                  }
+            <div className="mt-9 flex flex-col gap-2">
+              <a
+                href={
+                  selectedBlock.id
+                    ? sigmaBlockUrl(selectedBlock.id)
+                    : `https://sigmaspace.io/en/blocks`
                 }
-              }}
-              className="mt-9 w-full py-4 rounded-2xl bg-[#FF7A3D] text-black text-sm font-semibold tracking-widest hover:brightness-110 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
-            >
-              OPEN ON SIGMASPACE <ExternalLink size={14} />
-            </a>
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={async (e) => {
+                  if (!selectedBlock.id) {
+                    e.preventDefault();
+                    try {
+                      await openBlockOnSigmaSpace(
+                        selectedBlock.height,
+                        effectiveNodeUrl,
+                        undefined,
+                        apiHeaders
+                      );
+                    } catch {
+                      toast.error("Could not resolve block on SigmaSpace");
+                    }
+                  }
+                }}
+                className="w-full py-4 rounded-2xl bg-[#FF7A3D] text-black text-sm font-semibold tracking-widest hover:brightness-110 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+              >
+                OPEN ON SIGMASPACE <ExternalLink size={14} />
+              </a>
+              {selectedBlock.id && (
+                <a
+                  href={officialExplorerBlockUrl(selectedBlock.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-3.5 rounded-2xl border border-white/20 text-sm font-mono tracking-widest hover:bg-white/5 active:bg-white/10 transition-all flex items-center justify-center gap-2 text-[#E8E8F0]"
+                >
+                  OFFICIAL EXPLORER <ExternalLink size={14} />
+                </a>
+              )}
+            </div>
 
             <button 
               onClick={() => setSelectedBlock(null)}

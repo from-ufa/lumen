@@ -502,6 +502,15 @@ Do not:
 | 2026-07-24 | **Bridge offline fix:** hub tokens now persist to disk; unknown-token auth logs; recovered remote agent after rename restart |
 | 2026-07-24 | **NODE SETTINGS cleanup:** only Lumen/My Node + Connect Bridge; drop REST URL, Public Access UI, Try Demo |
 | 2026-07-24 | Bridge agent assets from **GitHub** (Docker `git#main:bridge`, raw install.sh); detailed root README |
+| 2026-07-25 | **Honest block miner:** Explorer API `miner.address` + pool map; boom no longer fakes a peer as miner |
+
+### Block miner attribution (honest)
+
+- Source: `https://api.ergoplatform.com/api/v1/blocks?height={h}` → `miner.address` / `miner.name`
+- Pool labels: curated `app/lib/mining-pools.ts` (unknown `88…` → “Unknown pool”, `9…` → “Solo”)
+- **Never** infer miner from P2P peers or map pins
+- Map boom: decorative pulse only; notice shows `Block #H · Label · short`
+- Toast + block modal + timeline show the same attribution; links to SigmaSpace + official Explorer
 
 Recent commits live on `main` (`git log --oneline -20`).
 
