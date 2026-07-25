@@ -1,12 +1,25 @@
 #!/usr/bin/env node
 /**
- * Lumen Network Indexer
- * Harvests Ergo peers from local node + REST fan-out + TCP :9030 probe.
- * Writes data/network-catalog.json for /api/peers/map.
+ * Lumen Network Indexer (multi-seed)
+ *
+ * Harvests Ergo peers from:
+ *   1) Local node (ERGO_NODE_URL)
+ *   2) Curated public REST seeds (scripts/network-seeds.json)
+ *   3) Official mainnet.conf knownPeers (P2P endpoints)
+ *   4) REST fan-out to discovered restApiUrl hosts
+ *   5) Optional /info enrichment + TCP :9030 probe
+ *
+ * Writes data/network-catalog.json for /api/peers/map (Lumen Node mode only).
+ * My Node map is unaffected (bridge peers only).
  *
  * Usage: node scripts/crawl-network.mjs
- * Env: ERGO_NODE_URL, LUMEN_NETWORK_CATALOG (legacy AETHER_NETWORK_CATALOG),
- *      LUMEN_CRAWL_SKIP_PROBE=1 (legacy AETHER_CRAWL_SKIP_PROBE)
+ * Env:
+ *   ERGO_NODE_URL
+ *   LUMEN_NETWORK_CATALOG
+ *   LUMEN_CRAWL_SKIP_PROBE=1
+ *   LUMEN_NETWORK_SEEDS  path to seeds JSON
+ *   LUMEN_MAX_FANOUT     default 120
+ *   LUMEN_SEED_CONCURRENCY default 4
  */
 import fs from "fs";
 import path from "path";
@@ -28,14 +41,23 @@ const CATALOG_PATH =
   process.env.LUMEN_NETWORK_CATALOG ||
   process.env.AETHER_NETWORK_CATALOG ||
   path.join(ROOT, "data", "network-catalog.json");
+const SEEDS_PATH =
+  process.env.LUMEN_NETWORK_SEEDS ||
+  path.join(ROOT, "scripts", "network-seeds.json");
 const SKIP_PROBE =
   process.env.LUMEN_CRAWL_SKIP_PROBE === "1" ||
   process.env.AETHER_CRAWL_SKIP_PROBE === "1";
-const FANOUT_CONCURRENCY = 4;
-const FANOUT_TIMEOUT_MS = 8000;
-const PROBE_CONCURRENCY = 25;
-const PROBE_TIMEOUT_MS = 1500;
-const MAX_FANOUT = 40;
+
+const SEED_CONCURRENCY = Number(process.env.LUMEN_SEED_CONCURRENCY || 4);
+const SEED_TIMEOUT_MS = Number(process.env.LUMEN_SEED_TIMEOUT_MS || 9000);
+const FANOUT_CONCURRENCY = Number(process.env.LUMEN_FANOUT_CONCURRENCY || 6);
+const FANOUT_TIMEOUT_MS = Number(process.env.LUMEN_FANOUT_TIMEOUT_MS || 8000);
+const MAX_FANOUT = Number(process.env.LUMEN_MAX_FANOUT || 120);
+const INFO_CONCURRENCY = Number(process.env.LUMEN_INFO_CONCURRENCY || 8);
+const INFO_TIMEOUT_MS = Number(process.env.LUMEN_INFO_TIMEOUT_MS || 5000);
+const MAX_INFO_PROBES = Number(process.env.LUMEN_MAX_INFO_PROBES || 80);
+const PROBE_CONCURRENCY = Number(process.env.LUMEN_PROBE_CONCURRENCY || 30);
+const PROBE_TIMEOUT_MS = Number(process.env.LUMEN_PROBE_TIMEOUT_MS || 1500);
 
 const IPV4_RE = /(\d{1,3}(?:\.\d{1,3}){3})/;
 
@@ -90,7 +112,20 @@ function loadCatalog() {
 }
 
 function emptyCatalog() {
-  return { version: 1, updatedAt: 0, nodes: {} };
+  return { version: 1, updatedAt: 0, nodes: {}, seeds: {} };
+}
+
+function loadSeeds() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(SEEDS_PATH, "utf8"));
+    return {
+      restSeeds: Array.isArray(raw.restSeeds) ? raw.restSeeds : [],
+      p2pSeeds: Array.isArray(raw.p2pSeeds) ? raw.p2pSeeds : [],
+    };
+  } catch (e) {
+    log("seeds load FAIL", SEEDS_PATH, e.message);
+    return { restSeeds: [], p2pSeeds: [] };
+  }
 }
 
 function mergePeerList(catalog, peers, source, now) {
@@ -139,8 +174,7 @@ function mergePeerList(catalog, peers, source, now) {
       if (raw) existing.address = raw;
       if (port) existing.port = port;
       if (p.restApiUrl) existing.restApiUrl = p.restApiUrl;
-      if (p.lastHandshake)
-        existing.lastHandshake = Number(p.lastHandshake);
+      if (p.lastHandshake) existing.lastHandshake = Number(p.lastHandshake);
       if (p.lastMessage) existing.lastMessage = Number(p.lastMessage);
       if (existing.lat == null && geo) {
         existing.lat = geo.lat;
@@ -148,11 +182,44 @@ function mergePeerList(catalog, peers, source, now) {
         existing.country = geo.country;
         existing.city = geo.city;
       }
+      if (!Array.isArray(existing.sources)) existing.sources = [];
       if (!existing.sources.includes(source)) existing.sources.push(source);
       updated++;
     }
   }
   return { added, updated };
+}
+
+/** Insert a bare P2P seed host into catalog (no peer list yet). */
+function ensureP2pSeed(catalog, host, port, source, now) {
+  if (!host || isPrivateIp(host)) return false;
+  const existing = catalog.nodes[host];
+  if (!existing) {
+    const geo = lookupGeo(host);
+    catalog.nodes[host] = {
+      ip: host,
+      port: String(port || 9030),
+      name: "seed",
+      address: `/${host}:${port || 9030}`,
+      lastHandshake: 0,
+      lastMessage: 0,
+      lat: geo?.lat ?? null,
+      lon: geo?.lon ?? null,
+      country: geo?.country || "",
+      city: geo?.city || "",
+      reachable: null,
+      lastReachableAt: null,
+      lastProbedAt: null,
+      sources: [source],
+      firstSeenAt: now,
+      lastSeenAt: now,
+    };
+    return true;
+  }
+  if (!existing.sources.includes(source)) existing.sources.push(source);
+  existing.lastSeenAt = now;
+  if (!existing.port && port) existing.port = String(port);
+  return false;
 }
 
 async function fetchJson(url, timeoutMs) {
@@ -161,7 +228,10 @@ async function fetchJson(url, timeoutMs) {
   try {
     const res = await fetch(url, {
       signal: ctrl.signal,
-      headers: { "User-Agent": "LumenNetworkIndexer/0.1", Accept: "application/json" },
+      headers: {
+        "User-Agent": "LumenNetworkIndexer/1.1",
+        Accept: "application/json",
+      },
       redirect: "follow",
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -181,14 +251,24 @@ function isSafeRestUrl(raw) {
     if (u.username || u.password) return false;
     const host = u.hostname.replace(/^\[|\]$/g, "");
     if (host === "localhost" || host.endsWith(".local")) return false;
-    // IPv4 host?
+    // Allow loopback only for explicit local seed / ERGO_NODE_URL
+    if (host === "127.0.0.1" || host === "::1") {
+      return String(raw).includes("127.0.0.1") || String(raw).includes("localhost");
+    }
     if (IPV4_RE.test(host) && isPrivateIp(host)) return false;
-    // bare IPv6 private-ish skip simple check
-    if (host.includes(":")) return false;
+    if (host.includes(":")) return false; // skip bare IPv6
     return true;
   } catch {
     return false;
   }
+}
+
+function normalizeRestBase(url) {
+  return String(url || "")
+    .trim()
+    .replace(/\/$/, "")
+    .replace(/\/info$/i, "")
+    .replace(/\/peers\/.*$/i, "");
 }
 
 function tcpProbe(ip, port, timeoutMs) {
@@ -227,7 +307,7 @@ async function mapPool(items, concurrency, fn) {
     }
   }
   const workers = Array.from(
-    { length: Math.min(concurrency, items.length) },
+    { length: Math.min(concurrency, Math.max(1, items.length)) },
     () => worker()
   );
   await Promise.all(workers);
@@ -263,83 +343,302 @@ function saveCatalog(catalog) {
   fs.renameSync(tmp, CATALOG_PATH);
 }
 
+/**
+ * Harvest /peers/all + /peers/connected from one REST base.
+ * Returns { ok, added, peersAll, peersConnected, error? }
+ */
+async function harvestRestSeed(catalog, base, sourceTag, now) {
+  const result = {
+    ok: false,
+    added: 0,
+    updated: 0,
+    peersAll: 0,
+    peersConnected: 0,
+    error: null,
+  };
+  if (!isSafeRestUrl(base) && !base.includes("127.0.0.1")) {
+    result.error = "unsafe_url";
+    return result;
+  }
+  try {
+    let all = [];
+    let connected = [];
+    try {
+      all = await fetchJson(`${base}/peers/all`, SEED_TIMEOUT_MS);
+      if (!Array.isArray(all)) all = [];
+    } catch (e) {
+      // some nodes hide /peers/all — try connected only
+      all = [];
+      result.error = `all:${e.message}`;
+    }
+    try {
+      connected = await fetchJson(`${base}/peers/connected`, SEED_TIMEOUT_MS);
+      if (!Array.isArray(connected)) connected = [];
+    } catch (e) {
+      connected = [];
+      if (!all.length) throw e;
+    }
+
+    result.peersAll = all.length;
+    result.peersConnected = connected.length;
+    const m1 = mergePeerList(catalog, all, `${sourceTag}:all`, now);
+    const m2 = mergePeerList(
+      catalog,
+      connected,
+      `${sourceTag}:connected`,
+      now
+    );
+    result.added = m1.added + m2.added;
+    result.updated = m1.updated + m2.updated;
+    result.ok = all.length > 0 || connected.length > 0;
+
+    // Mark seed's connected peers as reachable
+    for (const p of connected) {
+      const parsed = extractIpPort(String(p.address || ""));
+      if (!parsed) continue;
+      const n = catalog.nodes[parsed.ip];
+      if (!n) continue;
+      n.reachable = true;
+      n.lastReachableAt = now;
+      if (p.name) n.name = p.name;
+    }
+  } catch (e) {
+    result.error = e.message || String(e);
+  }
+  return result;
+}
+
 async function main() {
   const started = Date.now();
   const now = started;
-  log("crawl start", { ERGO, CATALOG_PATH, SKIP_PROBE });
+  log("crawl start (multi-seed)", {
+    ERGO,
+    CATALOG_PATH,
+    SEEDS_PATH,
+    SKIP_PROBE,
+    MAX_FANOUT,
+  });
 
+  const beforeTotal = Object.keys(loadCatalog()?.nodes || {}).length;
   const catalog = loadCatalog() || emptyCatalog();
-  // Preserve probe history; refresh discovery
+  if (!catalog.seeds) catalog.seeds = {};
 
-  // 1) Local harvest
-  let localAll = [];
-  let localConnected = [];
-  try {
-    localAll = await fetchJson(`${ERGO}/peers/all`, 12000);
-    log("local /peers/all", localAll.length);
-  } catch (e) {
-    log("local /peers/all FAIL", e.message);
-  }
-  try {
-    localConnected = await fetchJson(`${ERGO}/peers/connected`, 12000);
-    log("local /peers/connected", localConnected.length);
-  } catch (e) {
-    log("local /peers/connected FAIL", e.message);
-  }
+  const seeds = loadSeeds();
+  const seedReport = {
+    rest: [],
+    p2pAdded: 0,
+    fanout: {},
+    info: {},
+    probe: {},
+  };
 
-  const m1 = mergePeerList(catalog, localAll, "local", now);
-  const m2 = mergePeerList(catalog, localConnected, "local-connected", now);
-  log("merge local", { ...m1, connectedUpdated: m2.updated });
+  // ─── 1) REST multi-seed harvest ─────────────────────────────────────────
+  const restTargets = [];
+  // Always include local first
+  restTargets.push({ id: "local", url: ERGO });
 
-  // Mark currently connected as reachable without TCP (we are talking to them)
-  for (const p of localConnected) {
-    const parsed = extractIpPort(String(p.address || ""));
-    if (!parsed) continue;
-    const n = catalog.nodes[parsed.ip];
-    if (!n) continue;
-    n.reachable = true;
-    n.lastReachableAt = now;
-    n.lastMessage = Number(p.lastMessage) || n.lastMessage;
-    n.lastHandshake = Number(p.lastHandshake) || n.lastHandshake;
-    if (p.name) n.name = p.name;
+  for (const s of seeds.restSeeds) {
+    if (!s?.url) continue;
+    if (s.id === "local") continue; // already added with ERGO override
+    const url = normalizeRestBase(s.url);
+    if (!url) continue;
+    // skip duplicate of local
+    if (url === ERGO || url === "http://127.0.0.1:9053") continue;
+    restTargets.push({ id: s.id || url, url });
   }
 
-  // 2) REST fan-out
+  // Dedup by URL
+  const seenUrl = new Set();
+  const uniqueRest = [];
+  for (const t of restTargets) {
+    const u = normalizeRestBase(t.url);
+    if (seenUrl.has(u)) continue;
+    seenUrl.add(u);
+    uniqueRest.push({ ...t, url: u });
+  }
+
+  log("rest seeds", uniqueRest.map((t) => t.id).join(", "));
+
+  await mapPool(uniqueRest, SEED_CONCURRENCY, async (t) => {
+    const r = await harvestRestSeed(
+      catalog,
+      t.url,
+      `seed:${t.id}`,
+      now
+    );
+    seedReport.rest.push({
+      id: t.id,
+      url: t.url,
+      ok: r.ok,
+      added: r.added,
+      peersAll: r.peersAll,
+      peersConnected: r.peersConnected,
+      error: r.error,
+    });
+    if (r.ok) {
+      log(
+        "seed ok",
+        t.id,
+        "all",
+        r.peersAll,
+        "conn",
+        r.peersConnected,
+        "added",
+        r.added
+      );
+    } else {
+      log("seed fail", t.id, r.error);
+    }
+  });
+
+  // ─── 2) Official P2P knownPeers ─────────────────────────────────────────
+  for (const p of seeds.p2pSeeds) {
+    if (!p?.host) continue;
+    const added = ensureP2pSeed(
+      catalog,
+      p.host,
+      p.port || 9030,
+      `p2p-seed:${p.source || "mainnet"}`,
+      now
+    );
+    if (added) seedReport.p2pAdded++;
+  }
+  log("p2p seeds added/new", seedReport.p2pAdded);
+
+  // ─── 3) REST fan-out (discovered restApiUrl) ────────────────────────────
   const restUrls = new Map();
   for (const n of Object.values(catalog.nodes)) {
     if (n.restApiUrl && isSafeRestUrl(n.restApiUrl)) {
-      const base = String(n.restApiUrl).replace(/\/$/, "");
-      restUrls.set(base, n.ip);
+      const base = normalizeRestBase(n.restApiUrl);
+      if (!seenUrl.has(base)) restUrls.set(base, n.ip);
     }
   }
-  // Also from raw localAll entries
-  for (const p of [...localAll, ...localConnected]) {
-    if (p.restApiUrl && isSafeRestUrl(p.restApiUrl)) {
-      restUrls.set(String(p.restApiUrl).replace(/\/$/, ""), "raw");
-    }
-  }
-
-  const fanoutList = [...restUrls.keys()].slice(0, MAX_FANOUT);
-  log("fan-out targets", fanoutList.length);
+  // Prefer not re-hitting primary seeds as fanout (already harvested)
+  const fanoutList = [...restUrls.keys()]
+    .filter((u) => !seenUrl.has(u))
+    .slice(0, MAX_FANOUT);
+  log("fan-out targets", fanoutList.length, "(max", MAX_FANOUT + ")");
 
   let fanoutOk = 0;
   let fanoutFail = 0;
   let fanoutAdded = 0;
   await mapPool(fanoutList, FANOUT_CONCURRENCY, async (base) => {
     try {
-      const peers = await fetchJson(`${base}/peers/all`, FANOUT_TIMEOUT_MS);
+      // Prefer /peers/all; fallback connected
+      let peers = [];
+      try {
+        peers = await fetchJson(`${base}/peers/all`, FANOUT_TIMEOUT_MS);
+      } catch {
+        peers = await fetchJson(`${base}/peers/connected`, FANOUT_TIMEOUT_MS);
+      }
       if (!Array.isArray(peers)) throw new Error("not array");
       const r = mergePeerList(catalog, peers, "fanout", now);
       fanoutAdded += r.added;
       fanoutOk++;
-      log("fanout ok", base, "peers", peers.length, "added", r.added);
+      if (r.added > 0) log("fanout ok", base, "peers", peers.length, "added", r.added);
     } catch (e) {
       fanoutFail++;
-      log("fanout fail", base, e.message);
     }
   });
+  seedReport.fanout = { ok: fanoutOk, fail: fanoutFail, added: fanoutAdded };
 
-  // 3) TCP probe (skip private already filtered)
+  // ─── 4) /info enrichment (name, height, version) ────────────────────────
+  const infoCandidates = [];
+  const infoSeen = new Set();
+  for (const n of Object.values(catalog.nodes)) {
+    if (!n.restApiUrl || !isSafeRestUrl(n.restApiUrl)) continue;
+    const base = normalizeRestBase(n.restApiUrl);
+    if (infoSeen.has(base)) continue;
+    infoSeen.add(base);
+    infoCandidates.push({ ip: n.ip, base });
+  }
+  // Also probe primary seeds
+  for (const t of uniqueRest) {
+    if (infoSeen.has(t.url)) continue;
+    infoSeen.add(t.url);
+    infoCandidates.push({ ip: null, base: t.url });
+  }
+
+  const toInfo = infoCandidates.slice(0, MAX_INFO_PROBES);
+  let infoOk = 0;
+  let infoFail = 0;
+  await mapPool(toInfo, INFO_CONCURRENCY, async ({ ip, base }) => {
+    try {
+      const info = await fetchJson(`${base}/info`, INFO_TIMEOUT_MS);
+      infoOk++;
+      // Attach to node by IP if we know it, else by matching restApiUrl
+      const targets = [];
+      if (ip && catalog.nodes[ip]) targets.push(catalog.nodes[ip]);
+      for (const n of Object.values(catalog.nodes)) {
+        if (
+          n.restApiUrl &&
+          normalizeRestBase(n.restApiUrl) === base &&
+          !targets.includes(n)
+        ) {
+          targets.push(n);
+        }
+      }
+      for (const n of targets) {
+        if (info.name) n.name = info.name;
+        n.infoHeight =
+          info.fullHeight ?? info.headersHeight ?? n.infoHeight ?? null;
+        n.infoVersion = info.appVersion || n.infoVersion || null;
+        n.lastInfoAt = Date.now();
+        // remember working REST
+        n.restApiUrl = n.restApiUrl || base;
+      }
+    } catch {
+      infoFail++;
+    }
+  });
+  seedReport.info = { ok: infoOk, fail: infoFail, probed: toInfo.length };
+
+  // ─── 4b) Open-REST scan: try http://IP:9053 on nodes without restApiUrl ─
+  // Discovers hidden public APIs (many operators leave :9053 open).
+  const openRestCandidates = Object.values(catalog.nodes)
+    .filter((n) => n.ip && !n.restApiUrl)
+    .slice(0, Number(process.env.LUMEN_OPEN_REST_MAX || 100));
+  let openRestOk = 0;
+  let openRestAdded = 0;
+  await mapPool(openRestCandidates, 10, async (n) => {
+    const base = `http://${n.ip}:9053`;
+    try {
+      const info = await fetchJson(`${base}/info`, 3500);
+      openRestOk++;
+      n.restApiUrl = base;
+      if (info.name) n.name = info.name;
+      n.infoHeight = info.fullHeight ?? info.headersHeight ?? null;
+      n.infoVersion = info.appVersion || null;
+      n.lastInfoAt = Date.now();
+      n.reachable = true;
+      n.lastReachableAt = Date.now();
+      // harvest peers from this newly found REST
+      try {
+        let peers = [];
+        try {
+          peers = await fetchJson(`${base}/peers/all`, 5000);
+        } catch {
+          peers = await fetchJson(`${base}/peers/connected`, 5000);
+        }
+        if (Array.isArray(peers) && peers.length) {
+          const r = mergePeerList(catalog, peers, `open-rest:${n.ip}`, now);
+          openRestAdded += r.added;
+        }
+      } catch {
+        /* peers optional */
+      }
+    } catch {
+      /* closed REST — ignore */
+    }
+  });
+  seedReport.openRest = {
+    candidates: openRestCandidates.length,
+    ok: openRestOk,
+    peersAdded: openRestAdded,
+  };
+  log("open-rest scan", seedReport.openRest);
+
+  // ─── 5) TCP probe ───────────────────────────────────────────────────────
   let probeOk = 0;
   let probeFail = 0;
   if (!SKIP_PROBE) {
@@ -353,30 +652,18 @@ async function main() {
         n.reachable = true;
         n.lastReachableAt = n.lastProbedAt;
         probeOk++;
+      } else if (!n.lastReachableAt || n.lastReachableAt < now) {
+        // don't demote if freshly marked connected this run
+        n.reachable = false;
+        probeFail++;
       } else {
-        // Don't demote currently-connected (already set true this run)
-        if (n.reachable !== true || n.lastReachableAt < now - 1000) {
-          // if we marked connected this run, lastReachableAt >= now roughly
-        }
-        // Only set false if not freshly marked connected
-        if (!n.lastReachableAt || n.lastReachableAt < now) {
-          n.reachable = false;
-        }
         probeFail++;
       }
     });
-    // Re-assert connected peers as reachable (probe may have raced)
-    for (const p of localConnected) {
-      const parsed = extractIpPort(String(p.address || ""));
-      if (!parsed) continue;
-      const n = catalog.nodes[parsed.ip];
-      if (!n) continue;
-      n.reachable = true;
-      n.lastReachableAt = Date.now();
-    }
   } else {
-    log("probe skipped (LUMEN_CRAWL_SKIP_PROBE=1)");
+    log("probe skipped");
   }
+  seedReport.probe = { ok: probeOk, fail: probeFail };
 
   // Fill missing geo
   let geoFilled = 0;
@@ -394,16 +681,28 @@ async function main() {
   }
 
   catalog.updatedAt = Date.now();
+  catalog.seeds = {
+    lastRunAt: catalog.updatedAt,
+    report: seedReport,
+  };
   recomputeStats(catalog);
   saveCatalog(catalog);
 
+  const afterTotal = catalog.stats.total;
   const elapsed = ((Date.now() - started) / 1000).toFixed(1);
   log("crawl done", {
     elapsedSec: elapsed,
+    beforeTotal,
+    afterTotal,
+    delta: afterTotal - beforeTotal,
     stats: catalog.stats,
+    seedsOk: seedReport.rest.filter((r) => r.ok).length,
+    seedsFail: seedReport.rest.filter((r) => !r.ok).length,
     fanoutOk,
     fanoutFail,
     fanoutAdded,
+    infoOk,
+    infoFail,
     probeOk,
     probeFail,
     geoFilled,

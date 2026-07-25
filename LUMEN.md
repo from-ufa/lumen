@@ -503,6 +503,7 @@ Do not:
 | 2026-07-24 | **NODE SETTINGS cleanup:** only Lumen/My Node + Connect Bridge; drop REST URL, Public Access UI, Try Demo |
 | 2026-07-24 | Bridge agent assets from **GitHub** (Docker `git#main:bridge`, raw install.sh); detailed root README |
 | 2026-07-25 | **Honest block miner:** Explorer API `miner.address` + pool map; boom no longer fakes a peer as miner |
+| 2026-07-25 | **Multi-seed map discovery:** `network-seeds.json` + open-REST scan; catalog ~443 → ~800+ nodes |
 
 ### Block miner attribution (honest)
 
@@ -513,6 +514,30 @@ Do not:
   3. `9…` → **Solo**, other `88…` → **Unknown pool**
 - Map boom: decorative only; toast/modal/timeline: `Block #H · Label · short`
 - Links: SigmaSpace + official Explorer
+
+### Network map discovery (multi-seed)
+
+Catalog file: `data/network-catalog.json` (gitignored), built by `scripts/crawl-network.mjs` (`aether-crawl.timer` ~12 min).
+
+**Sources (Lumen Node map only — My Node stays bridge-only):**
+
+1. Local node `ERGO_NODE_URL` (`/peers/all` + `/peers/connected`)
+2. Curated public REST seeds — `scripts/network-seeds.json`
+3. Official `mainnet.conf` knownPeers (P2P host:port)
+4. Fan-out to discovered `restApiUrl` hosts (max 120)
+5. Open-REST scan: `http://IP:9053/info` + peers on nodes without known API
+6. TCP `:9030` reachability + GeoIP
+
+```bash
+cd /home/lumen
+npm run crawl:network
+# or
+node scripts/crawl-network.mjs
+```
+
+Tune: `LUMEN_MAX_FANOUT`, `LUMEN_SEED_CONCURRENCY`, `LUMEN_OPEN_REST_MAX`, `LUMEN_CRAWL_SKIP_PROBE=1`.
+
+Each node keeps `sources[]` (e.g. `seed:eutxo:connected`, `open-rest:1.2.3.4`).
 
 ### Unknown miners watcher
 

@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "description": "Multi-seed discovery sources for Lumen network catalog / map (Lumen Node mode only).",
+  "restSeeds": [
+    {
+      "id": "local",
+      "url": "http://127.0.0.1:9053",
+      "note": "Overridden by ERGO_NODE_URL when set"
+    },
+    {
+      "id": "eutxo",
+      "url": "https://ergo-node.eutxo.de",
+      "note": "Public community node (EU)"
+    },
+    {
+      "id": "oette1",
+      "url": "https://ergo1.oette.info"
+    },
+    {
+      "id": "oette2",
+      "url": "https://ergo2.oette.info"
+    },
+    {
+      "id": "ergopool",
+      "url": "https://node.ergopool.io"
+    },
+    {
+      "id": "sigmaspace",
+      "url": "https://node.sigmaspace.io"
+    },
+    {
+      "id": "mainnet-seed-hetzner",
+      "url": "http://213.239.193.208:9053",
+      "note": "Official knownPeer with open REST"
+    },
+    {
+      "id": "mainnet-seed-sg",
+      "url": "http://159.65.11.55:9053",
+      "note": "Official knownPeer Singapore"
+    },
+    {
+      "id": "guapswap",
+      "url": "http://api.ovh-ergo-node-mainnet.guapswap.org"
+    },
+    {
+      "id": "polaris",
+      "url": "https://ergo.polarisitsolutions.com"
+    },
+    {
+      "id": "blocpow",
+      "url": "https://ergonode.blocpow.io"
+    },
+    {
+      "id": "zoomout",
+      "url": "https://ergo-node.zoomout.io"
+    }
+  ],
+  "p2pSeeds": [
+    { "host": "213.239.193.208", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "159.65.11.55", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "165.227.26.175", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "159.89.116.15", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "136.244.110.145", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "94.130.108.35", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "51.75.147.1", "port": 9020, "source": "mainnet.conf knownPeers" },
+    { "host": "221.165.214.185", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "217.182.197.196", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "173.212.220.9", "port": 9030, "source": "mainnet.conf knownPeers" },
+    { "host": "176.9.65.58", "port": 9130, "source": "mainnet.conf knownPeers" },
+    { "host": "213.152.106.56", "port": 9030, "source": "mainnet.conf knownPeers" }
+  ]
+}
