@@ -1337,8 +1337,11 @@ function Scene({
 }: ConstellationProps) {
   const controlsApiRef = useRef<ControlsApi | null>(null);
   const ambienceRef = useRef<AmbienceController | null>(null);
-  const [hoveredPeer, setHoveredPeer] = useState<Peer | null>(null);
+  /** Sticky planet info (tap/click keeps card open until Clear) */
+  const [infoPeer, setInfoPeer] = useState<Peer | null>(null);
   const [hoveredPos, setHoveredPos] = useState<THREE.Vector3 | null>(null);
+  const [pointerOver, setPointerOver] = useState(false);
+  const vizRef = useRef<HTMLDivElement | null>(null);
   const [isAutoOrbit, setIsAutoOrbit] = useState(true);
   /** Galaxy spin multiplier (0.25× – 5×) */
   const [orbitSpeed, setOrbitSpeed] = useState(1.5);
@@ -1359,7 +1362,9 @@ function Scene({
   const clearSearchFocus = useCallback(() => {
     setFocusAddress(null);
     controlsApiRef.current?.clearPeerFocus();
-    setHoveredPeer(null);
+    setInfoPeer(null);
+    setHoveredPos(null);
+    setPointerOver(false);
     onPeerHover?.(null);
     setSearchClearToken((n) => n + 1);
     // Resume galaxy spin — clean, logical reset after Clear
@@ -1437,7 +1442,8 @@ function Scene({
             p.name === node.name
         ) || null;
       if (peer) {
-        setHoveredPeer(peer);
+        setInfoPeer(peer);
+        setPointerOver(true);
         onPeerHover?.(peer);
       }
     },
@@ -1481,12 +1487,96 @@ function Scene({
 
   const handlePeerHover = useCallback<PeerHoverFn>(
     (peer, pos) => {
-      setHoveredPeer(peer);
-      setHoveredPos(pos || null);
+      if (peer) {
+        setInfoPeer(peer);
+        setHoveredPos(pos || null);
+        setPointerOver(true);
+      } else {
+        // Pointer leave — keep sticky card; only release hover spin pause
+        setPointerOver(false);
+      }
       onPeerHover?.(peer);
     },
     [onPeerHover]
   );
+
+  const clearInfoPeer = useCallback(() => {
+    setInfoPeer(null);
+    setHoveredPos(null);
+    setPointerOver(false);
+    onPeerHover?.(null);
+  }, [onPeerHover]);
+
+  /** Clamp floating card into the viz box (desktop) */
+  const floatingStyle = useMemo(() => {
+    if (!hoveredPos) {
+      return { left: "50%", top: "50%", transform: "translate(-50%, -50%)" };
+    }
+    // Approximate screen offset from world pos (legacy mapping)
+    const rawX = 50 + hoveredPos.x * 1.8; // %
+    const rawY = 45 - hoveredPos.y * 1.6;
+    // Keep card fully inside with margin (card ~280px / ~160px → ~22% / 18% of typical canvas)
+    const left = Math.min(78, Math.max(22, rawX));
+    const top = Math.min(72, Math.max(18, rawY));
+    return {
+      left: `${left}%`,
+      top: `${top}%`,
+      transform: "translate(-50%, -50%)",
+    };
+  }, [hoveredPos]);
+
+  const infoCardBody = infoPeer ? (
+    <>
+      <div className="flex items-start justify-between gap-3 mb-1">
+        <div className="font-mono text-[#C8D0E0] text-[10px] sm:text-xs tracking-[2px]">
+          PEER
+        </div>
+        <button
+          type="button"
+          onClick={clearInfoPeer}
+          className="pointer-events-auto text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white shrink-0 -mt-0.5"
+        >
+          CLOSE
+        </button>
+      </div>
+      <div className="font-mono text-white break-all text-[13px] leading-tight mb-1">
+        {infoPeer.name || infoPeer.address}
+      </div>
+      {infoPeer.name && (
+        <div className="font-mono text-[#A0A0B0] text-[11px] break-all mb-2">
+          {infoPeer.address}
+        </div>
+      )}
+      <div className="font-mono text-[10px] text-[#A0A0B0] mb-3 tracking-wider uppercase">
+        {PLANET_ARCHETYPES[kindFromAddress(infoPeer.address || "")].label} world
+      </div>
+      <div className="flex justify-between text-xs gap-4">
+        <div>
+          <span className="text-[#A0A0B0]">LAST SEEN</span>
+          <br />
+          <span className="font-mono text-white">
+            {Math.floor((Date.now() - peerLastMs(infoPeer.lastMessage)) / 1000)}s
+            ago
+          </span>
+        </div>
+        <div className="text-right">
+          <span className="text-[#A0A0B0]">STATUS</span>
+          <br />
+          <span
+            className={
+              Date.now() - peerLastMs(infoPeer.lastMessage) < 120000
+                ? "text-[#10B981]"
+                : "text-[#F59E0B]"
+            }
+          >
+            {Date.now() - peerLastMs(infoPeer.lastMessage) < 120000
+              ? "ACTIVE"
+              : "STALE"}
+          </span>
+        </div>
+      </div>
+    </>
+  ) : null;
 
   const focusOnMyNode = () => {
     setFocusAddress(null);
@@ -1538,7 +1628,7 @@ function Scene({
   }, [onSimulateBlock, triggerBlockPropagation, orbitSpeed, musicOn, musicBusy]);
 
   return (
-    <>
+    <div ref={vizRef} className="absolute inset-0 w-full h-full">
       <Canvas
         camera={{ position: [0, 22, 42], fov: 42 }}
         className="!absolute !inset-0 !h-full !w-full"
@@ -1564,7 +1654,7 @@ function Scene({
           autoOrbit={isAutoOrbit}
           orbitSpeed={orbitSpeed}
           controlsApiRef={controlsApiRef}
-          peerHovered={!!hoveredPeer || !!focusAddress}
+          peerHovered={pointerOver || !!infoPeer || !!focusAddress}
           focusAddress={focusAddress}
           onFocusAddressChange={setFocusAddress}
         />
@@ -1764,69 +1854,46 @@ function Scene({
         </div>
       )}
 
+      {/*
+        Planet info card
+        - Mobile: docked bottom of canvas (always fully visible)
+        - Desktop: near planet, % clamped inside the viz box
+      */}
       <AnimatePresence>
-        {hoveredPeer && hoveredPos && !focusAddress && (
-          <div
-            className="absolute z-30 pointer-events-none"
-            style={{
-              left: `calc(50% + ${hoveredPos.x * 1.6}px)`,
-              top: `calc(45% - ${hoveredPos.y * 1.4}px)`,
-            }}
-          >
+        {infoPeer && !focusAddress && (
+          <>
+            {/* Mobile — docked, full readable width inside map */}
             <motion.div
+              key="peer-info-mobile"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 8 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="md:hidden absolute z-40 left-2.5 right-2.5 bottom-2.5 pointer-events-auto"
+            >
+              <div className="glass rounded-2xl px-4 py-3.5 text-sm border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.5)] max-h-[min(42vh,280px)] overflow-y-auto">
+                {infoCardBody}
+              </div>
+            </motion.div>
+
+            {/* Desktop — floating, clamped into viewport */}
+            <motion.div
+              key="peer-info-desktop"
               initial={{ opacity: 0, y: 8, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.98 }}
-              className="glass rounded-2xl px-5 py-4 text-sm min-w-[220px] max-w-[280px] border border-white/10"
+              className="hidden md:block absolute z-30 pointer-events-none"
+              style={floatingStyle}
             >
-              <div className="font-mono text-[#C8D0E0] text-xs tracking-[2px] mb-1">
-                PEER
-              </div>
-              <div className="font-mono text-white break-all text-[13px] leading-tight mb-1">
-                {hoveredPeer.name || hoveredPeer.address}
-              </div>
-              {hoveredPeer.name && (
-                <div className="font-mono text-[#A0A0B0] text-[11px] break-all mb-2">
-                  {hoveredPeer.address}
-                </div>
-              )}
-              <div className="font-mono text-[10px] text-[#A0A0B0] mb-3 tracking-wider uppercase">
-                {PLANET_ARCHETYPES[kindFromAddress(hoveredPeer.address || "")].label}{" "}
-                world
-              </div>
-              <div className="flex justify-between text-xs">
-                <div>
-                  <span className="text-[#A0A0B0]">LAST SEEN</span>
-                  <br />
-                  <span className="font-mono text-white">
-                    {Math.floor(
-                      (Date.now() - peerLastMs(hoveredPeer.lastMessage)) / 1000
-                    )}
-                    s ago
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[#A0A0B0]">STATUS</span>
-                  <br />
-                  <span
-                    className={
-                      Date.now() - peerLastMs(hoveredPeer.lastMessage) < 120000
-                        ? "text-[#10B981]"
-                        : "text-[#F59E0B]"
-                    }
-                  >
-                    {Date.now() - peerLastMs(hoveredPeer.lastMessage) < 120000
-                      ? "ACTIVE"
-                      : "STALE"}
-                  </span>
-                </div>
+              <div className="glass rounded-2xl px-5 py-4 text-sm w-[min(280px,32vw)] border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.4)] pointer-events-auto">
+                {infoCardBody}
               </div>
             </motion.div>
-          </div>
+          </>
         )}
       </AnimatePresence>
 
-      {/* Legend — same card language, bottom center-left under search */}
+      {/* Legend — desktop bottom-left */}
       <div
         className={`hidden md:block absolute bottom-4 left-4 z-20 ${HUD_PANEL_W} pointer-events-none`}
       >
@@ -1846,7 +1913,7 @@ function Scene({
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
