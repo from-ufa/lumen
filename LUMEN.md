@@ -523,6 +523,7 @@ Do not:
 | 2026-07-26 | **Singularity cinematic pass:** crystalline cyan-gold plasma core, god rays, plasma ribbons, comet trails, shockwaves, ~13 nodes |
 | 2026-07-26 | **Singularity luxury pass:** soft cyan core, 11 nodes, sparse particles, thin streams, calm fintech aesthetic |
 | 2026-07-26 | **Singularity aerospace pass:** SpaceX-inspired dark metal/glass, precise filaments, 11 machined nodes |
+| 2026-07-26 | **Singularity Andromeda pass:** NASA/GALEX photo skybox, crystalline core, spiral-arm nodes, restrained SpaceX presentation |
 
 ### Block miner attribution (honest)
 

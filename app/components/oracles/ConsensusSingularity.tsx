@@ -1,20 +1,21 @@
 "use client";
 
 /**
- * Consensus Singularity — SpaceX-inspired aerospace engineering aesthetic.
- * Dark glass · brushed metal · controlled cyan-white light · absolute precision.
- * No neon chaos, no soft blobs — restrained power.
+ * Consensus Singularity — SpaceX interstellar presentation.
+ * Real Andromeda (NASA/GALEX) as photographic space backdrop.
+ * Crystalline core at galactic center · refined light-point oracles ·
+ * thin rings · absolute restraint. No neon, no particle spam.
  */
 
 import React, {
-  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  Suspense,
 } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Stars } from "@react-three/drei";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -64,19 +65,19 @@ type NodeLayout = {
   seed: number;
 };
 
-/* ─── Aerospace palette ─────────────────────────────────────────────────── */
+/* ─── Palette — restrained aerospace ────────────────────────────────────── */
 
-const CYAN_WHITE = "#B8F0FF";
-const CYAN_CORE = "#7DD3F0";
-const METAL = "#2A2C30";
-const METAL_LIGHT = "#4A4E56";
-const GLASS = "#1A1C20";
-const EDGE = "#C8D0D8";
-const GREEN = "#3DDC97";
+const CYAN_WHITE = "#D8F4FF";
+const CORE_EMIT = "#A8E4F5";
+const METAL = "#1E2024";
+const EDGE = "#A8B0B8";
+const GREEN = "#4ADE9B";
 const AMBER = "#C4A574";
-const RED = "#B85C5C";
+const RED = "#A85858";
 const VOID = "#000000";
-const WHITE = "#F4F7FA";
+const WHITE = "#F5F7FA";
+
+const ANDROMEDA_TEX = "/textures/andromeda-2k.jpg";
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -93,7 +94,7 @@ function hexToThree(hex: string): THREE.Color {
   return new THREE.Color(hex);
 }
 
-function statusEdgeColor(s: FeedStatus): THREE.Color {
+function statusColor(s: FeedStatus): THREE.Color {
   if (s === "live") return hexToThree(GREEN);
   if (s === "stale") return hexToThree(AMBER);
   return hexToThree(RED);
@@ -128,19 +129,19 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function nodePosition(index: number, total: number, seed: number): THREE.Vector3 {
-  const n = Math.max(total, 1);
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  const y = 1 - (index / Math.max(n - 1, 1)) * 2;
-  const rAtY = Math.sqrt(Math.max(0, 1 - y * y));
-  const theta = golden * index + (seed % 997) * 0.001;
-  // Precise depth layering — engineered placement
-  const depthBand = 0.88 + ((seed % 5) / 5) * 0.28;
-  const radius = (6.0 + (index % 3) * 0.28) * depthBand;
+/**
+ * Place nodes along dual spiral arms — reads as galactic structure,
+ * not a random sphere cloud.
+ */
+function spiralPosition(index: number, total: number, seed: number): THREE.Vector3 {
+  const arm = index % 2;
+  const t = (index / Math.max(total, 1)) * Math.PI * 2.8 + arm * Math.PI;
+  const r = 2.8 + (index / Math.max(total - 1, 1)) * 6.2;
+  const jitter = ((seed % 20) - 10) * 0.02;
   return new THREE.Vector3(
-    Math.cos(theta) * rAtY * radius,
-    y * radius * 0.46,
-    Math.sin(theta) * rAtY * radius
+    Math.cos(t) * (r + jitter),
+    Math.sin(t * 1.7) * 0.55 + ((seed % 11) - 5) * 0.04,
+    Math.sin(t) * (r + jitter) * 0.92
   );
 }
 
@@ -173,15 +174,57 @@ function buildNodes(feed: SingularityFeed, reduced: boolean): NodeLayout[] {
     return {
       address: n.address,
       status: n.status,
-      pos: nodePosition(i, list.length, seed),
+      pos: spiralPosition(i, list.length, seed),
       seed,
     };
   });
 }
 
-/* ─── Core: dark glass + brushed metal + inner cyan-white ───────────────── */
+/* ─── Andromeda photographic sky ────────────────────────────────────────── */
 
-function AerospaceCore({
+function AndromedaSky({ reduced }: { reduced: boolean }) {
+  const tex = useLoader(THREE.TextureLoader, ANDROMEDA_TEX);
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
+
+  useEffect(() => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = reduced ? 4 : 8;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+  }, [tex, reduced]);
+
+  // Slow celestial drift
+  const group = useRef<THREE.Group>(null);
+  useFrame((_, dt) => {
+    if (group.current) group.current.rotation.y += dt * 0.004;
+  });
+
+  return (
+    <group ref={group}>
+      {/* Inward-facing sphere — real photograph surrounds the scene */}
+      <mesh scale={[-1, 1, 1]}>
+        <sphereGeometry args={[48, reduced ? 48 : 64, reduced ? 32 : 48]} />
+        <meshBasicMaterial
+          ref={matRef}
+          map={tex}
+          side={THREE.BackSide}
+          toneMapped={false}
+          // slightly dim so core/HUD read cleanly
+          color="#c8c8c8"
+        />
+      </mesh>
+      {/* pure black outer void beyond photo edges feel */}
+      <mesh>
+        <sphereGeometry args={[52, 16, 12]} />
+        <meshBasicMaterial color={VOID} side={THREE.BackSide} />
+      </mesh>
+    </group>
+  );
+}
+
+/* ─── Crystalline singularity at galactic core ──────────────────────────── */
+
+function CrystallineCore({
   flash,
   status,
 }: {
@@ -189,172 +232,125 @@ function AerospaceCore({
   status: FeedStatus;
 }) {
   const outer = useRef<THREE.Mesh>(null);
-  const lattice = useRef<THREE.Mesh>(null);
   const inner = useRef<THREE.Mesh>(null);
-  const glow = useRef<THREE.Mesh>(null);
+  const lattice = useRef<THREE.Mesh>(null);
   const dim = status === "offline";
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const f = flash;
-    // Almost static — engineering, not organic pulse
     if (outer.current) {
-      outer.current.rotation.y = t * 0.04;
-      const s = 1 + f * 0.06;
-      outer.current.scale.setScalar(s);
+      outer.current.rotation.y = t * 0.035;
+      outer.current.scale.setScalar(1 + f * 0.04);
     }
     if (lattice.current) {
-      lattice.current.rotation.y = -t * 0.06;
-      lattice.current.rotation.x = Math.sin(t * 0.15) * 0.04;
+      lattice.current.rotation.y = -t * 0.05;
     }
     if (inner.current) {
-      const s = (0.55 + Math.sin(t * 0.5) * 0.012) * (1 + f * 0.12);
+      const s = (0.42 + Math.sin(t * 0.4) * 0.008) * (1 + f * 0.08);
       inner.current.scale.setScalar(s);
       const mat = inner.current.material as THREE.MeshStandardMaterial;
-      mat.emissiveIntensity = (dim ? 0.4 : 1.8) + f * 1.2;
-    }
-    if (glow.current) {
-      const s = (1.15 + Math.sin(t * 0.35) * 0.02) * (1 + f * 0.15);
-      glow.current.scale.setScalar(s);
-      const mat = glow.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = (dim ? 0.04 : 0.1) + f * 0.1;
+      mat.emissiveIntensity = (dim ? 0.35 : 1.5) + f * 0.8;
     }
   });
 
   return (
     <group>
-      {/* controlled internal illumination */}
       <pointLight
         color={CYAN_WHITE}
-        intensity={dim ? 0.8 : 2.4 + flash * 2}
-        distance={22}
+        intensity={dim ? 0.6 : 1.8 + flash * 1.2}
+        distance={16}
         decay={2}
       />
-      <pointLight
-        color="#ffffff"
-        intensity={0.5 + flash * 0.6}
-        distance={8}
-        decay={2}
-      />
-      {/* cold rim fill — aerospace hangar */}
-      <directionalLight
-        color="#6A7A88"
-        intensity={0.35}
-        position={[4, 6, 3]}
-      />
-      <directionalLight
-        color="#3A4550"
-        intensity={0.2}
-        position={[-5, -2, -4]}
-      />
+      <pointLight color="#ffffff" intensity={0.35 + flash * 0.4} distance={6} />
 
-      {/* outer dark glass shell */}
+      {/* dark crystalline shell */}
       <mesh ref={outer}>
-        <icosahedronGeometry args={[0.95, 1]} />
+        <icosahedronGeometry args={[0.72, 1]} />
         <meshStandardMaterial
-          color={GLASS}
+          color={METAL}
           metalness={0.92}
-          roughness={0.22}
+          roughness={0.2}
           transparent
-          opacity={0.88}
-          envMapIntensity={0.5}
-          toneMapped
+          opacity={0.78}
         />
       </mesh>
 
-      {/* brushed metal structural lattice */}
+      {/* fine structure lines */}
       <mesh ref={lattice}>
-        <icosahedronGeometry args={[0.98, 1]} />
+        <icosahedronGeometry args={[0.74, 1]} />
         <meshBasicMaterial
-          color={METAL_LIGHT}
+          color={EDGE}
           wireframe
           transparent
-          opacity={0.45}
+          opacity={0.28}
           depthWrite={false}
           toneMapped={false}
         />
       </mesh>
 
-      {/* inner crystalline emitter — cyan-white, contained */}
+      {/* contained white-cyan emitter */}
       <mesh ref={inner}>
-        <octahedronGeometry args={[0.72, 2]} />
+        <octahedronGeometry args={[0.55, 1]} />
         <meshStandardMaterial
-          color={CYAN_WHITE}
-          emissive={hexToThree(CYAN_CORE)}
-          emissiveIntensity={1.8}
-          metalness={0.4}
-          roughness={0.15}
+          color={WHITE}
+          emissive={hexToThree(CORE_EMIT)}
+          emissiveIntensity={1.5}
+          metalness={0.3}
+          roughness={0.2}
           toneMapped={false}
         />
       </mesh>
 
-      {/* tight internal glow only — not a soft blob */}
-      <mesh ref={glow}>
-        <sphereGeometry args={[0.85, 24, 24]} />
+      {/* equatorial precision ring on core */}
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[0.78, 0.006, 4, 64]} />
         <meshBasicMaterial
           color={CYAN_WHITE}
           transparent
-          opacity={0.1}
-          depthWrite={false}
+          opacity={0.5}
           toneMapped={false}
           blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-
-      {/* equatorial metal ring detail on core */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[1.02, 0.012, 6, 64]} />
-        <meshStandardMaterial
-          color={METAL_LIGHT}
-          metalness={0.95}
-          roughness={0.25}
+          depthWrite={false}
         />
       </mesh>
     </group>
   );
 }
 
-/* ─── Sharp orbital rings of pure light ─────────────────────────────────── */
+/* ─── Minimal orbital light rings ───────────────────────────────────────── */
 
-function PrecisionRings({
-  epochLength,
-  flash,
-}: {
-  epochLength: number;
-  flash: number;
-}) {
+function OrbitalRings({ flash }: { flash: number }) {
   const r1 = useRef<THREE.Group>(null);
   const r2 = useRef<THREE.Group>(null);
-  const base = 3.5 + Math.min(epochLength, 40) * 0.01;
 
   useFrame((_, dt) => {
-    if (r1.current) r1.current.rotation.z += dt * 0.03;
-    if (r2.current) r2.current.rotation.z -= dt * 0.018;
+    if (r1.current) r1.current.rotation.z += dt * 0.022;
+    if (r2.current) r2.current.rotation.z -= dt * 0.014;
   });
 
   return (
     <group>
-      <group ref={r1} rotation={[Math.PI / 2.25, 0.08, 0]}>
+      <group ref={r1} rotation={[Math.PI / 2.2, 0.06, 0]}>
         <mesh>
-          {/* razor-thin ring */}
-          <torusGeometry args={[base, 0.004 + flash * 0.002, 4, 160]} />
+          <torusGeometry args={[2.4, 0.003, 3, 128]} />
           <meshBasicMaterial
             color={CYAN_WHITE}
             transparent
-            opacity={0.55 + flash * 0.2}
+            opacity={0.4 + flash * 0.15}
             depthWrite={false}
             toneMapped={false}
             blending={THREE.AdditiveBlending}
           />
         </mesh>
       </group>
-      <group ref={r2} rotation={[Math.PI / 2.05, -0.28, 0.2]}>
+      <group ref={r2} rotation={[Math.PI / 2.05, -0.2, 0.15]}>
         <mesh>
-          <torusGeometry args={[base * 1.32, 0.003, 4, 160]} />
+          <torusGeometry args={[3.35, 0.0025, 3, 128]} />
           <meshBasicMaterial
             color={EDGE}
             transparent
-            opacity={0.28 + flash * 0.12}
+            opacity={0.22 + flash * 0.1}
             depthWrite={false}
             toneMapped={false}
             blending={THREE.AdditiveBlending}
@@ -365,60 +361,7 @@ function PrecisionRings({
   );
 }
 
-/* ─── Thin luminous filament (node → core) ──────────────────────────────── */
-
-function DataFilament({
-  from,
-  status,
-}: {
-  from: THREE.Vector3;
-  status: FeedStatus;
-}) {
-  const matRef = useRef<THREE.MeshBasicMaterial>(null);
-  const edge = statusEdgeColor(status);
-
-  const geometry = useMemo(() => {
-    // Near-linear — absolute precision, minimal bend
-    const mid = from.clone().multiplyScalar(0.52);
-    const curve = new THREE.QuadraticBezierCurve3(
-      from.clone(),
-      mid,
-      new THREE.Vector3(0, 0, 0)
-    );
-    return new THREE.TubeGeometry(curve, 28, 0.0035, 3, false);
-  }, [from]);
-
-  useFrame((state) => {
-    if (!matRef.current) return;
-    const t = state.clock.elapsedTime;
-    const base =
-      status === "live" ? 0.22 : status === "stale" ? 0.1 : 0.0;
-    if (status === "offline") {
-      matRef.current.opacity = 0;
-      return;
-    }
-    // subtle energy flow shimmer
-    matRef.current.opacity = base + Math.sin(t * 2.2 + from.length()) * 0.04;
-  });
-
-  if (status === "offline") return null;
-
-  return (
-    <mesh geometry={geometry}>
-      <meshBasicMaterial
-        ref={matRef}
-        color={status === "live" ? CYAN_WHITE : edge}
-        transparent
-        opacity={0.2}
-        depthWrite={false}
-        toneMapped={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </mesh>
-  );
-}
-
-/* ─── Machined oracle node: anodized metal + frosted glass ──────────────── */
+/* ─── Refined oracle: light point + thin crystal ────────────────────────── */
 
 function OracleNodeMesh({
   node,
@@ -428,256 +371,112 @@ function OracleNodeMesh({
   reduced: boolean;
 }) {
   const group = useRef<THREE.Group>(null);
-  const edge = statusEdgeColor(node.status);
+  const edge = statusColor(node.status);
   const dying = node.status === "offline";
-  const stale = node.status === "stale";
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const s = node.seed / 0xffffffff;
     if (group.current) {
       group.current.position.copy(node.pos);
-      // micro-stable — almost fixed, slight engineered drift
-      group.current.position.y += Math.sin(t * 0.2 + s * 8) * 0.03;
-      group.current.rotation.y = t * 0.05;
+      group.current.position.y += Math.sin(t * 0.15 + s * 6) * 0.02;
+      group.current.rotation.y = t * 0.04;
     }
   });
 
   return (
     <group ref={group} position={node.pos}>
-      {/* dark anodized metal body */}
+      {/* tiny refined light point */}
       <mesh>
-        <octahedronGeometry args={[0.24, 0]} />
-        <meshStandardMaterial
-          color={METAL}
-          metalness={0.95}
-          roughness={0.28}
-          emissive={edge}
-          emissiveIntensity={dying ? 0.05 : stale ? 0.12 : 0.22}
-        />
-      </mesh>
-
-      {/* frosted glass inset face */}
-      <mesh scale={0.92}>
-        <octahedronGeometry args={[0.24, 0]} />
-        <meshStandardMaterial
-          color={GLASS}
-          metalness={0.35}
-          roughness={0.55}
-          transparent
-          opacity={0.55}
-          emissive={hexToThree(CYAN_CORE)}
-          emissiveIntensity={dying ? 0.02 : 0.15}
-        />
-      </mesh>
-
-      {/* precise edge lighting — wireframe rim only, not a blob */}
-      <mesh scale={1.04}>
-        <octahedronGeometry args={[0.24, 0]} />
+        <sphereGeometry args={[0.035, 8, 8]} />
         <meshBasicMaterial
-          color={dying ? RED : stale ? AMBER : EDGE}
-          wireframe
-          transparent
-          opacity={dying ? 0.15 : 0.4}
-          depthWrite={false}
+          color={dying ? RED : edge}
           toneMapped={false}
+          transparent
+          opacity={dying ? 0.35 : 0.95}
         />
       </mesh>
 
-      {/* status indicator — tiny hard light, not volumetric sphere */}
+      {/* thin crystalline shard — small, precise */}
       {!reduced && (
-        <mesh position={[0, 0.32, 0]}>
-          <boxGeometry args={[0.04, 0.04, 0.04]} />
-          <meshBasicMaterial
-            color={edge}
-            toneMapped={false}
+        <mesh scale={[0.6, 1.2, 0.6]} position={[0, 0.08, 0]}>
+          <octahedronGeometry args={[0.09, 0]} />
+          <meshStandardMaterial
+            color={METAL}
+            metalness={0.9}
+            roughness={0.25}
             transparent
-            opacity={dying ? 0.3 : 0.95}
+            opacity={0.7}
+            emissive={edge}
+            emissiveIntensity={dying ? 0.05 : 0.2}
+          />
+        </mesh>
+      )}
+
+      {/* hard edge only */}
+      {!reduced && (
+        <mesh scale={[0.65, 1.25, 0.65]} position={[0, 0.08, 0]}>
+          <octahedronGeometry args={[0.09, 0]} />
+          <meshBasicMaterial
+            color={EDGE}
+            wireframe
+            transparent
+            opacity={0.25}
+            depthWrite={false}
+            toneMapped={false}
           />
         </mesh>
       )}
 
       <pointLight
         color={edge}
-        intensity={dying ? 0.05 : stale ? 0.12 : 0.28}
-        distance={1.8}
+        intensity={dying ? 0.03 : 0.15}
+        distance={1.2}
         decay={2}
       />
     </group>
   );
 }
 
-/* ─── Sparse particles, long clean trails ───────────────────────────────── */
+/* ─── Ultra-sparse filament (optional, only live nodes) ─────────────────── */
 
-type Particle = {
-  phase: "inbound" | "to-core";
-  t: number;
-  speed: number;
-  from: THREE.Vector3;
-  via: THREE.Vector3;
-  trail: THREE.Vector3[];
-  color: THREE.Color;
-};
+function ThinFilament({ from, status }: { from: THREE.Vector3; status: FeedStatus }) {
+  const matRef = useRef<THREE.MeshBasicMaterial>(null);
 
-function ParticleField({
-  nodes,
-  status,
-  reduced,
-  flashRef,
-}: {
-  nodes: NodeLayout[];
-  status: FeedStatus;
-  reduced: boolean;
-  flashRef: React.MutableRefObject<number>;
-}) {
-  const headCount = reduced ? 14 : status === "offline" ? 10 : 28;
-  const trailLen = reduced ? 8 : 14;
-  const headRef = useRef<THREE.InstancedMesh>(null);
-  const trailRef = useRef<THREE.InstancedMesh>(null);
-  const particles = useRef<Particle[]>([]);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-  const white = useMemo(() => hexToThree(CYAN_WHITE), []);
-
-  const spawn = useCallback((): Particle | null => {
-    if (!nodes.length) return null;
-    const pool =
-      nodes.filter((n) => n.status !== "offline").length > 0
-        ? nodes.filter((n) => n.status !== "offline")
-        : nodes;
-    const target = pool[Math.floor(Math.random() * pool.length)];
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    const R = 13 + Math.random() * 4;
-    const from = new THREE.Vector3(
-      R * Math.sin(phi) * Math.cos(theta),
-      R * Math.cos(phi) * 0.36,
-      R * Math.sin(phi) * Math.sin(theta)
+  const geometry = useMemo(() => {
+    const mid = from.clone().multiplyScalar(0.5);
+    const curve = new THREE.QuadraticBezierCurve3(
+      from.clone(),
+      mid,
+      new THREE.Vector3(0, 0, 0)
     );
-    return {
-      phase: "inbound",
-      t: 0,
-      speed: 0.09 + Math.random() * 0.1,
-      from,
-      via: target.pos.clone(),
-      trail: Array.from({ length: trailLen }, () => from.clone()),
-      color: white.clone(),
-    };
-  }, [nodes, white, trailLen]);
+    return new THREE.TubeGeometry(curve, 20, 0.002, 3, false);
+  }, [from]);
 
-  useEffect(() => {
-    const arr: Particle[] = [];
-    for (let i = 0; i < headCount; i++) {
-      const p = spawn();
-      if (p) {
-        p.t = Math.random();
-        arr.push(p);
-      }
+  useFrame((state) => {
+    if (!matRef.current) return;
+    if (status !== "live") {
+      matRef.current.opacity = status === "stale" ? 0.04 : 0;
+      return;
     }
-    particles.current = arr;
-  }, [headCount, spawn]);
-
-  useFrame((_, dt) => {
-    const heads = headRef.current;
-    const trails = trailRef.current;
-    if (!heads) return;
-    const list = particles.current;
-    const rate =
-      status === "live" ? 0.75 : status === "stale" ? 0.35 : 0.1;
-
-    for (let i = 0; i < list.length; i++) {
-      let p = list[i];
-      if (!p) continue;
-      p.t += dt * p.speed * rate;
-
-      let pos = new THREE.Vector3();
-      if (p.phase === "inbound") {
-        if (p.t >= 1) {
-          p.phase = "to-core";
-          p.t = 0;
-          p.speed = 0.16 + Math.random() * 0.12;
-        } else {
-          const e = p.t * p.t * (3 - 2 * p.t);
-          pos.lerpVectors(p.from, p.via, e);
-        }
-      }
-      if (p.phase === "to-core") {
-        if (p.t >= 1) {
-          flashRef.current = Math.min(0.45, flashRef.current + 0.05);
-          const next = spawn();
-          if (next) list[i] = next;
-          continue;
-        }
-        // clean acceleration
-        const e = p.t * p.t;
-        pos.lerpVectors(p.via, new THREE.Vector3(0, 0, 0), e);
-      }
-
-      p.trail.pop();
-      p.trail.unshift(pos.clone());
-
-      const headScale =
-        p.phase === "to-core"
-          ? 0.028 + (1 - p.t) * 0.035
-          : 0.025 + p.t * 0.015;
-      dummy.position.copy(pos);
-      dummy.scale.setScalar(headScale);
-      dummy.updateMatrix();
-      heads.setMatrixAt(i, dummy.matrix);
-      heads.setColorAt(i, p.color);
-
-      if (trails) {
-        for (let k = 0; k < trailLen; k++) {
-          const idx = i * trailLen + k;
-          const tp = p.trail[k] || pos;
-          const fade = 1 - k / trailLen;
-          dummy.position.copy(tp);
-          dummy.scale.setScalar(headScale * 0.45 * fade);
-          dummy.updateMatrix();
-          trails.setMatrixAt(idx, dummy.matrix);
-          const tc = p.color.clone().multiplyScalar(fade * 0.5);
-          trails.setColorAt(idx, tc);
-        }
-      }
-    }
-    heads.instanceMatrix.needsUpdate = true;
-    if (heads.instanceColor) heads.instanceColor.needsUpdate = true;
-    if (trails) {
-      trails.instanceMatrix.needsUpdate = true;
-      if (trails.instanceColor) trails.instanceColor.needsUpdate = true;
-    }
+    const t = state.clock.elapsedTime;
+    matRef.current.opacity = 0.08 + Math.sin(t * 1.5 + from.x) * 0.02;
   });
 
+  if (status === "offline") return null;
+
   return (
-    <group>
-      <instancedMesh
-        ref={headRef}
-        args={[undefined, undefined, headCount]}
-        frustumCulled={false}
-      >
-        <sphereGeometry args={[1, 6, 6]} />
-        <meshBasicMaterial
-          transparent
-          opacity={0.95}
-          toneMapped={false}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-        />
-      </instancedMesh>
-      <instancedMesh
-        ref={trailRef}
-        args={[undefined, undefined, headCount * trailLen]}
-        frustumCulled={false}
-      >
-        <sphereGeometry args={[1, 4, 4]} />
-        <meshBasicMaterial
-          transparent
-          opacity={0.5}
-          toneMapped={false}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-        />
-      </instancedMesh>
-    </group>
+    <mesh geometry={geometry}>
+      <meshBasicMaterial
+        ref={matRef}
+        color={CYAN_WHITE}
+        transparent
+        opacity={0.08}
+        depthWrite={false}
+        toneMapped={false}
+        blending={THREE.AdditiveBlending}
+      />
+    </mesh>
   );
 }
 
@@ -695,20 +494,30 @@ function FlashController({
   const prev = useRef(priceKey);
   useEffect(() => {
     if (prev.current !== priceKey && priceKey) {
-      flashRef.current = 0.55;
+      flashRef.current = 0.4;
       prev.current = priceKey;
     }
   }, [priceKey, flashRef]);
 
   useFrame((_, dt) => {
     if (flashRef.current > 0.001) {
-      flashRef.current = Math.max(0, flashRef.current - dt * 0.65);
+      flashRef.current = Math.max(0, flashRef.current - dt * 0.55);
       setFlash(flashRef.current);
     } else if (flashRef.current !== 0) {
       flashRef.current = 0;
       setFlash(0);
     }
   });
+  return null;
+}
+
+/* Camera framing — look at galactic core */
+function CameraRig() {
+  const { camera } = useThree();
+  useEffect(() => {
+    camera.position.set(0, 1.4, 11.5);
+    camera.lookAt(0, 0, 0);
+  }, [camera]);
   return null;
 }
 
@@ -732,18 +541,13 @@ function SceneRoot({
   return (
     <>
       <color attach="background" args={[VOID]} />
-      <fog attach="fog" args={[VOID, 9, 26]} />
-      <ambientLight intensity={0.04} />
+      <fog attach="fog" args={[VOID, 18, 46]} />
+      <ambientLight intensity={0.08} />
+      <CameraRig />
 
-      <Stars
-        radius={80}
-        depth={35}
-        count={reduced ? 300 : 700}
-        factor={1.6}
-        saturation={0}
-        fade
-        speed={0.05}
-      />
+      <Suspense fallback={null}>
+        <AndromedaSky reduced={reduced} />
+      </Suspense>
 
       <FlashController
         flashRef={flashRef}
@@ -751,32 +555,26 @@ function SceneRoot({
         priceKey={`${feed.id}:${feed.priceLabel}:${feed.settlementHeight}`}
       />
 
-      <AerospaceCore flash={flash} status={feed.status} />
-      <PrecisionRings epochLength={feed.epochLength} flash={flash} />
+      <CrystallineCore flash={flash} status={feed.status} />
+      <OrbitalRings flash={flash} />
 
       {nodes.map((n) => (
         <React.Fragment key={n.address}>
           <OracleNodeMesh node={n} reduced={reduced} />
-          <DataFilament from={n.pos} status={n.status} />
+          {!reduced && <ThinFilament from={n.pos} status={n.status} />}
         </React.Fragment>
       ))}
-
-      <ParticleField
-        nodes={nodes}
-        status={feed.status}
-        reduced={reduced}
-        flashRef={flashRef}
-      />
 
       <OrbitControls
         enablePan={false}
         enableZoom
-        minDistance={reduced ? 10 : 9}
-        maxDistance={20}
+        minDistance={reduced ? 8 : 7}
+        maxDistance={18}
         autoRotate
-        autoRotateSpeed={0.08}
-        maxPolarAngle={Math.PI * 0.78}
-        minPolarAngle={Math.PI * 0.22}
+        autoRotateSpeed={0.05}
+        maxPolarAngle={Math.PI * 0.75}
+        minPolarAngle={Math.PI * 0.25}
+        target={[0, 0, 0]}
       />
     </>
   );
@@ -832,23 +630,31 @@ export default function ConsensusSingularity({
   })();
 
   return (
-    <div className="oracle-singularity relative w-full overflow-hidden rounded-[1.25rem] sm:rounded-[1.75rem] border border-white/[0.05] bg-black">
-      <div className="absolute inset-0 z-0">
+    <div
+      className="oracle-singularity relative w-full overflow-hidden rounded-[1.25rem] sm:rounded-[1.75rem] border border-white/[0.05] bg-black"
+      style={{
+        // photographic fallback while WebGL mounts
+        backgroundImage: `url(${ANDROMEDA_TEX})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
+      {/* pure black veil so photo is deep */}
+      <div className="absolute inset-0 z-0 bg-black/25" />
+
+      <div className="absolute inset-0 z-[1]">
         {mounted && (
           <Canvas
-            dpr={reduced ? [1, 1.25] : [1, 1.75]}
-            camera={{ position: [0, 2.0, 13.2], fov: 36, near: 0.1, far: 80 }}
+            dpr={reduced ? [1, 1.25] : [1, 1.6]}
+            camera={{ position: [0, 1.4, 11.5], fov: 38, near: 0.1, far: 100 }}
             gl={{
               antialias: true,
-              alpha: false,
+              alpha: true,
               powerPreference: "high-performance",
               toneMapping: THREE.ACESFilmicToneMapping,
-              toneMappingExposure: 0.88,
+              toneMappingExposure: 0.85,
             }}
-            onCreated={({ gl }) => {
-              gl.setClearColor(VOID);
-            }}
-            style={{ width: "100%", height: "100%" }}
+            style={{ width: "100%", height: "100%", background: "transparent" }}
           >
             <SceneRoot
               feed={feed}
@@ -861,28 +667,27 @@ export default function ConsensusSingularity({
         )}
       </div>
 
-      {/* heavy volumetric vignette — hangar depth */}
-      <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(ellipse_at_center,transparent_8%,rgba(0,0,0,0.4)_52%,rgba(0,0,0,0.95)_100%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-28 bg-gradient-to-b from-black to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-36 bg-gradient-to-t from-black via-black/85 to-transparent" />
+      {/* cinematic atmosphere */}
+      <div className="pointer-events-none absolute inset-0 z-[2] bg-[radial-gradient(ellipse_at_center,transparent_15%,rgba(0,0,0,0.35)_60%,rgba(0,0,0,0.88)_100%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-24 bg-gradient-to-b from-black/80 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[2] h-32 bg-gradient-to-t from-black/95 via-black/70 to-transparent" />
 
-      {/* restrained flash */}
       <div
-        className="pointer-events-none absolute inset-0 z-[2] transition-opacity duration-250"
+        className="pointer-events-none absolute inset-0 z-[3] transition-opacity duration-300"
         style={{
-          opacity: flash * 0.18,
-          background: `radial-gradient(circle at 50% 46%, ${CYAN_WHITE}33 0%, transparent 45%)`,
+          opacity: flash * 0.12,
+          background: `radial-gradient(circle at 50% 48%, ${CYAN_WHITE}22 0%, transparent 40%)`,
         }}
       />
 
-      {/* HUD — sparse, engineering */}
+      {/* HUD */}
       <div className="relative z-10 flex h-full flex-col p-3 sm:p-5 pointer-events-none">
         <div className="flex items-start justify-between gap-2 pointer-events-auto">
           <div>
-            <div className="font-mono text-[9px] sm:text-[10px] tracking-[0.3em] text-white/30">
+            <div className="font-mono text-[9px] sm:text-[10px] tracking-[0.32em] text-white/30">
               CONSENSUS SINGULARITY
             </div>
-            <div className="mt-0.5 text-[11px] sm:text-xs font-mono tracking-[0.2em] text-white/50">
+            <div className="mt-0.5 text-[11px] sm:text-xs font-mono tracking-[0.22em] text-white/50">
               {feed.pair}
             </div>
           </div>
@@ -897,8 +702,8 @@ export default function ConsensusSingularity({
                   onClick={() => onSelectFeed(f.id)}
                   className={`px-2.5 sm:px-3.5 py-1.5 rounded-md text-[9px] sm:text-[10px] font-mono tracking-[0.16em] border transition-all ${
                     on
-                      ? "border-[#B8F0FF]/35 text-[#B8F0FF] bg-white/[0.06]"
-                      : "text-white/35 border-white/[0.08] bg-black/60 hover:border-white/20 hover:text-white/60"
+                      ? "border-white/30 text-white bg-white/[0.07]"
+                      : "text-white/35 border-white/[0.08] bg-black/50 hover:border-white/18 hover:text-white/60"
                   }`}
                 >
                   {f.pair}
@@ -908,40 +713,38 @@ export default function ConsensusSingularity({
           </div>
         </div>
 
-        {/* price — pure white light */}
+        {/* Price — pure white futuristic type at galactic core */}
         <div className="flex-1 flex flex-col items-center justify-center pointer-events-none select-none">
           <AnimatePresence mode="wait">
             <motion.div
               key={`${feed.id}-${feed.priceLabel}`}
-              initial={{ opacity: 0, scale: 0.97 }}
-              animate={{
-                opacity: 1,
-                scale: 1 + flash * 0.015,
-              }}
-              exit={{ opacity: 0, scale: 1.01 }}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
               className="text-center"
             >
               <div
-                className="font-semibold tracking-[-0.035em] tabular-nums leading-none"
+                className="font-light tracking-[-0.03em] tabular-nums leading-none"
                 style={{
-                  fontSize: "clamp(2.5rem, 8vw, 4.6rem)",
+                  fontSize: "clamp(2.4rem, 7.5vw, 4.4rem)",
                   color: WHITE,
-                  fontFamily: "var(--font-geist-sans), system-ui, sans-serif",
+                  fontFamily:
+                    "var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif",
                   textShadow: `
-                    0 0 ${16 + flash * 24}px ${CYAN_WHITE}88,
-                    0 0 ${32 + flash * 30}px rgba(184,240,255,0.25),
-                    0 2px 16px rgba(0,0,0,0.95)
+                    0 0 ${14 + flash * 18}px rgba(255,255,255,0.55),
+                    0 0 ${28 + flash * 24}px rgba(168,228,245,0.25),
+                    0 2px 24px rgba(0,0,0,0.9)
                   `,
                 }}
               >
                 {feed.priceLabel || "—"}
               </div>
-              <div className="mt-3 font-mono text-[10px] sm:text-[11px] tracking-[0.32em] text-white/30">
+              <div className="mt-3 font-mono text-[10px] sm:text-[11px] tracking-[0.36em] text-white/35 uppercase">
                 {feed.unitLabel}
               </div>
               {feed.priceAlt && (
-                <div className="mt-1.5 font-mono text-[9px] tracking-wide text-white/20">
+                <div className="mt-1.5 font-mono text-[9px] tracking-wide text-white/22">
                   {feed.priceAlt}
                 </div>
               )}
@@ -949,7 +752,7 @@ export default function ConsensusSingularity({
           </AnimatePresence>
         </div>
 
-        <div className="pointer-events-auto grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
+        <div className="pointer-events-auto grid grid-cols-2 sm:grid-cols-4 gap-2">
           <HudCell
             label="STATUS"
             value={feed.status.toUpperCase()}
@@ -982,8 +785,12 @@ export default function ConsensusSingularity({
           />
         </div>
 
+        <div className="mt-2 text-center text-[8px] sm:text-[9px] font-mono tracking-[0.18em] text-white/20">
+          ANDROMEDA · NASA / GALEX · PUBLIC DOMAIN
+        </div>
+
         {isFetching && (
-          <div className="absolute top-3 right-3 sm:top-5 sm:right-5 w-1 h-1 rounded-sm bg-[#B8F0FF]" />
+          <div className="absolute top-3 right-3 sm:top-5 sm:right-5 w-1 h-1 bg-white/60" />
         )}
       </div>
     </div>
@@ -1006,19 +813,18 @@ function HudCell({
   bar?: number;
 }) {
   return (
-    <div className="rounded-lg border border-white/[0.06] bg-black/65 backdrop-blur-md px-2.5 sm:px-3 py-2 sm:py-2.5">
+    <div className="rounded-md border border-white/[0.06] bg-black/55 backdrop-blur-md px-2.5 sm:px-3 py-2">
       <div className="flex items-center gap-1.5 mb-0.5">
         {accent && (
           <span
             className={`h-1 w-1 ${pulse ? "status-dot" : ""}`}
             style={{
               background: accent,
-              boxShadow: `0 0 4px ${accent}`,
-              borderRadius: 1,
+              borderRadius: 0.5,
             }}
           />
         )}
-        <span className="text-[8px] sm:text-[9px] font-mono tracking-[0.2em] text-white/30">
+        <span className="text-[8px] sm:text-[9px] font-mono tracking-[0.2em] text-white/28">
           {label}
         </span>
       </div>
@@ -1029,16 +835,13 @@ function HudCell({
         {value}
       </div>
       {sub && (
-        <div className="text-[8px] font-mono text-white/20 mt-0.5">{sub}</div>
+        <div className="text-[8px] font-mono text-white/18 mt-0.5">{sub}</div>
       )}
       {typeof bar === "number" && (
-        <div className="mt-1.5 h-px bg-white/[0.06] overflow-hidden">
+        <div className="mt-1.5 h-px bg-white/[0.05] overflow-hidden">
           <div
             className="h-full"
-            style={{
-              width: `${bar}%`,
-              background: accent || CYAN_WHITE,
-            }}
+            style={{ width: `${bar}%`, background: accent || CYAN_WHITE }}
           />
         </div>
       )}
