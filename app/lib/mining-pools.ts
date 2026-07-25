@@ -56,6 +56,34 @@ export const KNOWN_MINING_POOLS: Record<string, KnownPool> = {
       name: "Kryptex",
       url: "https://pool.kryptex.com/erg",
     },
+
+  /*
+   * Catalogued from watch-unknown-miners (2026-07-25 tip window).
+   * Checked against public block-hash APIs (no hash match → brand unknown):
+   *   2Miners, HeroMiners, WoolyPooly, Kryptex, Nanopool, C3Pool (+ more).
+   * Named by reward-script short id so UI is distinct; rename when verified.
+   * Top hit nPL25JsM mined ~13/100 recent unknown-window blocks.
+   */
+  "88dhgzEuTXaRnQKXANeF6qGx67Ly4VaZd8ECQHNrhMfWRyokmgcoo5XvY2Z59MqL4yJxgcZhnPL25JsM":
+    {
+      name: "Pool nPL25JsM",
+    },
+  "88dhgzEuTXaRp6WD5jWZSnXzBbA44g1xSMk6Xv2r6Cey8snSH78S6ZbWjP24yyPTDCCZByLpNXXe6NnN":
+    {
+      name: "Pool NXXe6NnN",
+    },
+  "88dhgzEuTXaRiLRSYpvTCXWoN3A86gnWs3Z8BWkJGkGMXsR3WzUUyqbB47YAzhhsB6HJdJ4tC5AFYfSc":
+    {
+      name: "Pool C5AFYfSc",
+    },
+  "88dhgzEuTXaUznQqpvAYEatWR92KVHeZpaf3Y2sPRmG3M6aio8iQSgPjXnPmHvCgzWHuvHnkJTAuhbau":
+    {
+      name: "Pool JTAuhbau",
+    },
+  "88dhgzEuTXaTj2AZkM2vwnemCYyAUJymaFf8iJPUYmgLkJqQmPd3DTubYS5UfL75MhQbEjmuhBMbdspA":
+    {
+      name: "Pool hBMbdspA",
+    },
 };
 
 /**
@@ -195,8 +223,9 @@ export function resolveMinerDisplay(
   if (address.startsWith("9") && address.length >= 50) {
     return { label: "Solo", kind: "solo", short };
   }
+  // Unknown 88… reward script — distinct short so multiple pools don't look identical
   if (address.startsWith("88")) {
-    return { label: "Unknown pool", kind: "pool", short };
+    return { label: `Pool ${short}`, kind: "pool", short };
   }
   return { label: "Unknown", kind: "unknown", short };
 }
