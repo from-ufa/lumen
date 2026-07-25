@@ -514,6 +514,31 @@ Do not:
 - Map boom: decorative only; toast/modal/timeline: `Block #H · Label · short`
 - Links: SigmaSpace + official Explorer
 
+### Unknown miners watcher
+
+Keeps the pool dictionary honest: scans recent Explorer blocks and lists `miner.address` **not** in `KNOWN_MINING_POOLS`.
+
+```bash
+cd /home/lumen
+# Manual
+npm run watch:unknown-miners
+# or
+node scripts/watch-unknown-miners.mjs --limit=100
+
+# Optional Telegram summary (uses TELEGRAM_* from env or /root/.secrets)
+node scripts/watch-unknown-miners.mjs --limit=100 --telegram
+```
+
+- Output: `data/unknown-miners.json` (gitignored) — top unknowns, counts, sample heights, paste-ready snippets
+- Reads known addresses from `app/lib/mining-pools.ts` (no rebuild required)
+
+**Cron example (not installed — enable only after approval):**
+
+```cron
+# Every 4 hours at :15
+15 */4 * * * cd /home/lumen && /usr/bin/node scripts/watch-unknown-miners.mjs --telegram >> /var/log/lumen-unknown-miners.log 2>&1
+```
+
 Recent commits live on `main` (`git log --oneline -20`).
 
 ---
