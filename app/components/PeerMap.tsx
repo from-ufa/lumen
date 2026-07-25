@@ -806,10 +806,10 @@ function DefaultView({
       const bounds = boundsForMapView(me, markers);
       const size = map.getSize();
       // HUD: top chips / buttons, bottom legend — keep nodes inside safe area
+      // HUD: search top-left · actions top-right · stats bottom-right · regions bottom-left
       const padTop = Math.max(64, Math.round(size.y * 0.12));
-      const padBottom = Math.max(88, Math.round(size.y * 0.16));
-      const padLeft = Math.max(32, Math.round(size.x * 0.07));
-      // Extra room on the right for node search panel
+      const padBottom = Math.max(100, Math.round(size.y * 0.2));
+      const padLeft = Math.max(40, Math.round(size.x * 0.12));
       const padRight = Math.max(48, Math.round(size.x * 0.14));
 
       if (bounds && bounds.isValid()) {
@@ -1901,16 +1901,193 @@ export default function PeerMap({
         />
       </div>
 
-      {/* ── Desktop: left stats · right search + controls ── */}
-      <div className="hidden md:flex absolute top-4 left-4 right-4 z-[40] items-start justify-between gap-4 pointer-events-none">
-        <div className="glass rounded-2xl px-4 py-3.5 border border-white/10 pointer-events-auto max-w-[320px] shrink-0">
+      {/*
+        Desktop HUD layout (symmetric, premium):
+        ┌ Search ──────────────┐              ┌ Refresh · Boom ┐
+        │                      │              │                │
+        │                      │              │                │
+        └ Top Regions ─────────┘  [key]  ┌ Selected? ───────┐
+                                         │ Stats panel ─────┘
+      */}
+
+      {/* Top-left: node search */}
+      <div className="hidden md:flex absolute top-4 left-4 z-[40] w-[min(300px,32vw)] flex-col gap-2 pointer-events-none">
+        <NodeMapSearch
+          nodes={searchNodes}
+          selectedId={selected?.id}
+          onSelect={(n) => {
+            handleSelectPeer(n as PeerMapMarker, { fly: true });
+          }}
+          className="w-full"
+        />
+      </div>
+
+      {/* Top-right: actions */}
+      {!hideControls && (
+        <div className="hidden md:flex absolute top-4 right-4 z-[40] gap-2 pointer-events-none">
+          <button
+            type="button"
+            onClick={() => void handleRefresh()}
+            className="pointer-events-auto glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-white/10 hover:border-[#FF7A3D]/40 flex items-center gap-1.5 text-[#E8E8F0]"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
+            />
+            REFRESH
+          </button>
+          <button
+            type="button"
+            onClick={simulateBoom}
+            className="pointer-events-auto glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-[#FF7A3D]/35 bg-[#FF7A3D]/10 hover:bg-[#FF7A3D]/20 text-[#FF7A3D] flex items-center gap-1.5"
+          >
+            <Zap className="w-3.5 h-3.5" /> BOOM
+          </button>
+        </div>
+      )}
+
+      {/* Bottom-left: Top Regions */}
+      {topRegionsBlock && (
+        <div className="hidden md:block absolute bottom-4 left-4 z-[40] w-[min(280px,30vw)]">
+          {topRegionsBlock}
+        </div>
+      )}
+
+      {/* Bottom-center: compact color key */}
+      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[40] glass rounded-2xl px-4 py-2 text-[10px] font-mono tracking-wider border border-white/10 hidden md:flex items-center gap-3.5 text-[#A0A0B0] pointer-events-none">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" />{" "}
+          {nodeMode === "my" ? "My Node" : "Lumen"}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF] shadow-[0_0_6px_rgba(0,229,255,0.6)]" />{" "}
+          Connected
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] shadow-[0_0_5px_rgba(16,185,129,0.5)]" />{" "}
+          Live
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#A8B4C8] shadow-[0_0_5px_rgba(168,180,200,0.4)]" />{" "}
+          Seen
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-full bg-[#C45C5C] shadow-[0_0_5px_rgba(196,92,92,0.4)]" />{" "}
+          Ghost
+        </span>
+      </div>
+
+      {/* Bottom-right: selected (if any) + ERGO NETWORK MAP stats */}
+      <div className="hidden md:flex absolute bottom-4 right-4 z-[40] w-[min(300px,32vw)] flex-col gap-2 items-stretch pointer-events-none">
+        <AnimatePresence>
+          {selected && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              className="pointer-events-auto glass rounded-2xl px-4 py-3.5 border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div
+                    className="font-mono text-[10px] tracking-[2px] mb-1 flex items-center gap-1"
+                    style={{
+                      color:
+                        selected.id === "me"
+                          ? "#FF7A3D"
+                          : stateMeta(normalizeState(selected.state)).color,
+                    }}
+                  >
+                    <MapPin className="w-3 h-3" />{" "}
+                    {selected.id === "me"
+                      ? nodeMode === "my"
+                        ? "MY NODE"
+                        : "LUMEN NODE"
+                      : stateMeta(normalizeState(selected.state)).short}
+                  </div>
+                  <div className="font-semibold text-sm break-all">
+                    {selected.name}
+                  </div>
+                  <div className="font-mono text-xs text-[#A0A0B0] mt-1 break-all">
+                    {selected.ip}
+                    {selected.port ? `:${selected.port}` : ""}
+                  </div>
+                  <div className="text-xs mt-2 text-[#E8E8F0]/90">
+                    {[selected.city, selected.country]
+                      .filter(Boolean)
+                      .join(", ") || "Unknown location"}
+                  </div>
+                  {shortVersion(selected.version) && (
+                    <div className="text-[10px] font-mono text-[#00E5FF]/75 mt-1">
+                      v{shortVersion(selected.version)}
+                    </div>
+                  )}
+                  <div className="text-[10px] font-mono text-[#A0A0B0] mt-1">
+                    {selected.id !== "me" && (
+                      <>
+                        {(() => {
+                          const s = normalizeState(selected.state);
+                          if (s === "connected")
+                            return (
+                              <span className="text-[#00E5FF]">
+                                Connected · linked to you
+                              </span>
+                            );
+                          if (s === "live")
+                            return (
+                              <span className="text-[#10B981]">
+                                Live · answering now
+                              </span>
+                            );
+                          if (s === "seen")
+                            return (
+                              <span className="text-[#A8B4C8]">
+                                Seen · not answering
+                              </span>
+                            );
+                          return (
+                            <span className="text-[#C45C5C]">
+                              Ghost · history
+                            </span>
+                          );
+                        })()}
+                        {selected.connectionType
+                          ? ` · ${selected.connectionType}`
+                          : ""}
+                      </>
+                    )}
+                    {selected.id === "me" && (
+                      <span className="text-[#FF7A3D]">
+                        {nodeMode === "my"
+                          ? "Active source · via Lumen Bridge"
+                          : "Active source · this Lumen server"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelected(null);
+                    setSearchFocus(null);
+                  }}
+                  className="text-[#A0A0B0] hover:text-white text-xs font-mono shrink-0"
+                >
+                  CLOSE
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Stats panel */}
+        <div className="pointer-events-auto glass rounded-2xl px-4 py-3.5 border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
           <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[3px] mb-2.5">
             <Globe2 className="w-3.5 h-3.5" /> ERGO NETWORK MAP
           </div>
 
           {nodeMode === "lumen" ? (
             <>
-              {/* Network stats — live, premium */}
               <div className="grid grid-cols-3 gap-2 mb-3">
                 <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-2.5 py-2.5">
                   <div className="font-mono text-lg sm:text-xl tabular-nums text-white leading-none tracking-tight">
@@ -1957,7 +2134,6 @@ export default function PeerMap({
                   </span>
                 </span>
               </div>
-              {/* Ghost = network history, never in Live/Linked/All */}
               <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-black/25 px-3 py-2 text-[10px] font-mono tracking-wide text-[#A0A0B0]">
                 <span>
                   Ghost{" "}
@@ -1974,8 +2150,7 @@ export default function PeerMap({
                 </span>
               </div>
 
-              {/* Status filters */}
-              <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
+              <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10">
                 {(
                   [
                     { id: "live" as const, label: "Live" },
@@ -2002,7 +2177,7 @@ export default function PeerMap({
               </div>
             </>
           ) : (
-            <div className="mb-3 rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-3">
+            <div className="rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-3">
               <div className="font-mono text-2xl tabular-nums text-[#00E5FF] leading-none tracking-tight">
                 {mapStats.connected.toLocaleString()}
               </div>
@@ -2018,215 +2193,7 @@ export default function PeerMap({
               )}
             </div>
           )}
-
-          {/* Legend */}
-          <div className="border-t border-white/10 pt-2.5 space-y-1.5 text-[11px] leading-snug">
-            <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#FF7A3D] shrink-0 shadow-[0_0_6px_rgba(255,122,61,0.7)]" />
-              <span>
-                <span className="text-white font-medium">
-                  {nodeMode === "my" ? "My Node" : "Lumen Node"}
-                </span>
-                <span className="text-[#A0A0B0]">
-                  {nodeMode === "my" ? " — via Bridge" : " — center"}
-                </span>
-              </span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#00E5FF] shrink-0 shadow-[0_0_6px_rgba(0,229,255,0.7)]" />
-              <span>
-                <span className="text-white font-medium">Connected</span>
-                <span className="text-[#A0A0B0]"> — linked to you</span>
-              </span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#10B981] shrink-0 shadow-[0_0_5px_rgba(16,185,129,0.55)]" />
-              <span>
-                <span className="text-white font-medium">Live</span>
-                <span className="text-[#A0A0B0]"> — answering now</span>
-              </span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#A8B4C8] shrink-0 shadow-[0_0_5px_rgba(168,180,200,0.45)]" />
-              <span>
-                <span className="text-white font-medium">Seen</span>
-                <span className="text-[#A0A0B0]"> — recent, quiet</span>
-              </span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="mt-1 w-2 h-2 rounded-full bg-[#C45C5C] shrink-0 shadow-[0_0_5px_rgba(196,92,92,0.4)]" />
-              <span>
-                <span className="text-white font-medium">Ghost</span>
-                <span className="text-[#A0A0B0]"> — history (hidden by default)</span>
-              </span>
-            </div>
-          </div>
         </div>
-
-        {/* Right column: search + actions — clean, premium */}
-        <div className="flex flex-col items-stretch gap-2 w-[min(320px,34vw)] shrink-0 pointer-events-none">
-          <NodeMapSearch
-            nodes={searchNodes}
-            selectedId={selected?.id}
-            onSelect={(n) => {
-              handleSelectPeer(n as PeerMapMarker, { fly: true });
-            }}
-            className="w-full"
-          />
-          {!hideControls && (
-            <div className="flex gap-2 pointer-events-auto justify-end">
-              <button
-                type="button"
-                onClick={() => void handleRefresh()}
-                className="glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-white/10 hover:border-[#FF7A3D]/40 flex items-center gap-1.5 text-[#E8E8F0]"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
-                />
-                REFRESH
-              </button>
-              <button
-                type="button"
-                onClick={simulateBoom}
-                className="glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-[#FF7A3D]/35 bg-[#FF7A3D]/10 hover:bg-[#FF7A3D]/20 text-[#FF7A3D] flex items-center gap-1.5"
-              >
-                <Zap className="w-3.5 h-3.5" /> BOOM
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Top Regions: desktop overlay bottom-left */}
-      {topRegionsBlock && (
-        <div className="hidden md:block absolute bottom-4 left-4 z-[40] max-w-[280px]">
-          {topRegionsBlock}
-        </div>
-      )}
-
-      {/* Selected peer: desktop — bottom-right under search column */}
-      <AnimatePresence>
-        {selected && (
-          <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className="hidden md:block absolute bottom-4 right-4 z-[40] glass rounded-2xl px-5 py-4 border border-white/10 min-w-[240px] max-w-[min(320px,34vw)] pointer-events-auto shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div
-                  className="font-mono text-[10px] tracking-[2px] mb-1 flex items-center gap-1"
-                  style={{
-                    color:
-                      selected.id === "me"
-                        ? "#FF7A3D"
-                        : stateMeta(normalizeState(selected.state)).color,
-                  }}
-                >
-                  <MapPin className="w-3 h-3" />{" "}
-                  {selected.id === "me"
-                    ? nodeMode === "my"
-                      ? "MY NODE"
-                      : "LUMEN NODE"
-                    : stateMeta(normalizeState(selected.state)).short}
-                </div>
-                <div className="font-semibold text-sm break-all">
-                  {selected.name}
-                </div>
-                <div className="font-mono text-xs text-[#A0A0B0] mt-1 break-all">
-                  {selected.ip}
-                  {selected.port ? `:${selected.port}` : ""}
-                </div>
-                <div className="text-xs mt-2 text-[#E8E8F0]/90">
-                  {[selected.city, selected.country]
-                    .filter(Boolean)
-                    .join(", ") || "Unknown location"}
-                </div>
-                {shortVersion(selected.version) && (
-                  <div className="text-[10px] font-mono text-[#00E5FF]/75 mt-1">
-                    v{shortVersion(selected.version)}
-                  </div>
-                )}
-                <div className="text-[10px] font-mono text-[#A0A0B0] mt-1">
-                  {selected.id !== "me" && (
-                    <>
-                      {(() => {
-                        const s = normalizeState(selected.state);
-                        if (s === "connected")
-                          return (
-                            <span className="text-[#00E5FF]">
-                              Connected · linked to you
-                            </span>
-                          );
-                        if (s === "live")
-                          return (
-                            <span className="text-[#10B981]">
-                              Live · answering now
-                            </span>
-                          );
-                        if (s === "seen")
-                          return (
-                            <span className="text-[#A8B4C8]">
-                              Seen · not answering
-                            </span>
-                          );
-                        return (
-                          <span className="text-[#C45C5C]">Ghost · history</span>
-                        );
-                      })()}
-                      {selected.connectionType
-                        ? ` · ${selected.connectionType}`
-                        : ""}
-                    </>
-                  )}
-                  {selected.id === "me" && (
-                    <span className="text-[#FF7A3D]">
-                      {nodeMode === "my"
-                        ? "Active source · via Lumen Bridge"
-                        : "Active source · this Lumen server"}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelected(null);
-                  setSearchFocus(null);
-                }}
-                className="text-[#A0A0B0] hover:text-white text-xs font-mono shrink-0"
-              >
-                CLOSE
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Compact color key */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[40] glass rounded-2xl px-4 py-2 text-[10px] font-mono tracking-wider border border-white/10 hidden md:flex items-center gap-3.5 text-[#A0A0B0]">
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" />{" "}
-          {nodeMode === "my" ? "My Node" : "Lumen"}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF] shadow-[0_0_6px_rgba(0,229,255,0.6)]" />{" "}
-          Connected
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#10B981] shadow-[0_0_5px_rgba(16,185,129,0.5)]" />{" "}
-          Live
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#A8B4C8] shadow-[0_0_5px_rgba(168,180,200,0.4)]" />{" "}
-          Seen
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-[#C45C5C] shadow-[0_0_5px_rgba(196,92,92,0.4)]" />{" "}
-          Ghost
-        </span>
       </div>
     </div>
 
