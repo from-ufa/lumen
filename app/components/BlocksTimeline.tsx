@@ -11,6 +11,13 @@ interface BlocksTimelineProps {
   onBlockClick?: (block: RecentBlock) => void;
 }
 
+/** Fixed row + gap so the list viewport fits exactly 6 items (no half-row) */
+const ROW_H = "3.75rem"; // 60px
+const GAP = "0.5rem"; // 8px
+const VISIBLE = 6;
+/** 6 rows + 5 gaps */
+const LIST_H = `calc(${VISIBLE} * ${ROW_H} + ${VISIBLE - 1} * ${GAP})`;
+
 function minerTone(label?: string): string {
   if (!label) return "text-[#A0A0B0]";
   const l = label.toLowerCase();
@@ -25,12 +32,14 @@ function minerTone(label?: string): string {
 
 export default function BlocksTimeline({
   blocks,
-  currentHeight,
+  currentHeight: _currentHeight,
   onBlockClick,
 }: BlocksTimelineProps) {
+  void _currentHeight; // tip shown in page hero; keep prop for API compat
+
   if (blocks.length === 0) {
     return (
-      <div className="card glass rounded-2xl sm:rounded-3xl p-5 sm:p-6 h-full min-h-[380px] flex flex-col items-center justify-center text-center border border-white/[0.06]">
+      <div className="card glass rounded-2xl sm:rounded-3xl p-5 sm:p-6 h-full min-h-[320px] flex flex-col items-center justify-center text-center border border-white/[0.06]">
         <div className="w-10 h-10 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mb-3">
           <Pickaxe className="w-4 h-4 text-[#A0A0B0]" />
         </div>
@@ -45,30 +54,28 @@ export default function BlocksTimeline({
   }
 
   return (
-    <div className="card glass rounded-2xl sm:rounded-3xl p-4 sm:p-6 h-full min-h-[380px] flex flex-col border border-white/[0.06] shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
-      <div className="flex items-center justify-between mb-4 sm:mb-5 px-0.5 flex-shrink-0 gap-3">
-        <div className="min-w-0">
-          <div className="font-mono text-[10px] sm:text-xs tracking-[3px] text-[#FF7A3D]">
-            RECENT BLOCKS
-          </div>
-          <div className="text-lg sm:text-xl font-semibold tracking-tight mt-0.5">
-            Last {blocks.length} blocks
-          </div>
-          <div className="text-[10px] font-mono text-[#A0A0B0]/55 mt-1 tracking-wide">
-            Miner via Explorer · honest attribution
-          </div>
+    <div className="card glass rounded-2xl sm:rounded-3xl p-4 sm:p-5 h-full flex flex-col border border-white/[0.06] shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
+      {/* Header — no TIP badge */}
+      <div className="flex-shrink-0 mb-3 sm:mb-4 px-0.5">
+        <div className="font-mono text-[10px] sm:text-xs tracking-[3px] text-[#FF7A3D]">
+          RECENT BLOCKS
         </div>
-        <div className="text-right flex-shrink-0 rounded-2xl border border-white/[0.06] bg-black/25 px-3 py-2">
-          <div className="text-[9px] font-mono tracking-widest text-[#A0A0B0]">
-            TIP
-          </div>
-          <div className="text-[#FF7A3D] text-lg sm:text-xl font-semibold tracking-tighter tabular-nums font-mono leading-none mt-0.5">
-            {currentHeight.toLocaleString()}
-          </div>
+        <div className="text-lg sm:text-xl font-semibold tracking-tight mt-0.5">
+          Last {blocks.length} blocks
+        </div>
+        <div className="text-[10px] font-mono text-[#A0A0B0]/50 mt-1 tracking-wide">
+          Miner via Explorer
         </div>
       </div>
 
-      <div className="space-y-2 flex-1 min-h-0 overflow-y-auto pr-0.5 sm:pr-1.5 custom-scroll max-h-[min(400px,52vh)]">
+      {/* Exactly 6 rows visible; scroll for the rest */}
+      <div
+        className="flex flex-col overflow-y-auto overflow-x-hidden pr-0.5 custom-scroll flex-shrink-0"
+        style={{
+          height: LIST_H,
+          gap: GAP,
+        }}
+      >
         {blocks.map((block, index) => {
           const isNewest = index === 0;
           const timeAgo = formatDistanceToNow(new Date(block.timestamp), {
@@ -79,9 +86,9 @@ export default function BlocksTimeline({
           return (
             <motion.div
               key={`${block.height}-${block.id || block.timestamp}`}
-              initial={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.02, ease: [0.23, 1, 0.32, 1] }}
+              transition={{ delay: index * 0.015, ease: [0.23, 1, 0.32, 1] }}
               onClick={() => onBlockClick?.(block)}
               role="button"
               tabIndex={0}
@@ -91,81 +98,90 @@ export default function BlocksTimeline({
                   onBlockClick?.(block);
                 }
               }}
-              className={`group relative overflow-hidden rounded-2xl border cursor-pointer transition-all active:scale-[0.995]
+              className={`group relative shrink-0 overflow-hidden rounded-xl border cursor-pointer transition-colors active:scale-[0.995]
                 ${
                   isNewest
-                    ? "border-[#FF7A3D]/35 bg-gradient-to-r from-[#FF7A3D]/[0.1] to-transparent"
+                    ? "border-[#FF7A3D]/30 bg-[#FF7A3D]/[0.07]"
                     : "border-white/[0.07] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]"
                 }`}
+              style={{ height: ROW_H }}
             >
               {isNewest && (
-                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#FF7A3D] shadow-[0_0_12px_rgba(255,122,61,0.5)]" />
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#FF7A3D]" />
               )}
 
-              <div className="flex items-center justify-between gap-3 px-3.5 sm:px-4 py-3 sm:py-3.5">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div
-                    className={`font-mono text-lg sm:text-xl font-semibold tracking-tighter tabular-nums flex-shrink-0 w-[4.5rem] sm:w-[5.25rem] ${
-                      isNewest ? "text-[#FF7A3D]" : "text-white"
-                    }`}
-                  >
-                    {block.height.toLocaleString()}
-                  </div>
+              {/*
+                Clean grid — no overlap:
+                [ height ] [ time · txs · latest ] [ chevron ]
+                           [ miner row           ]
+              */}
+              <div className="h-full grid grid-cols-[minmax(4.75rem,auto)_1fr_1.25rem] items-center gap-x-2.5 sm:gap-x-3 pl-3 pr-2 sm:pl-3.5 sm:pr-2.5">
+                {/* Height — fixed column */}
+                <div
+                  className={`font-mono text-[0.95rem] sm:text-lg font-semibold tracking-tighter tabular-nums leading-none whitespace-nowrap ${
+                    isNewest ? "text-[#FF7A3D]" : "text-white"
+                  }`}
+                >
+                  {block.height.toLocaleString()}
+                </div>
 
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <span className="text-[11px] sm:text-xs text-[#A0A0B0] truncate">
-                        {timeAgo}
-                      </span>
-                      <span className="text-[10px] font-mono text-[#A0A0B0]/55 tabular-nums">
-                        {block.txCount} TX
-                      </span>
-                      {isNewest && (
-                        <span className="text-[9px] font-mono tracking-wider text-[#FF7A3D]/90 px-1.5 py-0.5 rounded-md bg-[#FF7A3D]/10 border border-[#FF7A3D]/20">
+                {/* Meta + miner */}
+                <div className="min-w-0 flex flex-col justify-center gap-0.5 py-1">
+                  <div className="flex items-center gap-1.5 min-w-0 text-[10px] sm:text-[11px] text-[#A0A0B0]">
+                    <span className="truncate shrink min-w-0">{timeAgo}</span>
+                    <span className="text-[#A0A0B0]/35 shrink-0">·</span>
+                    <span className="font-mono tabular-nums shrink-0 text-[#A0A0B0]/70">
+                      {block.txCount} TX
+                    </span>
+                    {isNewest && (
+                      <>
+                        <span className="text-[#A0A0B0]/35 shrink-0">·</span>
+                        <span className="shrink-0 font-mono text-[9px] tracking-wider text-[#FF7A3D]/90">
                           LATEST
                         </span>
-                      )}
-                    </div>
+                      </>
+                    )}
+                  </div>
 
-                    {/* Miner always has a row — label or resolving */}
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <Pickaxe
-                        className={`w-3 h-3 shrink-0 ${
-                          hasMiner ? minerTone(block.minerLabel) : "text-[#A0A0B0]/40"
-                        }`}
-                      />
-                      {hasMiner ? (
-                        <span
-                          className={`text-[11px] sm:text-xs font-medium truncate ${minerTone(
-                            block.minerLabel
-                          )}`}
-                        >
-                          {block.minerLabel}
-                          {block.minerShort ? (
-                            <span className="text-[#A0A0B0]/70 font-mono font-normal">
-                              {" "}
-                              · {block.minerShort}
-                            </span>
-                          ) : null}
-                        </span>
-                      ) : (
-                        <span className="text-[11px] font-mono text-[#A0A0B0]/45 tracking-wide animate-pulse">
-                          resolving miner…
-                        </span>
-                      )}
-                    </div>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Pickaxe
+                      className={`w-3 h-3 shrink-0 ${
+                        hasMiner
+                          ? minerTone(block.minerLabel)
+                          : "text-[#A0A0B0]/35"
+                      }`}
+                    />
+                    {hasMiner ? (
+                      <span
+                        className={`text-[11px] sm:text-xs font-medium truncate leading-tight ${minerTone(
+                          block.minerLabel
+                        )}`}
+                      >
+                        {block.minerLabel}
+                        {block.minerShort ? (
+                          <span className="text-[#A0A0B0]/65 font-mono font-normal">
+                            {" · "}
+                            {block.minerShort}
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-mono text-[#A0A0B0]/40 tracking-wide animate-pulse truncate">
+                        resolving miner…
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <ChevronRight className="w-4 h-4 text-[#A0A0B0]/35 group-hover:text-[#E8E8F0] transition-colors flex-shrink-0" />
+                <ChevronRight className="w-3.5 h-3.5 text-[#A0A0B0]/30 group-hover:text-[#E8E8F0] transition-colors justify-self-end" />
               </div>
             </motion.div>
           );
         })}
       </div>
 
-      <div className="text-[10px] text-center text-[#A0A0B0]/45 mt-4 font-mono tracking-[1px] flex-shrink-0">
-        TAP FOR DETAILS · SIGMASPACE IN MODAL
+      <div className="text-[10px] text-center text-[#A0A0B0]/40 mt-3 font-mono tracking-[1px] flex-shrink-0">
+        TAP FOR DETAILS
       </div>
     </div>
   );
