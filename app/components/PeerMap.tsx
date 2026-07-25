@@ -238,47 +238,41 @@ function ClusteredPeersLayer({
   focusIp?: string | null;
 }) {
   const map = useMap();
+  const groupRef = useRef<L.MarkerClusterGroup | null>(null);
+  /** id → leaflet marker (stable across data refreshes) */
+  const markerMapRef = useRef<Map<string, L.Marker>>(new Map());
+  const dataMapRef = useRef<Map<string, PeerMapMarker>>(new Map());
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const boomRef = useRef(boomIps);
+  boomRef.current = boomIps;
+  const focusRef = useRef({ focusId, focusIp });
+  focusRef.current = { focusId, focusIp };
 
-  useEffect(() => {
-    // L.markerClusterGroup is provided by leaflet.markercluster side-effect import
-    const group = (
-      L as typeof L & {
-        markerClusterGroup: (opts?: L.MarkerClusterGroupOptions) => L.MarkerClusterGroup;
-      }
-    ).markerClusterGroup({
-      showCoverageOnHover: false,
-      spiderfyOnMaxZoom: true,
-      zoomToBoundsOnClick: true,
-      maxClusterRadius: 56,
-      disableClusteringAtZoom: 10,
-      spiderfyDistanceMultiplier: 1.4,
-      animate: true,
-      iconCreateFunction: createClusterIcon,
-    });
+  const isFocused = useCallback((m: PeerMapMarker) => {
+    const { focusId: fid, focusIp: fip } = focusRef.current;
+    return (
+      (!!fid && m.id === fid) || (!!fip && m.ip === fip && m.id !== "me")
+    );
+  }, []);
 
-    for (const m of markers) {
+  const styleMarker = useCallback(
+    (leafletMarker: L.Marker, m: PeerMapMarker) => {
       const state = normalizeState(m.state);
-      const isBoom = boomIps.has(m.ip);
-      const isFocus =
-        (!!focusId && m.id === focusId) ||
-        (!!focusIp && m.ip === focusIp && m.id !== "me");
-      const z =
-        isFocus
-          ? 1200
-          : state === "connected"
-            ? 600
-            : state === "live"
-              ? 300
-              : state === "seen"
-                ? 100
-                : 0;
-      const marker = L.marker([m.lat, m.lon], {
-        icon: peerDivIcon(state, isBoom, isFocus),
-        riseOnHover: true,
-        keyboard: true,
-        title: m.name || m.ip,
-        zIndexOffset: z,
-      });
+      const isBoom = boomRef.current.has(m.ip);
+      const focused = isFocused(m);
+      const z = focused
+        ? 1200
+        : state === "connected"
+          ? 600
+          : state === "live"
+            ? 300
+            : state === "seen"
+              ? 100
+              : 0;
+      leafletMarker.setIcon(peerDivIcon(state, isBoom, focused));
+      leafletMarker.setZIndexOffset(z);
+      leafletMarker.setLatLng([m.lat, m.lon]);
 
       const statusTip = stateMeta(state).short;
       const ver = shortVersion(m.version);
@@ -289,30 +283,51 @@ function ClusteredPeersLayer({
           : "") +
         (ver ? ` · v${ver}` : "") +
         ` · ${statusTip}`;
-
-      marker.bindTooltip(tip, {
+      leafletMarker.unbindTooltip();
+      leafletMarker.bindTooltip(tip, {
         direction: "top",
         offset: [0, -12],
         opacity: 1,
         sticky: false,
         className: "lumen-map-tooltip",
       });
-
-      marker.bindPopup(peerPopupHtml(m, false), {
+      leafletMarker.unbindPopup();
+      leafletMarker.bindPopup(peerPopupHtml(m, false), {
         maxWidth: 300,
         className: "lumen-map-popup",
         autoPan: true,
         closeButton: true,
         autoClose: true,
       });
+    },
+    [isFocused]
+  );
 
-      marker.on("click", () => {
-        onSelect(m);
-      });
-
-      group.addLayer(marker);
-    }
-
+  // Create cluster group once — never destroy on focus / data tick
+  useEffect(() => {
+    const group = (
+      L as typeof L & {
+        markerClusterGroup: (
+          opts?: L.MarkerClusterGroupOptions
+        ) => L.MarkerClusterGroup;
+      }
+    ).markerClusterGroup({
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      zoomToBoundsOnClick: true,
+      maxClusterRadius: 56,
+      disableClusteringAtZoom: 10,
+      spiderfyDistanceMultiplier: 1.4,
+      // animate:true rebuilds cluster DOM every zoom step → flicker in dense areas
+      animate: false,
+      animateAddingMarkers: false,
+      chunkedLoading: true,
+      chunkInterval: 50,
+      chunkDelay: 20,
+      removeOutsideVisibleBounds: true,
+      iconCreateFunction: createClusterIcon,
+    });
+    groupRef.current = group;
     map.addLayer(group);
 
     return () => {
@@ -322,8 +337,80 @@ function ClusteredPeersLayer({
       } catch {
         /* map already unmounted */
       }
+      groupRef.current = null;
+      markerMapRef.current.clear();
+      dataMapRef.current.clear();
     };
-  }, [map, markers, boomIps, onSelect, focusId, focusIp]);
+  }, [map]);
+
+  // Diff-update markers (add / remove / refresh) without full cluster rebuild
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+
+    const nextIds = new Set(markers.map((m) => m.id));
+    const prev = markerMapRef.current;
+
+    // Remove gone
+    for (const [id, lm] of prev) {
+      if (!nextIds.has(id)) {
+        try {
+          group.removeLayer(lm);
+        } catch {
+          /* ignore */
+        }
+        prev.delete(id);
+        dataMapRef.current.delete(id);
+      }
+    }
+
+    // Add / update
+    for (const m of markers) {
+      let lm = prev.get(m.id);
+      if (!lm) {
+        lm = L.marker([m.lat, m.lon], {
+          riseOnHover: true,
+          keyboard: true,
+          title: m.name || m.ip,
+        });
+        lm.on("click", () => {
+          const data = dataMapRef.current.get(m.id);
+          if (data) onSelectRef.current(data);
+        });
+        styleMarker(lm, m);
+        group.addLayer(lm);
+        prev.set(m.id, lm);
+      } else {
+        const prevData = dataMapRef.current.get(m.id);
+        const needs =
+          !prevData ||
+          prevData.lat !== m.lat ||
+          prevData.lon !== m.lon ||
+          prevData.state !== m.state ||
+          prevData.name !== m.name ||
+          prevData.version !== m.version ||
+          prevData.ip !== m.ip;
+        if (needs) styleMarker(lm, m);
+      }
+      dataMapRef.current.set(m.id, m);
+    }
+  }, [markers, styleMarker]);
+
+  // Focus highlight only — swap icons, no cluster tear-down
+  useEffect(() => {
+    const group = groupRef.current;
+    if (!group) return;
+    for (const [id, lm] of markerMapRef.current) {
+      const m = dataMapRef.current.get(id);
+      if (m) styleMarker(lm, m);
+    }
+    // Refresh cluster icons without zoom thrash
+    try {
+      group.refreshClusters();
+    } catch {
+      /* ignore */
+    }
+  }, [focusId, focusIp, styleMarker]);
 
   return null;
 }
@@ -799,11 +886,12 @@ function MapResizeGuard() {
 /**
  * Animated signal arcs: YOU → each currently connected peer.
  *
- * Smoothness rules (same as Leaflet.SVG / Path):
- * - Geometry lives in the map pane → CSS transform owns pan/zoom animation.
- * - Never reproject while `map._animatingZoom` (that double-transforms and jitters).
- * - Packets use *cached* SVG endpoints from the last reproject, not live
- *   latLngToContainerPoint every frame.
+ * Stability (Leaflet L.Renderer pattern):
+ * - Paths live in the map pane; pan/zoom CSS transform moves them — do NOT
+ *   rewrite geometry on every `move` (that double-transforms and jitters).
+ * - Full reproject only on zoomend / viewreset / resize / moveend.
+ * - During zoom animation: only CSS transform on the SVG root (like L.SVG).
+ * - Packets use cached endpoints; expensive SVG filters avoided for density.
  */
 function SignalLinesLayer({
   me,
@@ -837,39 +925,32 @@ function SignalLinesLayer({
     svgEl.style.top = "0";
     svgEl.style.overflow = "visible";
     svgEl.style.pointerEvents = "none";
-    // Keep stroke width stable while the pane is CSS-scaled mid-zoom
-    svgEl.style.vectorEffect = "non-scaling-stroke";
+    svgEl.style.willChange = "transform";
     pane.appendChild(svgEl);
 
     const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
     g.setAttribute("class", "lumen-signal-layer");
     svgEl.appendChild(g);
 
-    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-    const filterId = `lumen-signal-glow-${Date.now().toString(36)}`;
-    defs.innerHTML = `
-      <filter id="${filterId}" x="-60%" y="-60%" width="220%" height="220%">
-        <feGaussianBlur stdDeviation="1.1" result="b"/>
-        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-      </filter>
-    `;
-    g.appendChild(defs);
-
     type Drawn = {
       pathGlow: SVGPathElement;
       pathCore: SVGPathElement;
-      packet: SVGCircleElement;
+      packet: SVGCircleElement | null;
       toLat: number;
       toLon: number;
       phase: number;
       speed: number;
-      /** Cached SVG-local endpoints from last reproject */
       x1: number;
       y1: number;
       x2: number;
       y2: number;
+      cx: number;
+      cy: number;
     };
     const drawn: Drawn[] = [];
+
+    // Cap animated packets in dense graphs (perf); keep all arc strokes
+    const packetBudget = Math.min(linkList.length, 28);
 
     for (let i = 0; i < linkList.length; i++) {
       const link = linkList[i];
@@ -878,44 +959,43 @@ function SignalLinesLayer({
         "path"
       );
       pathGlow.setAttribute("fill", "none");
-      pathGlow.setAttribute("stroke", "rgba(0,229,255,0.10)");
-      pathGlow.setAttribute("stroke-width", "1.6");
+      pathGlow.setAttribute("stroke", "rgba(0,229,255,0.14)");
+      pathGlow.setAttribute("stroke-width", "2");
       pathGlow.setAttribute("stroke-linecap", "round");
       pathGlow.setAttribute("vector-effect", "non-scaling-stroke");
-      pathGlow.setAttribute("filter", `url(#${filterId})`);
       pathGlow.setAttribute("class", "lumen-signal-glow");
+      // No SVG feGaussianBlur — blurs thrash GPU with 50+ links on zoom
 
       const pathCore = document.createElementNS(
         "http://www.w3.org/2000/svg",
         "path"
       );
       pathCore.setAttribute("fill", "none");
-      pathCore.setAttribute("stroke", "rgba(0,229,255,0.32)");
-      pathCore.setAttribute("stroke-width", "0.7");
+      pathCore.setAttribute("stroke", "rgba(0,229,255,0.38)");
+      pathCore.setAttribute("stroke-width", "0.85");
       pathCore.setAttribute("stroke-linecap", "round");
       pathCore.setAttribute("vector-effect", "non-scaling-stroke");
       pathCore.setAttribute("class", "lumen-signal-core");
-      pathCore.style.strokeDasharray = "3 11";
-      pathCore.style.animation = `lumen-signal-dash ${3.2 + (i % 5) * 0.2}s linear infinite`;
+      // Static dash (no CSS animation) — continuous dashoffset anim + reproject = shimmer
+      pathCore.setAttribute("stroke-dasharray", "4 10");
 
-      const packet = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "circle"
-      );
-      packet.setAttribute("r", "1.6");
-      packet.setAttribute("fill", "rgba(224,251,255,0.75)");
-      packet.setAttribute("stroke", "rgba(0,229,255,0.35)");
-      packet.setAttribute("stroke-width", "0.5");
-      packet.setAttribute("vector-effect", "non-scaling-stroke");
-      packet.setAttribute(
-        "style",
-        "filter:drop-shadow(0 0 2.5px rgba(0,229,255,0.55))"
-      );
-      packet.setAttribute("class", "lumen-signal-packet");
+      let packet: SVGCircleElement | null = null;
+      if (i < packetBudget) {
+        packet = document.createElementNS(
+          "http://www.w3.org/2000/svg",
+          "circle"
+        );
+        packet.setAttribute("r", "1.7");
+        packet.setAttribute("fill", "rgba(224,251,255,0.8)");
+        packet.setAttribute("stroke", "rgba(0,229,255,0.4)");
+        packet.setAttribute("stroke-width", "0.5");
+        packet.setAttribute("vector-effect", "non-scaling-stroke");
+        packet.setAttribute("class", "lumen-signal-packet");
+      }
 
       g.appendChild(pathGlow);
       g.appendChild(pathCore);
-      g.appendChild(packet);
+      if (packet) g.appendChild(packet);
 
       drawn.push({
         pathGlow,
@@ -929,6 +1009,8 @@ function SignalLinesLayer({
         y1: 0,
         x2: 0,
         y2: 0,
+        cx: 0,
+        cy: 0,
       });
     }
 
@@ -938,7 +1020,6 @@ function SignalLinesLayer({
       const dx = x2 - x1;
       const dy = y2 - y1;
       const len = Math.hypot(dx, dy) || 1;
-      // Arc bulge in *screen-ish* px; clamp so zoom-out stays subtle
       const offset = Math.min(48, Math.max(10, len * 0.1));
       const cx = mx - (dy / len) * offset;
       const cy = my + (dx / len) * offset;
@@ -952,11 +1033,12 @@ function SignalLinesLayer({
     const pointOnQuad = (
       x1: number,
       y1: number,
+      cx: number,
+      cy: number,
       x2: number,
       y2: number,
       t: number
     ): { x: number; y: number } => {
-      const { cx, cy } = curveGeom(x1, y1, x2, y2);
       const u = 1 - t;
       return {
         x: u * u * x1 + 2 * u * t * cx + t * t * x2,
@@ -964,16 +1046,35 @@ function SignalLinesLayer({
       };
     };
 
+    const mapAny = map as unknown as {
+      _animatingZoom?: boolean;
+      getZoomScale: (z: number, from?: number) => number;
+      getSize: () => L.Point;
+      containerPointToLayerPoint: (p: L.PointExpression) => L.Point;
+      getCenter: () => L.LatLng;
+      getZoom: () => number;
+      latLngToLayerPoint: (ll: L.LatLngExpression) => L.Point;
+    };
+
+    let zoomAnim = false;
+    /** Zoom level / center snapshotted at last full reproject (L.Renderer) */
+    let baseZoom = map.getZoom();
+    let baseCenter = map.getCenter();
+    let basePos = map.containerPointToLayerPoint([0, 0]);
+
     const isZoomAnimating = () =>
-      Boolean((map as unknown as { _animatingZoom?: boolean })._animatingZoom);
+      zoomAnim || Boolean(mapAny._animatingZoom);
 
     /**
-     * Same strategy as L.SVG._update:
-     * pin container to layer top-left of viewport; paths in local (container) space.
-     * Skip entirely while Leaflet is CSS-scaling the map pane for zoom.
+     * Full geometry reproject — only when map is at rest (not mid CSS zoom).
+     * Paths in container space; SVG pinned to viewport top-left in layer coords.
      */
     const reproject = () => {
       if (isZoomAnimating()) return;
+
+      // Clear any temporary zoom transform
+      svgEl.style.transform = "";
+      L.DomUtil.setPosition(svgEl as unknown as HTMLElement, L.point(0, 0));
 
       const size = map.getSize();
       const topLeft = map.containerPointToLayerPoint([0, 0]);
@@ -982,7 +1083,6 @@ function SignalLinesLayer({
       svgEl.setAttribute("height", String(size.y));
       svgEl.setAttribute("viewBox", `0 0 ${size.x} ${size.y}`);
 
-      // layer − topLeft ≡ container point (stable when not mid-zoom-anim)
       const meLayer = map.latLngToLayerPoint([meNode.lat, meNode.lon]);
       const ox = meLayer.x - topLeft.x;
       const oy = meLayer.y - topLeft.y;
@@ -995,25 +1095,66 @@ function SignalLinesLayer({
         d.y1 = oy;
         d.x2 = x2;
         d.y2 = y2;
-        const { d: pathD } = curveGeom(ox, oy, x2, y2);
-        d.pathGlow.setAttribute("d", pathD);
-        d.pathCore.setAttribute("d", pathD);
+        const geom = curveGeom(ox, oy, x2, y2);
+        d.cx = geom.cx;
+        d.cy = geom.cy;
+        d.pathGlow.setAttribute("d", geom.d);
+        d.pathCore.setAttribute("d", geom.d);
       }
+
+      baseZoom = map.getZoom();
+      baseCenter = map.getCenter();
+      basePos = topLeft;
     };
 
-    /** Pan without zoom: only re-pin SVG origin (cheap); skip mid zoom-anim. */
-    const onMove = () => {
-      if (isZoomAnimating()) return;
-      reproject();
+    /**
+     * L.Renderer._updateTransform equivalent via zoomanim event.
+     * Scales/translates existing SVG without rewriting path `d`.
+     */
+    const onZoomAnim = (e: L.ZoomAnimEvent) => {
+      zoomAnim = true;
+      const scale = map.getZoomScale(e.zoom, baseZoom);
+      const viewHalf = map.getSize().multiplyBy(0.5);
+      const currentCenterPoint = map.project(baseCenter, e.zoom);
+      const destCenterPoint = map.project(e.center, e.zoom);
+      const centerOffset = destCenterPoint.subtract(currentCenterPoint);
+      const topLeftOffset = viewHalf
+        .multiplyBy(-scale)
+        .add(basePos)
+        .add(viewHalf)
+        .subtract(centerOffset);
+      L.DomUtil.setTransform(
+        svgEl as unknown as HTMLElement,
+        topLeftOffset,
+        scale
+      );
+    };
+
+    const onZoomStart = () => {
+      zoomAnim = true;
+      baseZoom = map.getZoom();
+      baseCenter = map.getCenter();
+      basePos = map.containerPointToLayerPoint([0, 0]);
     };
 
     const onZoomEnd = () => {
-      // After CSS zoom transform resets, reproject at the new scale once
+      zoomAnim = false;
+      svgEl.style.transform = "";
+      reproject();
+    };
+
+    /**
+     * Pan: Leaflet CSS-translates the whole pane. Paths stay valid until
+     * moveend, when we re-pin once (never rewrite mid-drag).
+     */
+    const onMoveEnd = () => {
+      if (isZoomAnimating()) return;
       reproject();
     };
 
     let raf = 0;
     let last = performance.now();
+    let frame = 0;
     const reduceMotion =
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -1021,36 +1162,50 @@ function SignalLinesLayer({
     const tick = (now: number) => {
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
+      frame++;
 
-      // Freeze packets during zoom anim — pane CSS transform moves them with lines
       if (!reduceMotion && !isZoomAnimating()) {
-        for (const d of drawn) {
-          d.phase = (d.phase + d.speed * dt) % 1;
-          const p = pointOnQuad(d.x1, d.y1, d.x2, d.y2, d.phase);
-          d.packet.setAttribute("cx", String(p.x));
-          d.packet.setAttribute("cy", String(p.y));
-          const edge = Math.min(d.phase, 1 - d.phase);
-          const op = edge < 0.08 ? edge / 0.08 : 1;
-          d.packet.setAttribute("opacity", String(0.25 + 0.5 * op));
+        // Throttle packets ~30fps — polish without main-thread thrash
+        if (frame % 2 === 0) {
+          for (const d of drawn) {
+            if (!d.packet) continue;
+            d.phase = (d.phase + d.speed * dt * 2) % 1;
+            const p = pointOnQuad(
+              d.x1,
+              d.y1,
+              d.cx,
+              d.cy,
+              d.x2,
+              d.y2,
+              d.phase
+            );
+            d.packet.setAttribute("cx", String(p.x));
+            d.packet.setAttribute("cy", String(p.y));
+            const edge = Math.min(d.phase, 1 - d.phase);
+            const op = edge < 0.08 ? edge / 0.08 : 1;
+            d.packet.setAttribute("opacity", String(0.25 + 0.5 * op));
+          }
         }
       }
       raf = requestAnimationFrame(tick);
     };
 
     reproject();
-    // Do NOT listen to "zoom" — that fights Leaflet's animated CSS transform.
-    map.on("move", onMove);
-    map.on("moveend", reproject);
+    // Critical: no continuous `move` reproject (fought CSS pan transform → jitter)
+    map.on("zoomstart", onZoomStart);
+    map.on("zoomanim", onZoomAnim);
     map.on("zoomend", onZoomEnd);
+    map.on("moveend", onMoveEnd);
     map.on("viewreset", reproject);
     map.on("resize", reproject);
     raf = requestAnimationFrame(tick);
 
     return () => {
       cancelAnimationFrame(raf);
-      map.off("move", onMove);
-      map.off("moveend", reproject);
+      map.off("zoomstart", onZoomStart);
+      map.off("zoomanim", onZoomAnim);
       map.off("zoomend", onZoomEnd);
+      map.off("moveend", onMoveEnd);
       map.off("viewreset", reproject);
       map.off("resize", reproject);
       try {
@@ -1423,23 +1578,24 @@ export default function PeerMap({
 
   /** Apply elegant status filters (Ghost never shown). */
   const peerMarkers = useMemo(() => {
+    const selectedId = selected?.id;
+    const selectedIp = selected?.ip;
     return allMarkers.filter((m) => {
       const s = normalizeState(m.state);
       if (s === "ghost") return false;
-      // Always keep the focused node visible even if filter would hide it
+      // Keep focused node visible even if filter would hide it
       if (
-        selected &&
-        (m.id === selected.id || m.ip === selected.ip) &&
-        selected.id !== "me"
+        selectedId &&
+        selectedId !== "me" &&
+        (m.id === selectedId || m.ip === selectedIp)
       ) {
         return true;
       }
       if (mapFilter === "connected") return s === "connected";
       if (mapFilter === "live") return s === "connected" || s === "live";
-      // all: connected + live + seen
       return s === "connected" || s === "live" || s === "seen";
     });
-  }, [allMarkers, mapFilter, selected]);
+  }, [allMarkers, mapFilter, selected?.id, selected?.ip]);
 
   /** Search corpus: all non-ghost mapped nodes (+ me if present) */
   const searchNodes = useMemo(() => {

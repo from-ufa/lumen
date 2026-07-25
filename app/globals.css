@@ -381,27 +381,26 @@ body {
 }
 
 /* ── Signal arcs (YOU → connected peers) ── */
-@keyframes lumen-signal-dash {
-  to {
-    stroke-dashoffset: -60;
-  }
-}
 .leaflet-lumenSignals-pane,
 .leaflet-pane.leaflet-lumenSignals-pane {
   z-index: 550 !important;
   pointer-events: none !important;
 }
-/* Ride Leaflet zoom CSS transform — avoid paint thrash mid-anim */
+/* Pane rides Leaflet pan/zoom CSS transform — no paint thrash mid-anim */
 .leaflet-zoom-anim .leaflet-lumenSignals-pane {
   will-change: transform;
 }
 .lumen-signal-svg {
   overflow: visible !important;
   pointer-events: none !important;
+  /* Prevent subpixel shimmer when parent pane is transformed */
+  shape-rendering: geometricPrecision;
 }
 .lumen-signal-core,
 .lumen-signal-glow {
   vector-effect: non-scaling-stroke;
+  /* No CSS dash animation — it shimmered when paths reprojected */
+  animation: none !important;
 }
 .lumen-signal-core {
   opacity: 1;
@@ -412,9 +411,17 @@ body {
 .lumen-signal-packet {
   pointer-events: none;
 }
+/* Cluster: disable CSS transitions that flash during regroup */
+.lumen-map .marker-cluster,
+.lumen-map .marker-cluster div,
+.lumen-map .leaflet-marker-icon.marker-cluster {
+  transition: none !important;
+}
+.lumen-cluster-bubble {
+  transition: none !important;
+}
 @media (prefers-reduced-motion: reduce) {
   .lumen-signal-core {
-    animation: none !important;
     stroke-dasharray: none !important;
   }
   .lumen-signal-packet {
