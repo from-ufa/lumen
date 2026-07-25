@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Consensus Singularity — ultra cinematic oracle visualizer.
- * Crystalline plasma core · gravity ribbons · comet trails · shockwaves.
- * Prompt-driven aesthetic: cyan-gold energy, pure black void, living data physics.
+ * Consensus Singularity — premium fintech luxury visualizer.
+ * Soft cyan plasma core · precise gravity streams · sparse elegant particles.
+ * Calm intensity, controlled energy, pure black void.
  */
 
 import React, {
@@ -14,7 +14,7 @@ import React, {
   useState,
 } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Stars, Sparkles } from "@react-three/drei";
+import { OrbitControls, Stars } from "@react-three/drei";
 import * as THREE from "three";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -64,14 +64,15 @@ type NodeLayout = {
   seed: number;
 };
 
-/* ─── Palette ───────────────────────────────────────────────────────────── */
+/* ─── Palette — restrained luxury ───────────────────────────────────────── */
 
-const CYAN = "#00E5FF";
-const GOLD = "#E8C547";
-const GREEN = "#10B981";
-const RED = "#EF4444";
-const AMBER = "#F59E0B";
-const VOID = "#020205";
+const CYAN = "#5EE7FF";
+const CYAN_SOFT = "#2A9BB8";
+const GREEN = "#34D399";
+const AMBER = "#D4A574";
+const RED = "#C45C5C";
+const VOID = "#000000";
+const TEXT = "#E8EEF2";
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -88,19 +89,17 @@ function hexToThree(hex: string): THREE.Color {
   return new THREE.Color(hex);
 }
 
-function statusColor(s: FeedStatus): string {
-  if (s === "live") return GREEN;
-  if (s === "stale") return AMBER;
-  return RED;
-}
-
 function nodeAuraColor(s: FeedStatus, accent: string): THREE.Color {
-  if (s === "live") return hexToThree(GREEN).lerp(hexToThree(accent), 0.25);
+  if (s === "live") return hexToThree(GREEN).lerp(hexToThree(accent), 0.15);
   if (s === "stale") return hexToThree(AMBER);
   return hexToThree(RED);
 }
 
-function relativeAge(ageMs: number | null, lastUpdatedAt: number | null, now: number) {
+function relativeAge(
+  ageMs: number | null,
+  lastUpdatedAt: number | null,
+  now: number
+) {
   const ms =
     ageMs != null
       ? ageMs
@@ -125,16 +124,19 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+/** Elegant depth-layered placement — not a perfect sphere */
 function nodePosition(index: number, total: number, seed: number): THREE.Vector3 {
   const n = Math.max(total, 1);
   const golden = Math.PI * (3 - Math.sqrt(5));
   const y = 1 - (index / Math.max(n - 1, 1)) * 2;
   const rAtY = Math.sqrt(Math.max(0, 1 - y * y));
-  const theta = golden * index + (seed % 997) * 0.002;
-  const radius = 5.6 + ((seed + index * 19) % 50) * 0.025;
+  const theta = golden * index + (seed % 997) * 0.0015;
+  // Vary depth: some closer, some farther — cinematic layering
+  const depthJitter = 0.82 + ((seed % 40) / 40) * 0.45;
+  const radius = (5.8 + (index % 3) * 0.35) * depthJitter;
   return new THREE.Vector3(
     Math.cos(theta) * rAtY * radius,
-    y * radius * 0.52,
+    y * radius * 0.48,
     Math.sin(theta) * rAtY * radius
   );
 }
@@ -142,19 +144,24 @@ function nodePosition(index: number, total: number, seed: number): THREE.Vector3
 function buildNodes(feed: SingularityFeed, reduced: boolean): NodeLayout[] {
   let list: SingularityNode[] = feed.nodes?.length
     ? [...feed.nodes]
-    : Array.from({ length: 13 }).map((_, i) => ({
+    : Array.from({ length: 11 }).map((_, i) => ({
         address: `virtual-${feed.id}-${i}`,
         height: null,
         status: feed.status,
       }));
 
-  // Cinematic cast: prefer ~13 nodes (prompt); pad with virtual if short
-  const target = reduced ? 9 : 13;
+  // Prompt: 11 clean nodes
+  const target = reduced ? 8 : 11;
   while (list.length < target) {
     list.push({
       address: `virtual-pad-${feed.id}-${list.length}`,
       height: null,
-      status: list.length % 5 === 0 ? "offline" : list.length % 4 === 0 ? "stale" : "live",
+      status:
+        list.length % 7 === 0
+          ? "offline"
+          : list.length % 5 === 0
+            ? "stale"
+            : "live",
     });
   }
   list = list.slice(0, target);
@@ -170,70 +177,7 @@ function buildNodes(feed: SingularityFeed, reduced: boolean): NodeLayout[] {
   });
 }
 
-/* ─── Shockwave pool ────────────────────────────────────────────────────── */
-
-type Shock = { t: number; max: number; color: THREE.Color };
-
-function Shockwaves({
-  shocksRef,
-}: {
-  shocksRef: React.MutableRefObject<Shock[]>;
-}) {
-  const meshRef = useRef<THREE.InstancedMesh>(null);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
-  const MAX = 12;
-
-  useFrame((_, dt) => {
-    const mesh = meshRef.current;
-    if (!mesh) return;
-    const list = shocksRef.current;
-    // prune
-    for (let i = list.length - 1; i >= 0; i--) {
-      list[i].t += dt;
-      if (list[i].t > list[i].max) list.splice(i, 1);
-    }
-    for (let i = 0; i < MAX; i++) {
-      const s = list[i];
-      if (!s) {
-        dummy.scale.set(0.001, 0.001, 0.001);
-        dummy.position.set(0, 0, 0);
-        dummy.updateMatrix();
-        mesh.setMatrixAt(i, dummy.matrix);
-        mesh.setColorAt(i, new THREE.Color(0, 0, 0));
-        continue;
-      }
-      const u = s.t / s.max;
-      const r = 0.4 + u * 4.5;
-      dummy.position.set(0, 0, 0);
-      dummy.scale.set(r, r, r);
-      dummy.rotation.set(Math.PI / 2, 0, u * 1.2);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      const c = s.color.clone();
-      // fade encoded in color brightness (additive)
-      c.multiplyScalar(1 - u);
-      mesh.setColorAt(i, c);
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  });
-
-  return (
-    <instancedMesh ref={meshRef} args={[undefined, undefined, MAX]} frustumCulled={false}>
-      <ringGeometry args={[0.92, 1.0, 64]} />
-      <meshBasicMaterial
-        transparent
-        opacity={0.55}
-        depthWrite={false}
-        toneMapped={false}
-        blending={THREE.AdditiveBlending}
-        side={THREE.DoubleSide}
-      />
-    </instancedMesh>
-  );
-}
-
-/* ─── Crystalline plasma core ───────────────────────────────────────────── */
+/* ─── Soft crystalline core ─────────────────────────────────────────────── */
 
 function PlasmaCore({
   accent,
@@ -244,176 +188,139 @@ function PlasmaCore({
   flash: number;
   status: FeedStatus;
 }) {
-  const group = useRef<THREE.Group>(null);
   const crystal = useRef<THREE.Mesh>(null);
-  const plasma = useRef<THREE.Mesh>(null);
+  const shell = useRef<THREE.Mesh>(null);
   const halo = useRef<THREE.Mesh>(null);
   const halo2 = useRef<THREE.Mesh>(null);
-  const rays = useRef<THREE.Group>(null);
 
   const cyan = useMemo(() => hexToThree(CYAN), []);
-  const gold = useMemo(() => hexToThree(GOLD), []);
   const accentC = useMemo(() => hexToThree(accent), [accent]);
   const dim = status === "offline";
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    const energy = dim ? 0.35 : 1;
     const f = flash;
+    const energy = dim ? 0.4 : 1;
 
     if (crystal.current) {
-      crystal.current.rotation.y = t * 0.35;
-      crystal.current.rotation.x = Math.sin(t * 0.4) * 0.15;
-      const s = (0.72 + Math.sin(t * 1.6) * 0.04) * (1 + f * 0.45) * energy;
+      crystal.current.rotation.y = t * 0.12;
+      crystal.current.rotation.x = Math.sin(t * 0.2) * 0.08;
+      const s = (0.78 + Math.sin(t * 0.7) * 0.025) * (1 + f * 0.2) * energy;
       crystal.current.scale.setScalar(s);
     }
-    if (plasma.current) {
-      plasma.current.rotation.y = -t * 0.55;
-      plasma.current.rotation.z = t * 0.2;
-      const s = (1.15 + Math.sin(t * 2.1) * 0.08) * (1 + f * 0.7);
-      plasma.current.scale.setScalar(s);
-      const mat = plasma.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = (dim ? 0.12 : 0.28) + f * 0.4;
+    if (shell.current) {
+      shell.current.rotation.y = -t * 0.08;
+      const s = (1.2 + Math.sin(t * 0.5) * 0.03) * (1 + f * 0.25);
+      shell.current.scale.setScalar(s);
+      const mat = shell.current.material as THREE.MeshBasicMaterial;
+      mat.opacity = (dim ? 0.06 : 0.14) + f * 0.15;
     }
     if (halo.current) {
-      const s = (1.9 + Math.sin(t * 0.9) * 0.12) * (1 + f * 0.9);
+      const s = (1.85 + Math.sin(t * 0.4) * 0.05) * (1 + f * 0.3);
       halo.current.scale.setScalar(s);
       const mat = halo.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = (dim ? 0.06 : 0.16) + f * 0.35;
+      mat.opacity = (dim ? 0.04 : 0.1) + f * 0.12;
     }
     if (halo2.current) {
-      const s = (2.6 + Math.sin(t * 0.55 + 1) * 0.15) * (1 + f * 1.1);
+      const s = (2.5 + Math.sin(t * 0.3 + 1) * 0.06) * (1 + f * 0.35);
       halo2.current.scale.setScalar(s);
       const mat = halo2.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = (dim ? 0.03 : 0.09) + f * 0.25;
-    }
-    if (rays.current) {
-      rays.current.rotation.z = t * 0.08;
-      rays.current.rotation.y = t * 0.05;
+      mat.opacity = (dim ? 0.02 : 0.05) + f * 0.08;
     }
   });
 
-  // God-ray cones
-  const rayCount = 6;
-
   return (
-    <group ref={group}>
+    <group>
       <pointLight
         color={cyan}
-        intensity={dim ? 1.2 : 4.5 + flash * 10}
-        distance={32}
+        intensity={dim ? 1.0 : 2.8 + flash * 3}
+        distance={26}
         decay={2}
-      />
-      <pointLight
-        color={gold}
-        intensity={dim ? 0.5 : 2.2 + flash * 6}
-        distance={22}
-        decay={2}
-        position={[0.4, 0.2, -0.3]}
       />
       <pointLight
         color="#ffffff"
-        intensity={0.8 + flash * 3}
-        distance={12}
+        intensity={0.35 + flash * 0.8}
+        distance={10}
         decay={2}
       />
+      <pointLight
+        color={accentC}
+        intensity={dim ? 0.2 : 0.6 + flash * 1.2}
+        distance={16}
+        decay={2}
+        position={[0.3, 0.15, -0.2]}
+      />
 
-      {/* crystalline core */}
+      {/* soft crystalline core */}
       <mesh ref={crystal}>
-        <icosahedronGeometry args={[0.85, 2]} />
+        <icosahedronGeometry args={[0.72, 2]} />
         <meshStandardMaterial
           color={cyan}
-          emissive={accentC}
-          emissiveIntensity={dim ? 0.6 : 2.4 + flash * 2}
-          metalness={0.9}
-          roughness={0.12}
+          emissive={cyan}
+          emissiveIntensity={dim ? 0.5 : 1.4 + flash * 0.8}
+          metalness={0.85}
+          roughness={0.18}
           transparent
-          opacity={0.95}
+          opacity={0.92}
           toneMapped={false}
         />
       </mesh>
 
-      {/* inner gold lattice */}
+      {/* fine lattice — restrained */}
       <mesh>
-        <dodecahedronGeometry args={[0.55, 0]} />
+        <icosahedronGeometry args={[0.78, 1]} />
         <meshBasicMaterial
-          color={gold}
+          color={CYAN}
           wireframe
           transparent
-          opacity={dim ? 0.15 : 0.45 + flash * 0.3}
+          opacity={dim ? 0.08 : 0.18 + flash * 0.1}
           toneMapped={false}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
         />
       </mesh>
 
-      {/* plasma shell */}
-      <mesh ref={plasma}>
-        <icosahedronGeometry args={[1.0, 1]} />
-        <meshBasicMaterial
-          color={cyan}
-          wireframe
-          transparent
-          opacity={0.28}
-          toneMapped={false}
-          blending={THREE.AdditiveBlending}
-          depthWrite={false}
-        />
-      </mesh>
-
-      {/* volumetric-ish halos */}
-      <mesh ref={halo}>
+      {/* soft plasma shell */}
+      <mesh ref={shell}>
         <sphereGeometry args={[1, 32, 32]} />
         <meshBasicMaterial
-          color={cyan}
+          color={CYAN_SOFT}
           transparent
-          opacity={0.16}
+          opacity={0.12}
+          depthWrite={false}
+          toneMapped={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* atmospheric bloom shells */}
+      <mesh ref={halo}>
+        <sphereGeometry args={[1, 24, 24]} />
+        <meshBasicMaterial
+          color={CYAN}
+          transparent
+          opacity={0.1}
           depthWrite={false}
           toneMapped={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
       <mesh ref={halo2}>
-        <sphereGeometry args={[1, 24, 24]} />
+        <sphereGeometry args={[1, 20, 20]} />
         <meshBasicMaterial
-          color={gold}
+          color={CYAN_SOFT}
           transparent
-          opacity={0.09}
+          opacity={0.05}
           depthWrite={false}
           toneMapped={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-
-      {/* god rays */}
-      <group ref={rays}>
-        {Array.from({ length: rayCount }).map((_, i) => {
-          const a = (i / rayCount) * Math.PI * 2;
-          return (
-            <mesh
-              key={i}
-              position={[Math.cos(a) * 0.2, Math.sin(a * 1.3) * 0.15, Math.sin(a) * 0.2]}
-              rotation={[Math.PI / 2, 0, a]}
-            >
-              <coneGeometry args={[0.55, 5.5, 12, 1, true]} />
-              <meshBasicMaterial
-                color={i % 2 === 0 ? cyan : gold}
-                transparent
-                opacity={dim ? 0.02 : 0.045}
-                depthWrite={false}
-                toneMapped={false}
-                blending={THREE.AdditiveBlending}
-                side={THREE.DoubleSide}
-              />
-            </mesh>
-          );
-        })}
-      </group>
     </group>
   );
 }
 
-/* ─── Epoch light rings ─────────────────────────────────────────────────── */
+/* ─── Minimal orbital rings ─────────────────────────────────────────────── */
 
 function EpochRings({
   epochLength,
@@ -424,111 +331,89 @@ function EpochRings({
 }) {
   const r1 = useRef<THREE.Group>(null);
   const r2 = useRef<THREE.Group>(null);
-  const r3 = useRef<THREE.Group>(null);
-  const r4 = useRef<THREE.Group>(null);
-  const base = 3.0 + Math.min(epochLength, 40) * 0.018;
+  const base = 3.4 + Math.min(epochLength, 40) * 0.012;
 
   useFrame((_, dt) => {
-    if (r1.current) r1.current.rotation.z += dt * 0.12;
-    if (r2.current) r2.current.rotation.z -= dt * 0.07;
-    if (r3.current) {
-      r3.current.rotation.x += dt * 0.04;
-      r3.current.rotation.y += dt * 0.05;
-    }
-    if (r4.current) r4.current.rotation.z += dt * 0.03;
+    // very slow — calm
+    if (r1.current) r1.current.rotation.z += dt * 0.04;
+    if (r2.current) r2.current.rotation.z -= dt * 0.025;
   });
-
-  const Ring = ({
-    radius,
-    color,
-    opacity,
-    tube = 0.018,
-  }: {
-    radius: number;
-    color: string;
-    opacity: number;
-    tube?: number;
-  }) => (
-    <mesh>
-      <torusGeometry args={[radius, tube + flash * 0.01, 12, 128]} />
-      <meshBasicMaterial
-        color={color}
-        transparent
-        opacity={opacity + flash * 0.2}
-        depthWrite={false}
-        toneMapped={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </mesh>
-  );
 
   return (
     <group>
-      <group ref={r1} rotation={[Math.PI / 2.35, 0.15, 0]}>
-        <Ring radius={base} color={CYAN} opacity={0.55} tube={0.022} />
+      <group ref={r1} rotation={[Math.PI / 2.3, 0.12, 0]}>
+        <mesh>
+          <torusGeometry args={[base, 0.008 + flash * 0.004, 8, 128]} />
+          <meshBasicMaterial
+            color={CYAN}
+            transparent
+            opacity={0.35 + flash * 0.15}
+            depthWrite={false}
+            toneMapped={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
       </group>
-      <group ref={r2} rotation={[Math.PI / 2.05, -0.4, 0.35]}>
-        <Ring radius={base * 1.28} color={GOLD} opacity={0.35} tube={0.016} />
-      </group>
-      <group ref={r3} rotation={[0.95, 0.55, 0.25]}>
-        <Ring radius={base * 1.55} color={CYAN} opacity={0.2} tube={0.012} />
-      </group>
-      <group ref={r4} rotation={[Math.PI / 2.6, 0.5, -0.2]}>
-        <Ring radius={base * 1.85} color={GOLD} opacity={0.12} tube={0.01} />
+      <group ref={r2} rotation={[Math.PI / 2.05, -0.35, 0.3]}>
+        <mesh>
+          <torusGeometry args={[base * 1.35, 0.006, 8, 128]} />
+          <meshBasicMaterial
+            color={CYAN_SOFT}
+            transparent
+            opacity={0.18 + flash * 0.1}
+            depthWrite={false}
+            toneMapped={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
       </group>
     </group>
   );
 }
 
-/* ─── Gravity plasma ribbon (node → core) ───────────────────────────────── */
+/* ─── Thin precise gravity stream ───────────────────────────────────────── */
 
-function GravityRibbon({
+function GravityStream({
   from,
   status,
   accent,
-  reduced,
 }: {
   from: THREE.Vector3;
   status: FeedStatus;
   accent: string;
-  reduced: boolean;
 }) {
-  const mesh = useRef<THREE.Mesh>(null);
   const matRef = useRef<THREE.MeshBasicMaterial>(null);
   const col = nodeAuraColor(status, accent);
 
   const geometry = useMemo(() => {
-    // Bezier bulge for cinematic curve
-    const mid = from.clone().multiplyScalar(0.45);
-    mid.y += (hashStr(from.toArray().join(",")) % 100) / 100 - 0.5;
-    mid.x += 0.3;
+    // Nearly straight with subtle bend — precise, not dramatic
+    const mid = from.clone().multiplyScalar(0.5);
+    mid.y += ((hashStr(from.toArray().join(",")) % 20) - 10) * 0.02;
     const curve = new THREE.QuadraticBezierCurve3(
       from.clone(),
       mid,
       new THREE.Vector3(0, 0, 0)
     );
-    return new THREE.TubeGeometry(curve, reduced ? 24 : 48, 0.018, 6, false);
-  }, [from, reduced]);
+    return new THREE.TubeGeometry(curve, 32, 0.006, 4, false);
+  }, [from]);
 
   useFrame((state) => {
     if (!matRef.current) return;
     const t = state.clock.elapsedTime;
-    const pulse =
-      status === "live"
-        ? 0.22 + Math.sin(t * 3 + from.x) * 0.1
-        : status === "stale"
-          ? 0.1
-          : 0.04;
-    matRef.current.opacity = pulse;
+    const base =
+      status === "live" ? 0.14 : status === "stale" ? 0.08 : 0.03;
+    matRef.current.opacity = base + Math.sin(t * 1.2 + from.x) * 0.03;
   });
 
+  if (status === "offline") return null;
+
   return (
-    <mesh ref={mesh} geometry={geometry}>
+    <mesh geometry={geometry}>
       <meshBasicMaterial
         ref={matRef}
         color={col}
         transparent
-        opacity={0.2}
+        opacity={0.12}
         depthWrite={false}
         toneMapped={false}
         blending={THREE.AdditiveBlending}
@@ -537,7 +422,7 @@ function GravityRibbon({
   );
 }
 
-/* ─── Oracle node ───────────────────────────────────────────────────────── */
+/* ─── Translucent geometric oracle node ─────────────────────────────────── */
 
 function OracleNodeMesh({
   node,
@@ -550,7 +435,6 @@ function OracleNodeMesh({
 }) {
   const group = useRef<THREE.Group>(null);
   const aura = useRef<THREE.Mesh>(null);
-  const aura2 = useRef<THREE.Mesh>(null);
   const body = useRef<THREE.Mesh>(null);
   const col = nodeAuraColor(node.status, accent);
   const dying = node.status === "offline";
@@ -561,98 +445,77 @@ function OracleNodeMesh({
     const s = node.seed / 0xffffffff;
     if (group.current) {
       group.current.position.copy(node.pos);
-      group.current.position.y += Math.sin(t * 0.65 + s * 12) * 0.1;
-      group.current.rotation.y = t * (0.25 + s * 0.4);
-      group.current.rotation.x = Math.sin(t * 0.35 + s * 5) * 0.2;
+      // barely perceptible drift
+      group.current.position.y += Math.sin(t * 0.35 + s * 10) * 0.05;
+      group.current.rotation.y = t * (0.08 + s * 0.1);
     }
     if (body.current) {
       const breathe = dying
-        ? 0.9 + Math.sin(t * 0.5) * 0.03
-        : 1 + Math.sin(t * 1.8 + s * 8) * 0.06;
+        ? 0.95
+        : 1 + Math.sin(t * 0.8 + s * 6) * 0.03;
       body.current.scale.setScalar(breathe);
     }
     if (aura.current) {
-      const p = dying
-        ? 1 + Math.sin(t * 0.6) * 0.04
-        : 1.1 + Math.sin(t * 2.4 + s * 6) * 0.18;
+      const p = dying ? 1 : 1.05 + Math.sin(t * 1.1 + s * 4) * 0.06;
       aura.current.scale.setScalar(p);
       const mat = aura.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = dying ? 0.08 : stale ? 0.16 : 0.32;
-    }
-    if (aura2.current) {
-      aura2.current.scale.setScalar(1.4 + Math.sin(t * 1.2 + s) * 0.1);
-      const mat = aura2.current.material as THREE.MeshBasicMaterial;
-      mat.opacity = dying ? 0.04 : 0.12;
+      mat.opacity = dying ? 0.05 : stale ? 0.1 : 0.18;
     }
   });
 
   return (
     <group ref={group} position={node.pos}>
       <mesh ref={body}>
-        <octahedronGeometry args={[0.32, dying ? 0 : 1]} />
+        <octahedronGeometry args={[0.26, 0]} />
         <meshStandardMaterial
           color={col}
           emissive={col}
-          emissiveIntensity={dying ? 0.25 : stale ? 0.7 : 1.6}
-          metalness={0.75}
-          roughness={dying ? 0.45 : 0.12}
+          emissiveIntensity={dying ? 0.15 : stale ? 0.4 : 0.75}
+          metalness={0.55}
+          roughness={0.2}
           transparent
-          opacity={dying ? 0.55 : 0.92}
+          opacity={dying ? 0.5 : 0.82}
           toneMapped={false}
         />
       </mesh>
       {!reduced && (
         <mesh>
-          <icosahedronGeometry args={[0.38, 0]} />
+          <octahedronGeometry args={[0.3, 0]} />
           <meshBasicMaterial
             color={col}
             wireframe
             transparent
-            opacity={dying ? 0.12 : 0.35}
+            opacity={dying ? 0.08 : 0.2}
             toneMapped={false}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
           />
         </mesh>
       )}
-      {/* volumetric aura stack */}
       <mesh ref={aura}>
-        <sphereGeometry args={[0.62, reduced ? 10 : 20, reduced ? 10 : 20]} />
+        <sphereGeometry args={[0.48, reduced ? 10 : 16, reduced ? 10 : 16]} />
         <meshBasicMaterial
           color={col}
           transparent
-          opacity={0.28}
+          opacity={0.16}
           depthWrite={false}
           toneMapped={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      {!reduced && (
-        <mesh ref={aura2}>
-          <sphereGeometry args={[0.95, 16, 16]} />
-          <meshBasicMaterial
-            color={col}
-            transparent
-            opacity={0.1}
-            depthWrite={false}
-            toneMapped={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
-      )}
       <pointLight
         color={col}
-        intensity={dying ? 0.15 : stale ? 0.45 : 1.1}
-        distance={3.5}
+        intensity={dying ? 0.08 : stale ? 0.2 : 0.45}
+        distance={2.8}
         decay={2}
       />
     </group>
   );
 }
 
-/* ─── Comet field with trails ───────────────────────────────────────────── */
+/* ─── Sparse elegant particles ──────────────────────────────────────────── */
 
-type Comet = {
+type Particle = {
   phase: "inbound" | "to-core";
   t: number;
   speed: number;
@@ -662,32 +525,27 @@ type Comet = {
   color: THREE.Color;
 };
 
-function CometField({
+function ParticleField({
   nodes,
-  accent,
   status,
   reduced,
   flashRef,
-  shocksRef,
 }: {
   nodes: NodeLayout[];
-  accent: string;
   status: FeedStatus;
   reduced: boolean;
   flashRef: React.MutableRefObject<number>;
-  shocksRef: React.MutableRefObject<Shock[]>;
 }) {
-  const headCount = reduced ? 48 : status === "offline" ? 40 : 160;
-  const trailLen = reduced ? 5 : 10;
+  // Sparse — luxury, not fireworks
+  const headCount = reduced ? 18 : status === "offline" ? 12 : 36;
+  const trailLen = reduced ? 6 : 12;
   const headRef = useRef<THREE.InstancedMesh>(null);
   const trailRef = useRef<THREE.InstancedMesh>(null);
-  const comets = useRef<Comet[]>([]);
+  const particles = useRef<Particle[]>([]);
   const dummy = useMemo(() => new THREE.Object3D(), []);
-  const accentC = useMemo(() => hexToThree(accent), [accent]);
   const cyan = useMemo(() => hexToThree(CYAN), []);
-  const gold = useMemo(() => hexToThree(GOLD), []);
 
-  const spawn = useCallback((): Comet | null => {
+  const spawn = useCallback((): Particle | null => {
     if (!nodes.length) return null;
     const pool =
       nodes.filter((n) => n.status !== "offline").length > 0
@@ -696,106 +554,99 @@ function CometField({
     const target = pool[Math.floor(Math.random() * pool.length)];
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
-    const R = 16 + Math.random() * 8;
+    const R = 14 + Math.random() * 5;
     const from = new THREE.Vector3(
       R * Math.sin(phi) * Math.cos(theta),
-      R * Math.cos(phi) * 0.4,
+      R * Math.cos(phi) * 0.38,
       R * Math.sin(phi) * Math.sin(theta)
     );
-    const color = Math.random() > 0.45 ? cyan.clone() : gold.clone();
-    color.lerp(accentC, 0.2);
-    if (target.status === "stale") color.lerp(hexToThree(AMBER), 0.4);
-    if (target.status === "offline") color.lerp(hexToThree(RED), 0.55);
+    const color = cyan.clone();
+    color.offsetHSL(0, 0, (Math.random() - 0.5) * 0.08);
     return {
       phase: "inbound",
       t: 0,
-      speed: 0.22 + Math.random() * 0.35,
+      // slow, deliberate acceleration
+      speed: 0.1 + Math.random() * 0.12,
       from,
       via: target.pos.clone(),
       trail: Array.from({ length: trailLen }, () => from.clone()),
       color,
     };
-  }, [nodes, accentC, cyan, gold, trailLen]);
+  }, [nodes, cyan, trailLen]);
 
   useEffect(() => {
-    const arr: Comet[] = [];
+    const arr: Particle[] = [];
     for (let i = 0; i < headCount; i++) {
-      const c = spawn();
-      if (c) {
-        c.t = Math.random();
-        arr.push(c);
+      const p = spawn();
+      if (p) {
+        p.t = Math.random();
+        arr.push(p);
       }
     }
-    comets.current = arr;
+    particles.current = arr;
   }, [headCount, spawn]);
 
   useFrame((_, dt) => {
     const heads = headRef.current;
     const trails = trailRef.current;
     if (!heads) return;
-    const list = comets.current;
+    const list = particles.current;
     const rate =
-      status === "live" ? 1.15 : status === "stale" ? 0.5 : 0.15;
+      status === "live" ? 0.85 : status === "stale" ? 0.4 : 0.12;
 
     for (let i = 0; i < list.length; i++) {
-      let c = list[i];
-      if (!c) continue;
-      c.t += dt * c.speed * rate;
+      let p = list[i];
+      if (!p) continue;
+      p.t += dt * p.speed * rate;
 
       let pos = new THREE.Vector3();
-      if (c.phase === "inbound") {
-        if (c.t >= 1) {
-          c.phase = "to-core";
-          c.t = 0;
-          c.speed = 0.45 + Math.random() * 0.5;
+      if (p.phase === "inbound") {
+        if (p.t >= 1) {
+          p.phase = "to-core";
+          p.t = 0;
+          p.speed = 0.18 + Math.random() * 0.15;
         } else {
-          const e = c.t * c.t * (3 - 2 * c.t);
-          pos.lerpVectors(c.from, c.via, e);
+          // smooth ease
+          const e = p.t * p.t * (3 - 2 * p.t);
+          pos.lerpVectors(p.from, p.via, e);
         }
       }
-      if (c.phase === "to-core") {
-        if (c.t >= 1) {
-          flashRef.current = Math.min(1, flashRef.current + 0.12);
-          if (shocksRef.current.length < 10) {
-            shocksRef.current.push({
-              t: 0,
-              max: 0.55 + Math.random() * 0.35,
-              color: c.color.clone(),
-            });
-          }
+      if (p.phase === "to-core") {
+        if (p.t >= 1) {
+          // soft pulse only — no shockwave fireworks
+          flashRef.current = Math.min(0.55, flashRef.current + 0.06);
           const next = spawn();
           if (next) list[i] = next;
           continue;
         }
-        // accelerate into singularity
-        const e = c.t * c.t * c.t;
-        pos.lerpVectors(c.via, new THREE.Vector3(0, 0, 0), e);
+        const e = p.t * p.t;
+        pos.lerpVectors(p.via, new THREE.Vector3(0, 0, 0), e);
       }
 
-      // trail history
-      c.trail.pop();
-      c.trail.unshift(pos.clone());
+      p.trail.pop();
+      p.trail.unshift(pos.clone());
 
       const headScale =
-        c.phase === "to-core"
-          ? 0.07 + (1 - c.t) * 0.12
-          : 0.055 + c.t * 0.05;
+        p.phase === "to-core"
+          ? 0.04 + (1 - p.t) * 0.05
+          : 0.035 + p.t * 0.02;
       dummy.position.copy(pos);
       dummy.scale.setScalar(headScale);
       dummy.updateMatrix();
       heads.setMatrixAt(i, dummy.matrix);
-      heads.setColorAt(i, c.color);
+      heads.setColorAt(i, p.color);
 
       if (trails) {
         for (let k = 0; k < trailLen; k++) {
           const idx = i * trailLen + k;
-          const tp = c.trail[k] || pos;
+          const tp = p.trail[k] || pos;
           const fade = 1 - k / trailLen;
           dummy.position.copy(tp);
-          dummy.scale.setScalar(headScale * 0.7 * fade);
+          // elongated elegant trail dots
+          dummy.scale.setScalar(headScale * 0.55 * fade);
           dummy.updateMatrix();
           trails.setMatrixAt(idx, dummy.matrix);
-          const tc = c.color.clone().multiplyScalar(fade * 0.85);
+          const tc = p.color.clone().multiplyScalar(fade * 0.65);
           trails.setColorAt(idx, tc);
         }
       }
@@ -818,7 +669,7 @@ function CometField({
         <sphereGeometry args={[1, 8, 8]} />
         <meshBasicMaterial
           transparent
-          opacity={0.95}
+          opacity={0.9}
           toneMapped={false}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
@@ -832,7 +683,7 @@ function CometField({
         <sphereGeometry args={[1, 5, 5]} />
         <meshBasicMaterial
           transparent
-          opacity={0.7}
+          opacity={0.55}
           toneMapped={false}
           blending={THREE.AdditiveBlending}
           depthWrite={false}
@@ -842,7 +693,7 @@ function CometField({
   );
 }
 
-/* ─── Flash decay ───────────────────────────────────────────────────────── */
+/* ─── Flash (soft) ──────────────────────────────────────────────────────── */
 
 function FlashController({
   flashRef,
@@ -856,14 +707,14 @@ function FlashController({
   const prev = useRef(priceKey);
   useEffect(() => {
     if (prev.current !== priceKey && priceKey) {
-      flashRef.current = 1;
+      flashRef.current = 0.7;
       prev.current = priceKey;
     }
   }, [priceKey, flashRef]);
 
   useFrame((_, dt) => {
     if (flashRef.current > 0.001) {
-      flashRef.current = Math.max(0, flashRef.current - dt * 0.95);
+      flashRef.current = Math.max(0, flashRef.current - dt * 0.7);
       setFlash(flashRef.current);
     } else if (flashRef.current !== 0) {
       flashRef.current = 0;
@@ -888,35 +739,24 @@ function SceneRoot({
   setFlash: (v: number) => void;
   flashRef: React.MutableRefObject<number>;
 }) {
-  const shocksRef = useRef<Shock[]>([]);
   const nodes = useMemo(() => buildNodes(feed, reduced), [feed, reduced]);
 
   return (
     <>
       <color attach="background" args={[VOID]} />
-      <fog attach="fog" args={[VOID, 14, 38]} />
-      <ambientLight intensity={0.08} />
+      {/* heavy atmosphere via fog */}
+      <fog attach="fog" args={[VOID, 10, 28]} />
+      <ambientLight intensity={0.06} />
 
       <Stars
-        radius={80}
-        depth={50}
-        count={reduced ? 900 : 2800}
-        factor={reduced ? 2.8 : 4}
+        radius={70}
+        depth={40}
+        count={reduced ? 400 : 900}
+        factor={2}
         saturation={0}
         fade
-        speed={0.15}
+        speed={0.08}
       />
-
-      {!reduced && (
-        <Sparkles
-          count={80}
-          scale={18}
-          size={2.2}
-          speed={0.35}
-          opacity={0.45}
-          color={CYAN}
-        />
-      )}
 
       <FlashController
         flashRef={flashRef}
@@ -926,40 +766,30 @@ function SceneRoot({
 
       <PlasmaCore accent={feed.accent} flash={flash} status={feed.status} />
       <EpochRings epochLength={feed.epochLength} flash={flash} />
-      <Shockwaves shocksRef={shocksRef} />
 
       {nodes.map((n) => (
         <React.Fragment key={n.address}>
           <OracleNodeMesh node={n} accent={feed.accent} reduced={reduced} />
-          {(n.status !== "offline" || !reduced) && (
-            <GravityRibbon
-              from={n.pos}
-              status={n.status}
-              accent={feed.accent}
-              reduced={reduced}
-            />
-          )}
+          <GravityStream from={n.pos} status={n.status} accent={feed.accent} />
         </React.Fragment>
       ))}
 
-      <CometField
+      <ParticleField
         nodes={nodes}
-        accent={feed.accent}
         status={feed.status}
         reduced={reduced}
         flashRef={flashRef}
-        shocksRef={shocksRef}
       />
 
       <OrbitControls
         enablePan={false}
         enableZoom
-        minDistance={reduced ? 10 : 8}
-        maxDistance={24}
+        minDistance={reduced ? 10 : 8.5}
+        maxDistance={20}
         autoRotate
-        autoRotateSpeed={feed.status === "offline" ? 0.12 : 0.28}
-        maxPolarAngle={Math.PI * 0.82}
-        minPolarAngle={Math.PI * 0.18}
+        autoRotateSpeed={0.12}
+        maxPolarAngle={Math.PI * 0.8}
+        minPolarAngle={Math.PI * 0.2}
       />
     </>
   );
@@ -1015,18 +845,18 @@ export default function ConsensusSingularity({
   })();
 
   return (
-    <div className="oracle-singularity relative w-full overflow-hidden rounded-[1.25rem] sm:rounded-[1.75rem] border border-white/[0.07] bg-[#020205]">
+    <div className="oracle-singularity relative w-full overflow-hidden rounded-[1.25rem] sm:rounded-[1.75rem] border border-white/[0.06] bg-black">
       <div className="absolute inset-0 z-0">
         {mounted && (
           <Canvas
-            dpr={reduced ? [1, 1.35] : [1, 2]}
-            camera={{ position: [0, 2.6, 13.5], fov: 40, near: 0.1, far: 100 }}
+            dpr={reduced ? [1, 1.25] : [1, 1.75]}
+            camera={{ position: [0, 2.2, 13], fov: 38, near: 0.1, far: 80 }}
             gl={{
-              antialias: !reduced,
+              antialias: true,
               alpha: false,
               powerPreference: "high-performance",
               toneMapping: THREE.ACESFilmicToneMapping,
-              toneMappingExposure: 1.15,
+              toneMappingExposure: 0.95,
             }}
             onCreated={({ gl }) => {
               gl.setClearColor(VOID);
@@ -1044,17 +874,17 @@ export default function ConsensusSingularity({
         )}
       </div>
 
-      {/* cinematic vignette — pure void edges */}
-      <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(2,2,5,0.2)_50%,rgba(2,2,5,0.88)_100%)]" />
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-36 bg-gradient-to-b from-[#020205]/95 via-[#020205]/40 to-transparent" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-44 bg-gradient-to-t from-[#020205] via-[#020205]/70 to-transparent" />
+      {/* heavy atmospheric vignette */}
+      <div className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(ellipse_at_center,transparent_10%,rgba(0,0,0,0.35)_55%,rgba(0,0,0,0.92)_100%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-32 bg-gradient-to-b from-black/90 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-40 bg-gradient-to-t from-black via-black/80 to-transparent" />
 
-      {/* cyan-gold flash wash */}
+      {/* soft cyan wash on update — controlled */}
       <div
-        className="pointer-events-none absolute inset-0 z-[2] transition-opacity duration-75"
+        className="pointer-events-none absolute inset-0 z-[2] transition-opacity duration-200"
         style={{
-          opacity: flash * 0.45,
-          background: `radial-gradient(circle at 50% 46%, ${CYAN}66 0%, ${GOLD}33 28%, transparent 58%)`,
+          opacity: flash * 0.22,
+          background: `radial-gradient(circle at 50% 46%, ${CYAN}44 0%, transparent 50%)`,
         }}
       />
 
@@ -1062,11 +892,11 @@ export default function ConsensusSingularity({
       <div className="relative z-10 flex h-full flex-col p-3 sm:p-5 pointer-events-none">
         <div className="flex items-start justify-between gap-2 pointer-events-auto">
           <div>
-            <div className="font-mono text-[9px] sm:text-[10px] tracking-[0.28em] text-[#A0A0B0]/90">
+            <div className="font-mono text-[9px] sm:text-[10px] tracking-[0.28em] text-white/40">
               CONSENSUS SINGULARITY
             </div>
-            <div className="mt-0.5 text-[11px] sm:text-xs font-mono tracking-widest text-white/70">
-              {feed.pair} · LIVING DATA PHYSICS
+            <div className="mt-0.5 text-[11px] sm:text-xs font-mono tracking-widest text-white/55">
+              {feed.pair}
             </div>
           </div>
 
@@ -1080,19 +910,9 @@ export default function ConsensusSingularity({
                   onClick={() => onSelectFeed(f.id)}
                   className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-[9px] sm:text-[10px] font-mono tracking-[0.16em] border transition-all ${
                     on
-                      ? "text-white border-white/25 bg-white/10"
-                      : "text-[#A0A0B0] border-white/10 bg-black/40 hover:border-white/20"
+                      ? "border-[#5EE7FF]/40 text-[#5EE7FF] bg-[#5EE7FF]/10"
+                      : "text-white/40 border-white/10 bg-black/50 hover:border-white/20 hover:text-white/70"
                   }`}
-                  style={
-                    on
-                      ? {
-                          borderColor: `${f.accent}77`,
-                          color: f.accent,
-                          background: `${f.accent}1a`,
-                          boxShadow: `0 0 24px ${f.accent}33`,
-                        }
-                      : undefined
-                  }
                 >
                   {f.pair}
                 </button>
@@ -1101,40 +921,40 @@ export default function ConsensusSingularity({
           </div>
         </div>
 
-        {/* price as pure light */}
+        {/* price — glowing pure light */}
         <div className="flex-1 flex flex-col items-center justify-center pointer-events-none select-none">
           <AnimatePresence mode="wait">
             <motion.div
               key={`${feed.id}-${feed.priceLabel}`}
-              initial={{ opacity: 0, scale: 0.92, filter: "blur(8px)" }}
+              initial={{ opacity: 0, scale: 0.96, filter: "blur(6px)" }}
               animate={{
                 opacity: 1,
-                scale: 1 + flash * 0.05,
+                scale: 1 + flash * 0.02,
                 filter: "blur(0px)",
               }}
-              exit={{ opacity: 0, scale: 1.04, filter: "blur(6px)" }}
-              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+              exit={{ opacity: 0, scale: 1.02, filter: "blur(4px)" }}
+              transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
               className="text-center"
             >
               <div
-                className="font-semibold tracking-[-0.045em] tabular-nums leading-none"
+                className="font-semibold tracking-[-0.04em] tabular-nums leading-none"
                 style={{
-                  fontSize: "clamp(2.5rem, 8.5vw, 5rem)",
-                  color: "#F8FBFF",
+                  fontSize: "clamp(2.5rem, 8vw, 4.75rem)",
+                  color: TEXT,
                   textShadow: `
-                    0 0 ${18 + flash * 50}px ${CYAN},
-                    0 0 ${36 + flash * 70}px ${GOLD}99,
-                    0 0 4px rgba(0,0,0,0.9)
+                    0 0 ${20 + flash * 28}px ${CYAN}99,
+                    0 0 ${40 + flash * 40}px ${CYAN}44,
+                    0 2px 12px rgba(0,0,0,0.9)
                   `,
                 }}
               >
                 {feed.priceLabel || "—"}
               </div>
-              <div className="mt-2.5 font-mono text-[10px] sm:text-xs tracking-[0.28em] text-[#A0A0B0]">
+              <div className="mt-2.5 font-mono text-[10px] sm:text-xs tracking-[0.28em] text-white/35">
                 {feed.unitLabel}
               </div>
               {feed.priceAlt && (
-                <div className="mt-1 font-mono text-[9px] sm:text-[10px] tracking-wide text-[#A0A0B0]/50">
+                <div className="mt-1 font-mono text-[9px] sm:text-[10px] tracking-wide text-white/25">
                   {feed.priceAlt}
                 </div>
               )}
@@ -1171,12 +991,12 @@ export default function ConsensusSingularity({
                 : undefined
             }
             bar={healthPct}
-            accent={feed.accent}
+            accent={CYAN}
           />
         </div>
 
         {isFetching && (
-          <div className="absolute top-3 right-3 sm:top-5 sm:right-5 w-1.5 h-1.5 rounded-full bg-[#00E5FF] status-dot" />
+          <div className="absolute top-3 right-3 sm:top-5 sm:right-5 w-1.5 h-1.5 rounded-full bg-[#5EE7FF] status-dot" />
         )}
       </div>
     </div>
@@ -1199,37 +1019,37 @@ function HudCell({
   bar?: number;
 }) {
   return (
-    <div className="rounded-xl sm:rounded-2xl border border-white/[0.07] bg-black/55 backdrop-blur-md px-2.5 sm:px-3.5 py-2 sm:py-2.5">
+    <div className="rounded-xl sm:rounded-2xl border border-white/[0.06] bg-black/60 backdrop-blur-md px-2.5 sm:px-3.5 py-2 sm:py-2.5">
       <div className="flex items-center gap-1.5 mb-0.5">
         {accent && (
           <span
             className={`h-1 w-1 rounded-full ${pulse ? "status-dot" : ""}`}
-            style={{ background: accent, boxShadow: `0 0 8px ${accent}` }}
+            style={{ background: accent, boxShadow: `0 0 6px ${accent}` }}
           />
         )}
-        <span className="text-[8px] sm:text-[9px] font-mono tracking-[0.18em] text-[#A0A0B0]/80">
+        <span className="text-[8px] sm:text-[9px] font-mono tracking-[0.18em] text-white/35">
           {label}
         </span>
       </div>
       <div
         className="font-mono text-sm sm:text-base tabular-nums tracking-tight"
-        style={{ color: accent || "#E8E8F0" }}
+        style={{ color: accent || TEXT }}
       >
         {value}
       </div>
       {sub && (
-        <div className="text-[8px] sm:text-[9px] font-mono text-[#A0A0B0]/50 mt-0.5">
+        <div className="text-[8px] sm:text-[9px] font-mono text-white/25 mt-0.5">
           {sub}
         </div>
       )}
       {typeof bar === "number" && (
-        <div className="mt-1.5 h-0.5 rounded-full bg-white/[0.06] overflow-hidden">
+        <div className="mt-1.5 h-px rounded-full bg-white/[0.06] overflow-hidden">
           <div
             className="h-full rounded-full"
             style={{
               width: `${bar}%`,
-              background: accent || GREEN,
-              boxShadow: `0 0 10px ${accent || GREEN}`,
+              background: accent || CYAN,
+              boxShadow: `0 0 8px ${accent || CYAN}`,
             }}
           />
         </div>

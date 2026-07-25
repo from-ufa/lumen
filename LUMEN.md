@@ -521,6 +521,7 @@ Do not:
 | 2026-07-26 | **Oracle MVP:** `/oracles` — premium ERG/USD + ERG/XAU cards (live/stale/offline, sparkline, epoch); API `/api/oracles` |
 | 2026-07-26 | **Consensus Singularity:** R3F oracle visualizer — gravity nodes, data comets, epoch rings, price flash; feed switch USD/XAU |
 | 2026-07-26 | **Singularity cinematic pass:** crystalline cyan-gold plasma core, god rays, plasma ribbons, comet trails, shockwaves, ~13 nodes |
+| 2026-07-26 | **Singularity luxury pass:** soft cyan core, 11 nodes, sparse particles, thin streams, calm fintech aesthetic |
 
 ### Block miner attribution (honest)
 
