@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, type MouseEvent } from "react";
+import { useState, useEffect, useRef, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -48,6 +48,10 @@ interface ConnectionSettingsProps {
   bridgeStatus: BridgeStatus | null;
   bridgeStatusLoading?: boolean;
   onRefreshBridgeStatus?: () => void;
+  /** Hide default trigger (e.g. mobile uses a shared menu) */
+  hideTrigger?: boolean;
+  /** Bump to open modal from parent menu */
+  openKey?: number;
 }
 
 function CopyButton({
@@ -202,8 +206,11 @@ export default function ConnectionSettings({
   bridgeStatus,
   bridgeStatusLoading = false,
   onRefreshBridgeStatus,
+  hideTrigger = false,
+  openKey = 0,
 }: ConnectionSettingsProps) {
   const [open, setOpen] = useState(false);
+  const lastOpenKey = useRef(0);
 
   const setModalOpen = (next: boolean) => {
     setOpen(next);
@@ -226,6 +233,13 @@ export default function ConnectionSettings({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!openKey || openKey === lastOpenKey.current) return;
+    lastOpenKey.current = openKey;
+    setModalOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openKey]);
 
   useEffect(() => {
     if (open) {
@@ -756,21 +770,23 @@ export default function ConnectionSettings({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setModalOpen(true)}
-        className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-2 h-11 sm:h-auto rounded-2xl glass border border-white/10 text-[10px] sm:text-xs font-mono tracking-wider sm:tracking-widest hover:border-white/30 transition-all active:scale-[0.985] box-border"
-      >
-        <Settings className="w-3.5 h-3.5 shrink-0" />
-        <span className="sm:hidden truncate">SETTINGS</span>
-        <span className="hidden sm:inline">NODE SETTINGS</span>
-        {bridgeOnline && (
-          <span
-            className="hidden sm:inline-flex w-1.5 h-1.5 rounded-full bg-[#10B981] status-dot"
-            title="Bridge online"
-          />
-        )}
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-2 h-11 sm:h-auto rounded-2xl glass border border-white/10 text-[10px] sm:text-xs font-mono tracking-wider sm:tracking-widest hover:border-white/30 transition-all active:scale-[0.985] box-border"
+        >
+          <Settings className="w-3.5 h-3.5 shrink-0" />
+          <span className="sm:hidden truncate">SETTINGS</span>
+          <span className="hidden sm:inline">NODE SETTINGS</span>
+          {bridgeOnline && (
+            <span
+              className="hidden sm:inline-flex w-1.5 h-1.5 rounded-full bg-[#10B981] status-dot"
+              title="Bridge online"
+            />
+          )}
+        </button>
+      )}
       {modal}
     </>
   );

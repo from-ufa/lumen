@@ -25,6 +25,10 @@ interface ShareCardProps {
   mempoolSize?: number;
   /** Notify parent when modal opens/closes (hide viz floating controls) */
   onOpenChange?: (open: boolean) => void;
+  /** Hide default trigger (mobile shared menu) */
+  hideTrigger?: boolean;
+  /** Bump to open modal from parent */
+  openKey?: number;
 }
 
 export default function ShareCard({
@@ -34,6 +38,8 @@ export default function ShareCard({
   publicMode,
   mempoolSize = 0,
   onOpenChange,
+  hideTrigger = false,
+  openKey = 0,
 }: ShareCardProps) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -41,6 +47,7 @@ export default function ShareCard({
   const [copiedText, setCopiedText] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
+  const lastOpenKey = useRef(0);
 
   const setModalOpen = (next: boolean) => {
     setOpen(next);
@@ -50,6 +57,13 @@ export default function ShareCard({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!openKey || openKey === lastOpenKey.current) return;
+    lastOpenKey.current = openKey;
+    setModalOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -455,15 +469,17 @@ export default function ShareCard({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setModalOpen(true)}
-        className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-2 h-11 sm:h-auto rounded-2xl border border-[#FF7A3D]/40 bg-[#FF7A3D]/10 text-[#FF7A3D] text-[10px] sm:text-xs font-mono tracking-wider sm:tracking-widest hover:bg-[#FF7A3D]/20 hover:border-[#FF7A3D]/60 transition-all active:scale-[0.985] box-border"
-      >
-        <Share2 className="w-3.5 h-3.5 shrink-0" />
-        <span className="sm:hidden truncate">SHARE</span>
-        <span className="hidden sm:inline">SHARE MY NODE</span>
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => setModalOpen(true)}
+          className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-2 h-11 sm:h-auto rounded-2xl border border-[#FF7A3D]/40 bg-[#FF7A3D]/10 text-[#FF7A3D] text-[10px] sm:text-xs font-mono tracking-wider sm:tracking-widest hover:bg-[#FF7A3D]/20 hover:border-[#FF7A3D]/60 transition-all active:scale-[0.985] box-border"
+        >
+          <Share2 className="w-3.5 h-3.5 shrink-0" />
+          <span className="sm:hidden truncate">SHARE</span>
+          <span className="hidden sm:inline">SHARE MY NODE</span>
+        </button>
+      )}
       {modal}
     </>
   );
