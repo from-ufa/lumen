@@ -415,38 +415,50 @@ export default function LumenDashboard() {
     <div className="min-h-screen min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
       {/* === HERO / TOP BAR === */}
       <div className="border-b border-white/10 bg-[#0A0A0F]/95 backdrop-blur-xl sticky top-0 z-40 pt-[env(safe-area-inset-top)]">
-        <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center justify-between gap-3 min-w-0">
-            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
-                <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
-              </div>
-              <div className="min-w-0">
-                <div className="font-semibold tracking-[-0.5px] text-2xl sm:text-3xl leading-none">Lumen</div>
-                <div className="text-[9px] sm:text-[10px] text-[#A0A0B0] mt-0.5 font-mono tracking-[2px] sm:tracking-[3px] truncate">
-                  Ergo Node Dashboard
-                </div>
-              </div>
+        <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4 flex flex-col gap-2.5 sm:gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* Logo row */}
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl sm:rounded-2xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-black" />
             </div>
-            {/* Compact status on mobile next to logo */}
-            <div className={`sm:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl text-[10px] font-mono tracking-wider border flex-shrink-0 ${isOnline ? 'border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]' : 'border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]'}`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-[#10B981] status-dot' : 'bg-[#EF4444]'}`} />
-              {nodeMode === "my"
-                ? isOnline
-                  ? "MY"
-                  : bridgeOnline
-                    ? "BR"
-                    : "OFF"
-                : isOnline
-                  ? "LIVE"
-                  : "OFF"}
+            <div className="min-w-0">
+              <div className="font-semibold tracking-[-0.5px] text-2xl sm:text-3xl leading-none">
+                Lumen
+              </div>
+              <div className="text-[9px] sm:text-[10px] text-[#A0A0B0] mt-0.5 font-mono tracking-[2px] sm:tracking-[3px] truncate">
+                Ergo Node Dashboard
+              </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-start sm:justify-end">
-            {/* Status — desktop */}
-            <div className={`hidden sm:flex items-center gap-2 px-4 lg:px-5 py-2 rounded-3xl text-sm font-mono tracking-widest border ${isOnline ? 'border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]' : 'border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]'}`}>
-              <div className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-[#10B981] status-dot' : 'bg-[#EF4444]'}`} />
+          {/*
+            Mobile: one full-width row — SHARE · SETTINGS · refresh · LIVE
+            Desktop: status + mode + controls (unchanged flow)
+          */}
+          <div
+            className="
+              grid grid-cols-4 gap-1.5 w-full
+              sm:flex sm:flex-wrap sm:items-center sm:gap-3 sm:justify-end sm:w-auto
+              [&_button]:min-h-[2.75rem] sm:[&_button]:min-h-0
+              [&_button]:w-full sm:[&_button]:w-auto
+              [&_button]:justify-center
+              [&_button]:px-1.5 sm:[&_button]:px-4
+              [&_button]:text-[10px] sm:[&_button]:text-xs
+            "
+          >
+            {/* Status — desktop only */}
+            <div
+              className={`hidden sm:flex items-center gap-2 px-4 lg:px-5 py-2 rounded-3xl text-sm font-mono tracking-widest border ${
+                isOnline
+                  ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]"
+                  : "border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]"
+              }`}
+            >
+              <div
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                }`}
+              />
               {nodeMode === "my"
                 ? isOnline
                   ? "MY NODE LIVE"
@@ -458,7 +470,7 @@ export default function LumenDashboard() {
                   : "NODE OFFLINE"}
             </div>
 
-            {/* Mode badge */}
+            {/* Mode badge — desktop md+ */}
             <div
               className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border ${
                 nodeMode === "my"
@@ -507,14 +519,41 @@ export default function LumenDashboard() {
               onRefreshBridgeStatus={onRefreshBridgeStatus}
             />
 
-            <button 
+            <button
+              type="button"
               onClick={handleReconnect}
-              className="p-2.5 sm:p-3 rounded-2xl glass border border-white/10 hover:bg-white/5 transition-all active:scale-95"
+              className="flex items-center gap-1.5 rounded-2xl glass border border-white/10 hover:bg-white/5 transition-all active:scale-[0.98] text-[#E8E8F0] font-mono tracking-wider"
               title="Refresh data"
               aria-label="Refresh data"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span className="sm:hidden">SYNC</span>
             </button>
+
+            {/* LIVE — mobile only (desktop has full status chip) */}
+            <div
+              className={`sm:hidden flex items-center justify-center gap-1 min-h-[2.75rem] px-1.5 rounded-2xl text-[10px] font-mono tracking-wider border ${
+                isOnline
+                  ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]"
+                  : "border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]"
+              }`}
+              title={isOnline ? "Node live" : "Node offline"}
+            >
+              <div
+                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                }`}
+              />
+              {nodeMode === "my"
+                ? isOnline
+                  ? "MY"
+                  : bridgeOnline
+                    ? "BR"
+                    : "OFF"
+                : isOnline
+                  ? "LIVE"
+                  : "OFF"}
+            </div>
           </div>
         </div>
       </div>
