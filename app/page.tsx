@@ -7,8 +7,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { 
   RefreshCw, Zap,
   ExternalLink, Orbit, Globe2, Cable,
-  MoreHorizontal, Share2, Settings,
+  MoreHorizontal, Share2, Settings, Gem,
 } from 'lucide-react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 
 import Constellation3D from './components/Constellation3D';
@@ -516,6 +517,16 @@ export default function LumenDashboard() {
                       transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                       className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[11.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
                     >
+                      <Link
+                        href="/oracles"
+                        role="menuitem"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
+                      >
+                        <Gem className="w-3.5 h-3.5 text-[#E8C547] shrink-0" />
+                        ORACLES
+                      </Link>
+                      <div className="h-px bg-white/[0.06]" />
                       <button
                         type="button"
                         role="menuitem"
@@ -654,6 +665,15 @@ export default function LumenDashboard() {
                   "LUMEN NODE"
                 )}
               </div>
+
+              <Link
+                href="/oracles"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border border-[#E8C547]/30 bg-[#E8C547]/[0.08] text-[#E8C547] hover:bg-[#E8C547]/15 transition-all"
+                title="ERG/USD & ERG/XAU oracle feeds"
+              >
+                <Gem className="w-3.5 h-3.5" />
+                ORACLES
+              </Link>
 
               <ShareCard
                 nodeInfo={nodeInfo}

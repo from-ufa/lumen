@@ -28,6 +28,7 @@ Snapshot: **2026-07-25**. Read this first, then code.
 | Use | URL |
 |-----|-----|
 | Dashboard | `https://ergolumen.net` |
+| **Oracles** | **`https://ergolumen.net/oracles`** · ERG/USD + ERG/XAU network feeds |
 | Bridge install assets | **GitHub** `from-ufa/lumen` (`bridge/`) — Docker + install.sh |
 | Bridge WebSocket | `wss://ergolumen.net/ws/bridge` |
 | Bridge hub (loopback only) | `http://127.0.0.1:3100` (not public) |
@@ -75,12 +76,13 @@ It shows:
 - **Mempool** sample + SigmaSpace links
 - **AVG BLOCK TIME** from `GET /blocks/lastHeaders/100`
 - **Share My Node** card (QR, copy link/text, PNG)
+- **Oracles** (`/oracles`) — premium **ERG/USD** + **ERG/XAU** network feeds (on-chain pool boxes)
 - **Public Mode** — optional remote access with a password
 - **PWA** manifest/icons (no service worker)
 - **Lumen Bridge** — connect a *remote* user node without inbound ports
 
 Not a miner, wallet, explorer, or tx broadcaster.  
-Does **not** touch `ergonode` / oracle units. Only **allowlisted GET** Ergo REST.
+Does **not** control `ergonode` / `oracle-core` units. Only **allowlisted GET** Ergo REST + public Explorer for oracle pool boxes.
 
 ---
 
@@ -105,16 +107,20 @@ Does **not** touch `ergonode` / oracle units. Only **allowlisted GET** Ergo REST
 /home/lumen/
 ├── app/
 │   ├── page.tsx                 # Dashboard (modes, queries, layout)
+│   ├── oracles/page.tsx         # Oracle MVP (ERG/USD + ERG/XAU)
 │   ├── proxy.ts                 # → root proxy.ts (Next 16 network proxy)
-│   ├── components/              # UI: settings, map, 3D, metrics, share…
+│   ├── components/              # UI: settings, map, 3D, metrics, share, oracles…
 │   ├── lib/                     # node-api, blocks, copy-text, bridge-server client
 │   ├── api/
 │   │   ├── node/[...path]/     # Proxy → local Ergo :9053
 │   │   ├── bridge/tokens|status|node/  # Bridge hub proxy
 │   │   ├── peers/map/           # Geo map (Lumen or Bridge token)
+│   │   ├── oracles/             # Network oracle feeds (Explorer pool boxes)
 │   │   ├── public-status/
 │   │   └── public-password/
 │   └── bridge/[file]/          # Optional self-host fallback (primary: GitHub)
+├── lib/oracles.ts               # Oracle pool NFT IDs, history, status
+├── data/oracle-history.json     # Sparkline ring buffer (runtime)
 ├── bridge/                      # Outbound agent (Docker primary)
 │   ├── Dockerfile
 │   ├── bridge.js
@@ -512,6 +518,7 @@ Do not:
 | 2026-07-25 | **Ghost as history:** soft-prune keeps dead IPs; stats Ghost + Total ever; no hard-delete by default |
 | 2026-07-25 | **Premium node search:** right-side live search (name / IP / country / version), fly-to + highlight |
 | 2026-07-25 | **systemd rename:** primary unit `aether.service` → **`lumen.service`** (`Alias=aether.service` for compat); bind remains `127.0.0.1:3000` |
+| 2026-07-26 | **Oracle MVP:** `/oracles` — premium ERG/USD + ERG/XAU cards (live/stale/offline, sparkline, epoch); API `/api/oracles` |
 
 ### Block miner attribution (honest)
 
