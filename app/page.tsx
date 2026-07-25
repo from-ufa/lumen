@@ -437,26 +437,29 @@ export default function LumenDashboard() {
       {/* === HERO / TOP BAR === */}
       <div className="border-b border-white/10 bg-[#0A0A0F]/95 backdrop-blur-xl sticky top-0 z-40 pt-[env(safe-area-inset-top)]">
         <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
-          {/* ── Mobile header: logo → LIVE + menu ── */}
-          <div className="sm:hidden space-y-3">
-            <div className="flex items-center gap-2.5 min-w-0">
+          {/* ── Mobile header: one row — logo left · LIVE + ··· right ── */}
+          <div className="sm:hidden flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
                 <Zap className="w-4 h-4 text-black" />
               </div>
               <div className="min-w-0">
-                <div className="font-semibold tracking-[-0.5px] text-2xl leading-none">
+                <div className="font-semibold tracking-[-0.5px] text-xl leading-none truncate">
                   Lumen
                 </div>
-                <div className="text-[9px] text-[#A0A0B0] mt-0.5 font-mono tracking-[2px] truncate">
+                <div className="text-[8px] text-[#A0A0B0] mt-0.5 font-mono tracking-[1.5px] truncate">
                   Ergo Node Dashboard
                 </div>
               </div>
             </div>
 
-            <div className="flex items-stretch gap-2" ref={mobileMenuRef}>
-              {/* LIVE — primary status chip */}
+            <div
+              className="flex items-center gap-1.5 shrink-0"
+              ref={mobileMenuRef}
+            >
+              {/* Compact LIVE badge — not a full-width bar */}
               <div
-                className={`flex-1 flex items-center justify-center gap-2 h-11 px-3 rounded-2xl text-[11px] font-mono tracking-[0.18em] border ${
+                className={`flex items-center gap-1.5 h-9 px-2.5 rounded-xl text-[10px] font-mono tracking-wider border ${
                   isOnline
                     ? "border-[#10B981]/35 bg-[#10B981]/[0.08] text-[#10B981]"
                     : "border-[#EF4444]/35 bg-[#EF4444]/[0.08] text-[#EF4444]"
@@ -469,30 +472,29 @@ export default function LumenDashboard() {
                 />
                 {nodeMode === "my"
                   ? isOnline
-                    ? "MY NODE LIVE"
+                    ? "LIVE"
                     : bridgeOnline
-                      ? "BRIDGE UP"
-                      : "OFFLINE"
+                      ? "BR"
+                      : "OFF"
                   : isOnline
                     ? "LIVE"
-                    : "OFFLINE"}
+                    : "OFF"}
               </div>
 
-              {/* Menu trigger — same height as LIVE */}
-              <div className="relative shrink-0">
+              <div className="relative">
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen((v) => !v)}
                   aria-expanded={mobileMenuOpen}
                   aria-haspopup="menu"
                   aria-label="Open menu"
-                  className={`h-11 w-11 flex items-center justify-center rounded-2xl border transition-all active:scale-[0.97] ${
+                  className={`h-9 w-9 flex items-center justify-center rounded-xl border transition-all active:scale-[0.97] ${
                     mobileMenuOpen
                       ? "border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF]"
-                      : "border-white/12 bg-white/[0.04] text-[#E8E8F0] hover:border-white/25"
+                      : "border-white/12 bg-white/[0.04] text-[#E8E8F0]"
                   }`}
                 >
-                  <MoreHorizontal className="w-5 h-5" />
+                  <MoreHorizontal className="w-4.5 h-4.5" />
                 </button>
 
                 <AnimatePresence>
@@ -503,7 +505,7 @@ export default function LumenDashboard() {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -4, scale: 0.98 }}
                       transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                      className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-[11.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
+                      className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[11.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
                     >
                       <button
                         type="button"
@@ -549,7 +551,7 @@ export default function LumenDashboard() {
               </div>
             </div>
 
-            {/* Hidden triggers — modals only, opened via openKey */}
+            {/* Hidden triggers — modals only */}
             <div className="hidden">
               <ShareCard
                 nodeInfo={nodeInfo}
