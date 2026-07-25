@@ -1470,32 +1470,45 @@ export default function PeerMap({
             <Globe2 className="w-3.5 h-3.5" /> ERGO NETWORK MAP
           </div>
 
-          {/* Filter chips */}
-          <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
-            {(
-              [
-                { id: "live" as const, label: "Live" },
-                { id: "connected" as const, label: "Linked" },
-                { id: "all" as const, label: "All" },
-              ] as const
-            ).map((f) => {
-              const active = mapFilter === f.id;
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setMapFilter(f.id)}
-                  className={`flex-1 px-2 py-1.5 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
-                    active
-                      ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
-                      : "text-[#A0A0B0] hover:text-[#E8E8F0]"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
+          {/* Lumen: status filters · My Node: only connected peers — no filter chrome */}
+          {nodeMode === "lumen" ? (
+            <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
+              {(
+                [
+                  { id: "live" as const, label: "Live" },
+                  { id: "connected" as const, label: "Linked" },
+                  { id: "all" as const, label: "All" },
+                ] as const
+              ).map((f) => {
+                const active = mapFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setMapFilter(f.id)}
+                    className={`flex-1 px-2 py-1.5 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
+                      active
+                        ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
+                        : "text-[#A0A0B0] hover:text-[#E8E8F0]"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mb-3 rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-2.5">
+              <div className="font-mono text-[11px] tracking-wide text-[#E8E8F0] leading-snug">
+                <span className="text-[#00E5FF] tabular-nums font-semibold">
+                  {mapStats.connected.toLocaleString()}
+                </span>
+                {mapStats.connected === 1
+                  ? " peer connected to your node"
+                  : " peers connected to your node"}
+              </div>
+            </div>
+          )}
 
           {/* Numbers */}
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-3">
@@ -1706,31 +1719,44 @@ export default function PeerMap({
     {/* ── Mobile: filters + legend UNDER the map ── */}
     <div className="md:hidden mt-3 space-y-2.5">
       <div className="glass rounded-2xl px-3 py-3 border border-white/10">
-        <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
-          {(
-            [
-              { id: "live" as const, label: "Live" },
-              { id: "connected" as const, label: "Linked" },
-              { id: "all" as const, label: "All" },
-            ] as const
-          ).map((f) => {
-            const active = mapFilter === f.id;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setMapFilter(f.id)}
-                className={`flex-1 px-2 py-2 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
-                  active
-                    ? "bg-white/10 text-white"
-                    : "text-[#A0A0B0]"
-                }`}
-              >
-                {f.label}
-              </button>
-            );
-          })}
-        </div>
+        {nodeMode === "lumen" ? (
+          <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
+            {(
+              [
+                { id: "live" as const, label: "Live" },
+                { id: "connected" as const, label: "Linked" },
+                { id: "all" as const, label: "All" },
+              ] as const
+            ).map((f) => {
+              const active = mapFilter === f.id;
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => setMapFilter(f.id)}
+                  className={`flex-1 px-2 py-2 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
+                    active
+                      ? "bg-white/10 text-white"
+                      : "text-[#A0A0B0]"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mb-3 rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-2.5">
+            <div className="font-mono text-[11px] tracking-wide text-[#E8E8F0]">
+              <span className="text-[#00E5FF] tabular-nums font-semibold">
+                {mapStats.connected.toLocaleString()}
+              </span>
+              {mapStats.connected === 1
+                ? " peer connected to your node"
+                : " peers connected to your node"}
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[2px] mb-2">
           <Globe2 className="w-3.5 h-3.5" /> MAP
         </div>
