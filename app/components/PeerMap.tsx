@@ -584,28 +584,19 @@ function MeMarkerLayer({
   return null;
 }
 
-/** Bitnodes-style cluster bubbles — size & hue by child count */
+/**
+ * Cluster bubbles — one unified Lumen cyan style.
+ * Size scales with child count; color never switches to orange.
+ */
 function createClusterIcon(cluster: L.MarkerCluster): L.DivIcon {
   const count = cluster.getChildCount();
-  let size = 36;
-  let bg = "rgba(0, 229, 255, 0.22)";
-  let border = "rgba(0, 229, 255, 0.85)";
-  let text = "#00E5FF";
-  let glow = "0 0 16px rgba(0, 229, 255, 0.35)";
-
-  if (count >= 50) {
-    size = 54;
-    bg = "rgba(255, 122, 61, 0.28)";
-    border = "rgba(255, 122, 61, 0.95)";
-    text = "#FF7A3D";
-    glow = "0 0 22px rgba(255, 122, 61, 0.45)";
-  } else if (count >= 15) {
-    size = 44;
-    bg = "rgba(0, 200, 230, 0.24)";
-    border = "rgba(0, 210, 240, 0.9)";
-    text = "#5EEBFF";
-    glow = "0 0 18px rgba(0, 210, 240, 0.4)";
-  }
+  // Size only — palette stays cyan (Connected accent)
+  const size = count >= 50 ? 52 : count >= 15 ? 42 : 36;
+  const fontSize = count >= 100 ? 11 : count >= 15 ? 12 : 13;
+  const bg = "rgba(0, 229, 255, 0.18)";
+  const border = "rgba(0, 229, 255, 0.75)";
+  const text = "#00E5FF";
+  const glow = "0 0 16px rgba(0, 229, 255, 0.32)";
 
   return L.divIcon({
     html: `<div class="lumen-cluster-bubble" style="
@@ -614,10 +605,10 @@ function createClusterIcon(cluster: L.MarkerCluster): L.DivIcon {
       display:flex;align-items:center;justify-content:center;
       background:${bg};
       border:2px solid ${border};
-      box-shadow:${glow}, inset 0 0 12px rgba(255,255,255,0.06);
+      box-shadow:${glow}, inset 0 0 12px rgba(255,255,255,0.05);
       color:${text};
       font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-      font-size:${count >= 100 ? 11 : 13}px;
+      font-size:${fontSize}px;
       font-weight:700;
       letter-spacing:-0.02em;
       backdrop-filter:blur(6px);
