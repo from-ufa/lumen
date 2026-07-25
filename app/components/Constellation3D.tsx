@@ -500,6 +500,10 @@ function PeerPlanet({
   const bodyRef = useRef<THREE.Mesh>(null!);
   const focusRingRef = useRef<THREE.Mesh>(null!);
   const focusRing2Ref = useRef<THREE.Mesh>(null!);
+  const focusRing3Ref = useRef<THREE.Mesh>(null!);
+  const focusGlowRef = useRef<THREE.Mesh>(null!);
+  const focusPulseRef = useRef<THREE.Mesh>(null!);
+  const focusLightRef = useRef<THREE.PointLight>(null!);
   const [hovered, setHovered] = useState(false);
 
   const address = peer.address || `peer-${index}`;
@@ -530,29 +534,62 @@ function PeerPlanet({
     if (bodyRef.current) bodyRef.current.rotation.y = t * spin;
     if (groupRef.current) {
       const hoverBoost = hovered ? 1.06 : 1;
-      const focusBoost = focused ? 1.1 : 1;
+      // Stronger pop so the found world is obvious at a glance
+      const focusBoost = focused ? 1.22 : 1;
       const flash = boom > 0 ? 1 + boom * 0.04 : 1;
       groupRef.current.scale.setScalar(hoverBoost * focusBoost * flash);
       groupRef.current.position.x = position.x + Math.sin(t * 0.24 + phase) * 0.02;
       groupRef.current.position.y = position.y + Math.cos(t * 0.21 + phase) * 0.015;
       groupRef.current.position.z = position.z + Math.sin(t * 0.18 + phase) * 0.02;
     }
-    // Champagne focus rings breathe independently of status colors
-    if (focused && focusRingRef.current) {
-      const pulse = 1 + Math.sin(t * 2.2) * 0.06;
-      focusRingRef.current.scale.setScalar(size * 1.55 * pulse);
-      focusRingRef.current.rotation.x = Math.PI / 2;
-      focusRingRef.current.rotation.z = t * 0.35;
-      (focusRingRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.55 + Math.sin(t * 2.2) * 0.15;
+
+    if (!focused) return;
+
+    // Soft core glow
+    if (focusGlowRef.current) {
+      const g = 1.35 + Math.sin(t * 2.4) * 0.12;
+      focusGlowRef.current.scale.setScalar(size * g);
+      (focusGlowRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.22 + Math.sin(t * 2.4) * 0.08;
     }
-    if (focused && focusRing2Ref.current) {
-      const pulse2 = 1 + Math.sin(t * 2.2 + 1.1) * 0.1;
-      focusRing2Ref.current.scale.setScalar(size * 2.15 * pulse2);
-      focusRing2Ref.current.rotation.x = Math.PI / 2;
-      focusRing2Ref.current.rotation.z = -t * 0.22;
+
+    // Expanding sonar pulse (loops)
+    if (focusPulseRef.current) {
+      const cycle = (t * 0.55) % 1;
+      const s = size * (1.6 + cycle * 3.2);
+      focusPulseRef.current.scale.setScalar(s);
+      (focusPulseRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.45 * (1 - cycle);
+    }
+
+    // Triple champagne rings — thick, bright, counter-rotating
+    if (focusRingRef.current) {
+      const pulse = 1 + Math.sin(t * 2.6) * 0.08;
+      focusRingRef.current.scale.setScalar(size * 1.75 * pulse);
+      focusRingRef.current.rotation.x = Math.PI / 2;
+      focusRingRef.current.rotation.z = t * 0.55;
+      (focusRingRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.92 + Math.sin(t * 2.6) * 0.08;
+    }
+    if (focusRing2Ref.current) {
+      const pulse2 = 1 + Math.sin(t * 2.6 + 0.9) * 0.1;
+      focusRing2Ref.current.scale.setScalar(size * 2.45 * pulse2);
+      focusRing2Ref.current.rotation.x = Math.PI / 2.15;
+      focusRing2Ref.current.rotation.z = -t * 0.4;
       (focusRing2Ref.current.material as THREE.MeshBasicMaterial).opacity =
-        0.28 + Math.sin(t * 2.2 + 1.1) * 0.1;
+        0.7 + Math.sin(t * 2.6 + 0.9) * 0.12;
+    }
+    if (focusRing3Ref.current) {
+      const pulse3 = 1 + Math.sin(t * 2.0 + 1.6) * 0.12;
+      focusRing3Ref.current.scale.setScalar(size * 3.15 * pulse3);
+      focusRing3Ref.current.rotation.x = Math.PI / 1.9;
+      focusRing3Ref.current.rotation.z = t * 0.28;
+      (focusRing3Ref.current.material as THREE.MeshBasicMaterial).opacity =
+        0.4 + Math.sin(t * 2.0 + 1.6) * 0.12;
+    }
+
+    if (focusLightRef.current) {
+      focusLightRef.current.intensity = 2.4 + Math.sin(t * 2.4) * 0.6;
     }
   });
 
@@ -570,12 +607,15 @@ function PeerPlanet({
 
   // Never multiply map by a Color — that caused washed-out / white look.
   // Stale peers get a slight darkening via material color only as gray multiplier < 1.
-  const colorMul = isActive
-    ? hovered || focused
-      ? 1.08
-      : 1.0
-    : focused
-      ? 0.9
+  // Focused: lift brightness so the world reads as "selected" without cyan status confusion.
+  const colorMul = focused
+    ? isActive
+      ? 1.18
+      : 1.05
+    : isActive
+      ? hovered
+        ? 1.05
+        : 1.0
       : 0.78;
 
   return (
@@ -596,42 +636,95 @@ function PeerPlanet({
       </mesh>
 
       <Atmosphere
-        color={focused ? "#F5E6C8" : arch.atmosphere}
-        scale={size * (focused ? 1.12 : 1.05)}
+        color={focused ? "#FFE9B0" : arch.atmosphere}
+        scale={size * (focused ? 1.28 : 1.05)}
         intensity={
           (focused
-            ? 0.85
+            ? 1.55
             : hovered
               ? arch.atmosphereIntensity * 0.7
-              : arch.atmosphereIntensity * 0.45) * (isActive ? 1 : 0.55)
+              : arch.atmosphereIntensity * 0.45) * (isActive || focused ? 1 : 0.55)
         }
-        power={focused ? 2.8 : 3.8}
+        power={focused ? 2.1 : 3.8}
       />
 
       {focused && (
         <>
-          <mesh ref={focusRingRef} rotation={[Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[1.0, 1.08, 64]} />
+          {/* Soft volumetric-style core */}
+          <mesh ref={focusGlowRef}>
+            <sphereGeometry args={[1, 32, 32]} />
             <meshBasicMaterial
               color="#F5E6C8"
               transparent
-              opacity={0.65}
-              side={THREE.DoubleSide}
+              opacity={0.25}
               depthWrite={false}
               toneMapped={false}
+              blending={THREE.AdditiveBlending}
             />
           </mesh>
-          <mesh ref={focusRing2Ref} rotation={[Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[1.0, 1.05, 64]} />
+
+          {/* Expanding sonar shell */}
+          <mesh ref={focusPulseRef}>
+            <sphereGeometry args={[1, 24, 24]} />
             <meshBasicMaterial
               color="#E8C97A"
               transparent
               opacity={0.35}
+              depthWrite={false}
+              toneMapped={false}
+              blending={THREE.AdditiveBlending}
+              wireframe={false}
+              side={THREE.BackSide}
+            />
+          </mesh>
+
+          {/* Inner bright ring */}
+          <mesh ref={focusRingRef} rotation={[Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.92, 1.12, 80]} />
+            <meshBasicMaterial
+              color="#FFF6D8"
+              transparent
+              opacity={0.95}
               side={THREE.DoubleSide}
               depthWrite={false}
               toneMapped={false}
+              blending={THREE.AdditiveBlending}
             />
           </mesh>
+          {/* Mid gold ring */}
+          <mesh ref={focusRing2Ref} rotation={[Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.94, 1.1, 80]} />
+            <meshBasicMaterial
+              color="#E8C97A"
+              transparent
+              opacity={0.75}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+              toneMapped={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+          {/* Outer halo ring */}
+          <mesh ref={focusRing3Ref} rotation={[Math.PI / 2, 0, 0]}>
+            <ringGeometry args={[0.96, 1.08, 80]} />
+            <meshBasicMaterial
+              color="#F5E6C8"
+              transparent
+              opacity={0.45}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+              toneMapped={false}
+              blending={THREE.AdditiveBlending}
+            />
+          </mesh>
+
+          <pointLight
+            ref={focusLightRef}
+            color="#F5E6C8"
+            intensity={2.6}
+            distance={28}
+            decay={2}
+          />
         </>
       )}
 
@@ -1260,6 +1353,19 @@ function Scene({
   const [musicBusy, setMusicBusy] = useState(false);
   /** Search-focused peer address (champagne accent + camera fly) */
   const [focusAddress, setFocusAddress] = useState<string | null>(null);
+  /** Bump to wipe search input + results (NodeMapSearch clearToken) */
+  const [searchClearToken, setSearchClearToken] = useState(0);
+
+  const clearSearchFocus = useCallback(() => {
+    setFocusAddress(null);
+    controlsApiRef.current?.clearPeerFocus();
+    setHoveredPeer(null);
+    onPeerHover?.(null);
+    setSearchClearToken((n) => n + 1);
+    // Resume galaxy spin — clean, logical reset after Clear
+    setIsAutoOrbit(true);
+    controlsApiRef.current?.setAutoOrbit(true);
+  }, [onPeerHover]);
 
   // Ambient music — user gesture required by browsers to start
   useEffect(() => {
@@ -1388,6 +1494,7 @@ function Scene({
     controlsApiRef.current?.focus();
     setIsAutoOrbit(false);
     controlsApiRef.current?.setAutoOrbit(false);
+    // Keep search text; user may still want the query — only Clear wipes input
   };
 
   const toggleAutoOrbit = () => {
@@ -1488,6 +1595,7 @@ function Scene({
             nodes={searchNodes}
             selectedId={focusAddress}
             compact
+            clearToken={searchClearToken}
             onSelect={handleSearchSelect}
             className="w-full"
           />
@@ -1502,6 +1610,7 @@ function Scene({
           <NodeMapSearch
             nodes={searchNodes}
             selectedId={focusAddress}
+            clearToken={searchClearToken}
             onSelect={handleSearchSelect}
             className="w-full"
           />
@@ -1509,11 +1618,11 @@ function Scene({
             <motion.div
               initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`${HUD_CARD} pointer-events-auto border-[#E8C97A]/25 bg-[#0A0A0F]/75`}
+              className={`${HUD_CARD} pointer-events-auto border-[#E8C97A]/40 bg-[#0A0A0F]/80 shadow-[0_0_24px_rgba(232,201,122,0.15)]`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-[9px] font-mono tracking-[0.2em] text-[#E8C97A] mb-1">
+                  <div className="text-[9px] font-mono tracking-[0.22em] text-[#E8C97A] mb-1 drop-shadow-[0_0_8px_rgba(232,201,122,0.5)]">
                     FOUND
                   </div>
                   <div className="text-[12px] font-medium text-white truncate">
@@ -1526,13 +1635,8 @@ function Scene({
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setFocusAddress(null);
-                    controlsApiRef.current?.clearPeerFocus();
-                    setHoveredPeer(null);
-                    onPeerHover?.(null);
-                  }}
-                  className="text-[10px] font-mono text-[#A0A0B0] hover:text-white shrink-0"
+                  onClick={clearSearchFocus}
+                  className="text-[10px] font-mono text-[#A0A0B0] hover:text-white shrink-0 px-1.5 py-0.5 rounded-lg hover:bg-white/5 transition-colors"
                 >
                   CLEAR
                 </button>

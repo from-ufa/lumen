@@ -32,6 +32,11 @@ type NodeMapSearchProps = {
   /** Compact strip for mobile */
   compact?: boolean;
   className?: string;
+  /**
+   * Increment to fully clear query + close results (e.g. parent Clear).
+   * Value 0 / undefined = no-op on mount.
+   */
+  clearToken?: number;
 };
 
 function normalizeState(s?: string | null): string {
@@ -101,6 +106,7 @@ export default function NodeMapSearch({
   selectedId,
   compact = false,
   className = "",
+  clearToken = 0,
 }: NodeMapSearchProps) {
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -110,6 +116,16 @@ export default function NodeMapSearch({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const lastClearToken = useRef(clearToken);
+
+  /** Parent-driven full clear (input + dropdown) */
+  useEffect(() => {
+    if (!clearToken || clearToken === lastClearToken.current) return;
+    lastClearToken.current = clearToken;
+    setQuery("");
+    setOpen(false);
+    setActiveIdx(0);
+  }, [clearToken]);
 
   const trimmed = query.trim().toLowerCase();
 
