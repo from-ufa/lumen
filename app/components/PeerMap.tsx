@@ -14,7 +14,6 @@ import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import { AnimatePresence, motion } from "framer-motion";
 import { Globe2, MapPin, RefreshCw, Zap } from "lucide-react";
-import { toast } from "sonner";
 import { fetchBlockMinerByHeight } from "../lib/miner";
 
 function escapeHtml(s: string): string {
