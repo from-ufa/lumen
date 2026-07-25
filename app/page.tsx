@@ -820,6 +820,11 @@ export default function LumenDashboard() {
                 effectiveInfo?.headersHeight ||
                 0
               }
+              lastBlockAt={
+                recentBlocks[0]?.timestamp ??
+                // fallback: when tip just advanced, parent may not have list yet
+                null
+              }
               hideControls={isAnyModalOpen}
               nodeMode={nodeMode}
               bridgeToken={bridgeToken}

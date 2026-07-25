@@ -13,9 +13,162 @@ import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
 import { AnimatePresence, motion } from "framer-motion";
-import { Globe2, MapPin, RefreshCw, Zap } from "lucide-react";
+import { Clock3, Globe2, MapPin, RefreshCw, Zap } from "lucide-react";
 import { fetchBlockMinerByHeight } from "../lib/miner";
 import NodeMapSearch, { shortVersion } from "./NodeMapSearch";
+
+/** Ergo target block time ~2 min — soft reference for progress ring */
+const ERGO_TARGET_BLOCK_MS = 120_000;
+
+function formatBlockElapsed(ms: number): string {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+/**
+ * Live "time since last block" chip for the map HUD.
+ * Resets when blockHeight advances or lastBlockAt updates.
+ */
+function BlockTimeIndicator({
+  blockHeight,
+  lastBlockAt,
+}: {
+  blockHeight: number;
+  lastBlockAt?: number | null;
+}) {
+  const anchorRef = useRef<number | null>(null);
+  const heightRef = useRef(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const h = blockHeight || 0;
+    const ts =
+      lastBlockAt && lastBlockAt > 0
+        ? lastBlockAt > 1e12
+          ? lastBlockAt
+          : lastBlockAt * 1000
+        : null;
+
+    if (h > 0 && h !== heightRef.current) {
+      // New tip: prefer honest timestamp; else "now" so the clock restarts cleanly
+      heightRef.current = h;
+      anchorRef.current = ts && ts <= Date.now() + 5000 ? ts : Date.now();
+      return;
+    }
+
+    // First paint / prop catch-up without height change
+    if (ts && (!anchorRef.current || Math.abs(ts - anchorRef.current) > 2000)) {
+      if (!heightRef.current && h > 0) heightRef.current = h;
+      // Only adopt explorer/node timestamp if it's not in the future and not ancient nonsense
+      if (ts <= Date.now() + 5000 && Date.now() - ts < 24 * 60 * 60 * 1000) {
+        anchorRef.current = ts;
+      }
+    }
+
+    if (!anchorRef.current && h > 0) {
+      heightRef.current = h;
+      anchorRef.current = Date.now();
+    }
+  }, [blockHeight, lastBlockAt]);
+
+  const anchor = anchorRef.current;
+  if (!anchor || !blockHeight) return null;
+
+  const elapsed = Math.max(0, now - anchor);
+  const progress = Math.min(1, elapsed / ERGO_TARGET_BLOCK_MS);
+  const overTarget = elapsed > ERGO_TARGET_BLOCK_MS;
+  const label = formatBlockElapsed(elapsed);
+
+  // SVG ring
+  const size = 36;
+  const stroke = 2.5;
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const dash = c * progress;
+
+  return (
+    <div
+      className="pointer-events-none select-none"
+      title={`Time since block #${blockHeight.toLocaleString()}`}
+    >
+      <div
+        className={`
+          flex items-center gap-2.5 rounded-2xl border px-2.5 py-1.5
+          bg-[#0A0A0F]/88 backdrop-blur-xl shadow-[0_8px_28px_rgba(0,0,0,0.4)]
+          ${
+            overTarget
+              ? "border-[#FF7A3D]/35"
+              : "border-white/10"
+          }
+        `}
+      >
+        <div className="relative flex-shrink-0" style={{ width: size, height: size }}>
+          <svg width={size} height={size} className="block -rotate-90">
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke="rgba(255,255,255,0.08)"
+              strokeWidth={stroke}
+            />
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke={overTarget ? "#FF7A3D" : "#00E5FF"}
+              strokeWidth={stroke}
+              strokeLinecap="round"
+              strokeDasharray={`${dash} ${c - dash}`}
+              className="transition-[stroke-dasharray] duration-300 ease-linear"
+              style={{
+                filter: overTarget
+                  ? "drop-shadow(0 0 4px rgba(255,122,61,0.55))"
+                  : "drop-shadow(0 0 4px rgba(0,229,255,0.45))",
+              }}
+            />
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Clock3
+              className={`w-3.5 h-3.5 ${
+                overTarget ? "text-[#FF7A3D]" : "text-[#00E5FF]"
+              }`}
+            />
+          </div>
+        </div>
+
+        <div className="min-w-0 pr-1">
+          <div className="text-[9px] font-mono tracking-[0.18em] text-[#A0A0B0] leading-none">
+            BLOCK TIME
+          </div>
+          <div
+            className={`mt-1 font-mono text-base sm:text-lg tabular-nums tracking-tight leading-none ${
+              overTarget ? "text-[#FF7A3D]" : "text-[#E8E8F0]"
+            }`}
+          >
+            {label}
+          </div>
+          <div className="mt-0.5 text-[9px] font-mono text-[#A0A0B0]/60 tracking-wide tabular-nums">
+            #{blockHeight.toLocaleString()}
+            <span className="text-[#A0A0B0]/40"> · ~2m target</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function escapeHtml(s: string): string {
   return String(s)
@@ -694,6 +847,8 @@ type BoomEvent = {
 type PeerMapProps = {
   /** Current full height from parent poll — drives NEW BLOCK detection */
   blockHeight?: number;
+  /** Timestamp (ms) of the tip block header — anchors live block timer */
+  lastBlockAt?: number | null;
   /** Hide floating Boom/Refresh while a parent modal is open */
   hideControls?: boolean;
   /** When "my", map peers come from Bridge (user node) */
@@ -1429,6 +1584,7 @@ function BoomLabelPortal({
 
 export default function PeerMap({
   blockHeight = 0,
+  lastBlockAt = null,
   hideControls = false,
   nodeMode = "lumen",
   bridgeToken = "",
@@ -1868,7 +2024,7 @@ export default function PeerMap({
       </div>
 
       {/* ── Mobile map HUD: search top · BOOM left / REFRESH right bottom ── */}
-      <div className="md:hidden absolute top-0 inset-x-0 z-[40] pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
+      <div className="md:hidden absolute top-0 inset-x-0 z-[40] pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] space-y-2">
         <NodeMapSearch
           nodes={searchNodes}
           selectedId={selected?.id}
@@ -1878,6 +2034,12 @@ export default function PeerMap({
           }}
           className="w-full"
         />
+        <div className="flex justify-center">
+          <BlockTimeIndicator
+            blockHeight={blockHeight}
+            lastBlockAt={lastBlockAt}
+          />
+        </div>
       </div>
       {!hideControls && (
         <div className="md:hidden absolute bottom-0 inset-x-0 z-[40] pointer-events-none flex items-end justify-between gap-3 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
@@ -1919,6 +2081,14 @@ export default function PeerMap({
             handleSelectPeer(n as PeerMapMarker, { fly: true });
           }}
           className="w-full"
+        />
+      </div>
+
+      {/* Top-center: live block timer */}
+      <div className="hidden md:flex absolute top-4 left-1/2 -translate-x-1/2 z-[40] pointer-events-none">
+        <BlockTimeIndicator
+          blockHeight={blockHeight}
+          lastBlockAt={lastBlockAt}
         />
       </div>
 
