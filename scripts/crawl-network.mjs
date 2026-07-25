@@ -18,8 +18,11 @@
  *   LUMEN_NETWORK_CATALOG
  *   LUMEN_CRAWL_SKIP_PROBE=1
  *   LUMEN_NETWORK_SEEDS  path to seeds JSON
- *   LUMEN_MAX_FANOUT     default 120
- *   LUMEN_SEED_CONCURRENCY default 4
+ *   LUMEN_MAX_FANOUT           default 200
+ *   LUMEN_SEED_CONCURRENCY     default 4
+ *   LUMEN_FANOUT_CONCURRENCY   default 8
+ *   LUMEN_PRUNE_DAYS           default 21 (drop dead IPs; 0 = disable)
+ *   LUMEN_PRUNE_SOFT=1         mark ghost instead of delete
  */
 import fs from "fs";
 import path from "path";
@@ -50,14 +53,21 @@ const SKIP_PROBE =
 
 const SEED_CONCURRENCY = Number(process.env.LUMEN_SEED_CONCURRENCY || 4);
 const SEED_TIMEOUT_MS = Number(process.env.LUMEN_SEED_TIMEOUT_MS || 9000);
-const FANOUT_CONCURRENCY = Number(process.env.LUMEN_FANOUT_CONCURRENCY || 6);
-const FANOUT_TIMEOUT_MS = Number(process.env.LUMEN_FANOUT_TIMEOUT_MS || 8000);
-const MAX_FANOUT = Number(process.env.LUMEN_MAX_FANOUT || 120);
+const FANOUT_CONCURRENCY = Number(process.env.LUMEN_FANOUT_CONCURRENCY || 8);
+const FANOUT_TIMEOUT_MS = Number(process.env.LUMEN_FANOUT_TIMEOUT_MS || 7000);
+const MAX_FANOUT = Number(process.env.LUMEN_MAX_FANOUT || 200);
 const INFO_CONCURRENCY = Number(process.env.LUMEN_INFO_CONCURRENCY || 8);
 const INFO_TIMEOUT_MS = Number(process.env.LUMEN_INFO_TIMEOUT_MS || 5000);
-const MAX_INFO_PROBES = Number(process.env.LUMEN_MAX_INFO_PROBES || 80);
+const MAX_INFO_PROBES = Number(process.env.LUMEN_MAX_INFO_PROBES || 100);
 const PROBE_CONCURRENCY = Number(process.env.LUMEN_PROBE_CONCURRENCY || 30);
 const PROBE_TIMEOUT_MS = Number(process.env.LUMEN_PROBE_TIMEOUT_MS || 1500);
+/** Drop nodes not seen for this many days (never if live/reachable recently) */
+const PRUNE_DAYS = Number(
+  process.env.LUMEN_PRUNE_DAYS !== undefined
+    ? process.env.LUMEN_PRUNE_DAYS
+    : 21
+);
+const PRUNE_SOFT = process.env.LUMEN_PRUNE_SOFT === "1";
 
 const IPV4_RE = /(\d{1,3}(?:\.\d{1,3}){3})/;
 
@@ -263,12 +273,135 @@ function isSafeRestUrl(raw) {
   }
 }
 
+/**
+ * Canonical REST base for dedup:
+ * - lowercase host
+ * - strip path after host
+ * - drop default ports (:80 http, :443 https)
+ */
 function normalizeRestBase(url) {
-  return String(url || "")
-    .trim()
-    .replace(/\/$/, "")
-    .replace(/\/info$/i, "")
-    .replace(/\/peers\/.*$/i, "");
+  try {
+    let s = String(url || "").trim();
+    if (!s) return "";
+    if (!/^https?:\/\//i.test(s)) s = `http://${s}`;
+    const u = new URL(s);
+    let host = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    let port = u.port;
+    if (
+      (u.protocol === "http:" && (port === "80" || !port)) ||
+      (u.protocol === "https:" && (port === "443" || !port))
+    ) {
+      port = "";
+    }
+    const proto = u.protocol.toLowerCase();
+    return port ? `${proto}//${host}:${port}` : `${proto}//${host}`;
+  } catch {
+    return String(url || "")
+      .trim()
+      .replace(/\/$/, "")
+      .replace(/\/info$/i, "")
+      .replace(/\/peers\/.*$/i, "")
+      .toLowerCase();
+  }
+}
+
+/** Collect unique fan-out REST targets from catalog (deduped by normalizeRestBase). */
+function collectFanoutTargets(catalog, excludeBases) {
+  /** @type {Map<string, { base: string, ip: string|null, score: number }>} */
+  const map = new Map();
+  for (const n of Object.values(catalog.nodes || {})) {
+    if (!n.restApiUrl || !isSafeRestUrl(n.restApiUrl)) continue;
+    const base = normalizeRestBase(n.restApiUrl);
+    if (!base || excludeBases.has(base)) continue;
+    // Prefer nodes that looked live recently
+    const score =
+      (n.reachable === true ? 100 : 0) +
+      (Number(n.lastReachableAt) || 0) / 1e13 +
+      (Number(n.lastInfoAt) || 0) / 1e13;
+    const prev = map.get(base);
+    if (!prev || score > prev.score) {
+      map.set(base, { base, ip: n.ip || null, score });
+    }
+    // Write back normalized URL so catalog doesn't keep duplicates
+    n.restApiUrl = base;
+  }
+  return [...map.values()]
+    .sort((a, b) => b.score - a.score)
+    .map((x) => x.base);
+}
+
+/**
+ * Prune dead catalog entries.
+ *
+ * Live signals (never prune while fresh):
+ *  - reachable === true
+ *  - lastReachableAt / lastInfoAt within PRUNE_DAYS
+ *
+ * Gossip lastSeenAt alone does NOT protect a node (peer lists keep
+ * recycling dead IPs forever). Age is measured from last *live* signal,
+ * or firstSeenAt if never live.
+ */
+function pruneStaleNodes(catalog, now, _runStart) {
+  const pruneMs = PRUNE_DAYS > 0 ? PRUNE_DAYS * 24 * 60 * 60 * 1000 : 0;
+  if (!pruneMs) {
+    return { pruned: 0, soft: 0, samples: [], disabled: true };
+  }
+
+  const samples = [];
+  let pruned = 0;
+  let soft = 0;
+  let candidates = 0;
+
+  for (const [ip, n] of Object.entries(catalog.nodes)) {
+    // Always keep currently live / recently live
+    if (n.reachable === true) continue;
+    const lastLive = Math.max(
+      Number(n.lastReachableAt) || 0,
+      Number(n.lastInfoAt) || 0
+    );
+    if (lastLive > 0 && now - lastLive < pruneMs) continue;
+
+    // Never-live: age from firstSeen; once-live: age from lastLive
+    const ageFrom =
+      lastLive > 0
+        ? lastLive
+        : Math.max(Number(n.firstSeenAt) || 0, Number(n.lastProbedAt) || 0);
+    if (!ageFrom || now - ageFrom < pruneMs) continue;
+
+    // Prefer only pruning nodes we've actually failed to reach at least once
+    // (avoids deleting brand-new unprobed discoveries mid-rollout)
+    if (n.reachable !== false && lastLive === 0 && !n.lastProbedAt) continue;
+
+    candidates++;
+    const rec = {
+      ip,
+      name: n.name,
+      lastLiveAt: lastLive || null,
+      firstSeenAt: n.firstSeenAt || null,
+      reachable: n.reachable,
+      mode: PRUNE_SOFT ? "soft" : "delete",
+    };
+
+    if (PRUNE_SOFT) {
+      n.ghost = true;
+      n.prunedAt = now;
+      soft++;
+      if (samples.length < 15) samples.push(rec);
+    } else {
+      if (samples.length < 15) samples.push(rec);
+      delete catalog.nodes[ip];
+      pruned++;
+    }
+  }
+
+  return {
+    pruned,
+    soft,
+    candidates,
+    samples,
+    pruneDays: PRUNE_DAYS,
+    softMode: PRUNE_SOFT,
+  };
 }
 
 function tcpProbe(ip, port, timeoutMs) {
@@ -505,42 +638,89 @@ async function main() {
   }
   log("p2p seeds added/new", seedReport.p2pAdded);
 
-  // ─── 3) REST fan-out (discovered restApiUrl) ────────────────────────────
-  const restUrls = new Map();
+  // ─── 3) REST fan-out (deduped restApiUrl, multi-pass) ───────────────────
+  // Normalize all catalog restApiUrl first (dedup keys in place)
   for (const n of Object.values(catalog.nodes)) {
-    if (n.restApiUrl && isSafeRestUrl(n.restApiUrl)) {
-      const base = normalizeRestBase(n.restApiUrl);
-      if (!seenUrl.has(base)) restUrls.set(base, n.ip);
+    if (n.restApiUrl) {
+      try {
+        if (isSafeRestUrl(n.restApiUrl)) {
+          n.restApiUrl = normalizeRestBase(n.restApiUrl);
+        }
+      } catch {
+        /* ignore */
+      }
     }
   }
-  // Prefer not re-hitting primary seeds as fanout (already harvested)
-  const fanoutList = [...restUrls.keys()]
-    .filter((u) => !seenUrl.has(u))
-    .slice(0, MAX_FANOUT);
-  log("fan-out targets", fanoutList.length, "(max", MAX_FANOUT + ")");
 
-  let fanoutOk = 0;
-  let fanoutFail = 0;
-  let fanoutAdded = 0;
-  await mapPool(fanoutList, FANOUT_CONCURRENCY, async (base) => {
-    try {
-      // Prefer /peers/all; fallback connected
-      let peers = [];
+  async function runFanoutPass(label, exclude) {
+    const list = collectFanoutTargets(catalog, exclude).slice(0, MAX_FANOUT);
+    log(`fan-out [${label}] targets`, list.length, "(max", MAX_FANOUT + ")");
+    let ok = 0;
+    let fail = 0;
+    let added = 0;
+    const hitBases = new Set();
+    await mapPool(list, FANOUT_CONCURRENCY, async (base) => {
       try {
-        peers = await fetchJson(`${base}/peers/all`, FANOUT_TIMEOUT_MS);
+        let peers = [];
+        try {
+          peers = await fetchJson(`${base}/peers/all`, FANOUT_TIMEOUT_MS);
+        } catch {
+          peers = await fetchJson(
+            `${base}/peers/connected`,
+            FANOUT_TIMEOUT_MS
+          );
+        }
+        if (!Array.isArray(peers)) throw new Error("not array");
+        const r = mergePeerList(catalog, peers, `fanout:${label}`, now);
+        added += r.added;
+        ok++;
+        hitBases.add(base);
+        // Mark connected-looking peers if lastMessage present
+        for (const p of peers) {
+          if (!p?.address) continue;
+          const parsed = extractIpPort(String(p.address));
+          if (!parsed) continue;
+          const node = catalog.nodes[parsed.ip];
+          if (!node) continue;
+          if (Number(p.lastMessage) > 0) {
+            // recent activity on remote's peer list is a weak live signal
+            node.lastSeenAt = now;
+          }
+        }
+        if (r.added > 0) {
+          log("fanout ok", label, base, "peers", peers.length, "added", r.added);
+        }
       } catch {
-        peers = await fetchJson(`${base}/peers/connected`, FANOUT_TIMEOUT_MS);
+        fail++;
       }
-      if (!Array.isArray(peers)) throw new Error("not array");
-      const r = mergePeerList(catalog, peers, "fanout", now);
-      fanoutAdded += r.added;
-      fanoutOk++;
-      if (r.added > 0) log("fanout ok", base, "peers", peers.length, "added", r.added);
-    } catch (e) {
-      fanoutFail++;
-    }
-  });
-  seedReport.fanout = { ok: fanoutOk, fail: fanoutFail, added: fanoutAdded };
+    });
+    return { ok, fail, added, listSize: list.length, hitBases };
+  }
+
+  const fan1 = await runFanoutPass("p1", seenUrl);
+  // Second pass: include newly discovered REST from pass 1 (still skip seeds)
+  const fan2 = await runFanoutPass("p2", seenUrl);
+  seedReport.fanout = {
+    max: MAX_FANOUT,
+    concurrency: FANOUT_CONCURRENCY,
+    timeoutMs: FANOUT_TIMEOUT_MS,
+    pass1: {
+      ok: fan1.ok,
+      fail: fan1.fail,
+      added: fan1.added,
+      targets: fan1.listSize,
+    },
+    pass2: {
+      ok: fan2.ok,
+      fail: fan2.fail,
+      added: fan2.added,
+      targets: fan2.listSize,
+    },
+    ok: fan1.ok + fan2.ok,
+    fail: fan1.fail + fan2.fail,
+    added: fan1.added + fan2.added,
+  };
+  log("fan-out total", seedReport.fanout);
 
   // ─── 4) /info enrichment (name, height, version) ────────────────────────
   const infoCandidates = [];
@@ -680,6 +860,35 @@ async function main() {
     }
   }
 
+  // ─── 6) Prune stale / dead IPs ──────────────────────────────────────────
+  const midTotal = Object.keys(catalog.nodes).length;
+  const pruneReport = pruneStaleNodes(catalog, Date.now(), now);
+  seedReport.prune = {
+    ...pruneReport,
+    before: midTotal,
+    after: Object.keys(catalog.nodes).length,
+  };
+  log("prune", seedReport.prune);
+
+  // Persist prune snapshot for ops
+  try {
+    const prunePath = path.join(ROOT, "data", "catalog-prune-last.json");
+    fs.mkdirSync(path.dirname(prunePath), { recursive: true });
+    fs.writeFileSync(
+      prunePath,
+      JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          ...seedReport.prune,
+        },
+        null,
+        2
+      ) + "\n"
+    );
+  } catch (e) {
+    log("prune report write FAIL", e.message);
+  }
+
   catalog.updatedAt = Date.now();
   catalog.seeds = {
     lastRunAt: catalog.updatedAt,
@@ -695,16 +904,18 @@ async function main() {
     beforeTotal,
     afterTotal,
     delta: afterTotal - beforeTotal,
+    pruned: pruneReport.pruned,
+    prunedSoft: pruneReport.soft,
     stats: catalog.stats,
     seedsOk: seedReport.rest.filter((r) => r.ok).length,
     seedsFail: seedReport.rest.filter((r) => !r.ok).length,
-    fanoutOk,
-    fanoutFail,
-    fanoutAdded,
-    infoOk,
-    infoFail,
-    probeOk,
-    probeFail,
+    fanoutOk: seedReport.fanout?.ok,
+    fanoutFail: seedReport.fanout?.fail,
+    fanoutAdded: seedReport.fanout?.added,
+    infoOk: seedReport.info?.ok,
+    infoFail: seedReport.info?.fail,
+    probeOk: seedReport.probe?.ok,
+    probeFail: seedReport.probe?.fail,
     geoFilled,
     path: CATALOG_PATH,
   });

@@ -505,6 +505,7 @@ Do not:
 | 2026-07-25 | **Honest block miner:** Explorer API `miner.address` + pool map; boom no longer fakes a peer as miner |
 | 2026-07-25 | **Multi-seed map discovery:** `network-seeds.json` + open-REST scan; catalog ~443 → ~800+ nodes |
 | 2026-07-25 | **Map statuses + filters:** Connected / Live / Seen / Ghost; chips Live · Linked · All |
+| 2026-07-25 | **Fan-out + prune:** dual-pass fan-out (max 200, dedup REST), prune dead IPs after 21d (live protected) |
 
 ### Block miner attribution (honest)
 
@@ -536,7 +537,11 @@ npm run crawl:network
 node scripts/crawl-network.mjs
 ```
 
-Tune: `LUMEN_MAX_FANOUT`, `LUMEN_SEED_CONCURRENCY`, `LUMEN_OPEN_REST_MAX`, `LUMEN_CRAWL_SKIP_PROBE=1`.
+Tune: `LUMEN_MAX_FANOUT` (default 200), `LUMEN_FANOUT_CONCURRENCY` (8), `LUMEN_SEED_CONCURRENCY`, `LUMEN_OPEN_REST_MAX`, `LUMEN_CRAWL_SKIP_PROBE=1`.
+
+**Fan-out:** two passes over unique `restApiUrl` (normalized host/port dedup), prefers recently-live hosts, timeouts ~7s.
+
+**Prune:** after each crawl, drop IPs not seen for `LUMEN_PRUNE_DAYS` (default **21**). Never prune if `reachable` or recent `/info`/probe. Soft mode: `LUMEN_PRUNE_SOFT=1` marks `ghost` instead of delete. Report: `data/catalog-prune-last.json`.
 
 Each node keeps `sources[]` (e.g. `seed:eutxo:connected`, `open-rest:1.2.3.4`).
 

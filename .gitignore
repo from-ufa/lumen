@@ -63,4 +63,5 @@ temp/
 data/network-catalog.json
 data/network-catalog.json.tmp
 data/unknown-miners.json
+data/catalog-prune-last.json
 
