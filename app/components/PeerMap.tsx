@@ -57,7 +57,10 @@ function stateMeta(state: PeerMapState): {
   }
 }
 
-/** DivIcon — premium hierarchy by status. */
+/**
+ * DivIcon — premium hierarchy by status.
+ * Focus never overrides status color (search highlight is a separate layer).
+ */
 function peerDivIcon(
   state: PeerMapState,
   isBoom: boolean,
@@ -75,13 +78,6 @@ function peerDivIcon(
     opacity = 0.95;
     glow = "0 0 14px rgba(255,122,61,0.85)";
     ring = "2px solid rgba(10,10,15,0.9)";
-  } else if (isFocus) {
-    color = "#00E5FF";
-    size = 16;
-    opacity = 1;
-    glow =
-      "0 0 0 3px rgba(0,229,255,0.35), 0 0 18px rgba(0,229,255,0.95), 0 0 36px rgba(0,229,255,0.4)";
-    ring = "2.5px solid rgba(10,10,15,0.95)";
   } else if (state === "connected") {
     color = "#00E5FF";
     size = 14;
@@ -107,20 +103,38 @@ function peerDivIcon(
     glow = "none";
   }
 
-  const hit = isFocus ? 36 : 28;
+  // Focus: keep true status color; slightly larger + soft pearl frame only
+  if (isFocus && !isBoom) {
+    size = Math.max(size, 12) + 2;
+    opacity = Math.max(opacity, 0.92);
+    ring = "2px solid rgba(10,10,15,0.95)";
+  }
+
+  const hit = isFocus ? 40 : 28;
+  const focusFrame = isFocus
+    ? `<div class="lumen-peer-focus-frame" style="
+        position:absolute;inset:0;border-radius:50%;
+        border:1.5px solid rgba(245,230,200,0.9);
+        box-shadow:0 0 0 3px rgba(245,230,200,0.18), 0 0 16px rgba(232,201,122,0.45);
+        pointer-events:none;
+      "></div>`
+    : "";
+
   return L.divIcon({
     className: "lumen-peer-marker",
     html: `<div class="lumen-peer-hit" style="
+      position:relative;
       width:${hit}px;height:${hit}px;
       display:flex;align-items:center;justify-content:center;
       cursor:pointer;
-    "><div style="
+    ">${focusFrame}<div style="
       width:${size}px;height:${size}px;border-radius:50%;
       background:${color};
       border:${ring};
       box-shadow:${glow};
       opacity:${opacity};
       pointer-events:none;
+      position:relative;z-index:1;
     "></div></div>`,
     iconSize: [hit, hit],
     iconAnchor: [hit / 2, hit / 2],
@@ -214,11 +228,14 @@ function ClusteredPeersLayer({
   boomIps,
   onSelect,
   focusId,
+  focusIp,
 }: {
   markers: PeerMapMarker[];
   boomIps: Set<string>;
   onSelect: (m: PeerMapMarker) => void;
   focusId?: string | null;
+  /** Match by IP too — catalog port in id can differ from connected port */
+  focusIp?: string | null;
 }) {
   const map = useMap();
 
@@ -242,7 +259,9 @@ function ClusteredPeersLayer({
     for (const m of markers) {
       const state = normalizeState(m.state);
       const isBoom = boomIps.has(m.ip);
-      const isFocus = !!focusId && m.id === focusId;
+      const isFocus =
+        (!!focusId && m.id === focusId) ||
+        (!!focusIp && m.ip === focusIp && m.id !== "me");
       const z =
         isFocus
           ? 1200
@@ -304,67 +323,109 @@ function ClusteredPeersLayer({
         /* map already unmounted */
       }
     };
-  }, [map, markers, boomIps, onSelect, focusId]);
+  }, [map, markers, boomIps, onSelect, focusId, focusIp]);
 
   return null;
 }
 
-/** Smooth fly-to + pulsing ring when user picks a node from search / list */
+/** Resolve latest marker by id, then IP (single source of truth for status). */
+function resolveMarkerFromList(
+  list: PeerMapMarker[],
+  me: PeerMapMarker | null | undefined,
+  ref: { id?: string; ip?: string }
+): PeerMapMarker | null {
+  if (ref.id === "me" && me) return me;
+  if (ref.id) {
+    const byId = list.find((m) => m.id === ref.id);
+    if (byId) return byId;
+  }
+  if (ref.ip) {
+    const byIp = list.find((m) => m.ip === ref.ip);
+    if (byIp) return byIp;
+    if (me && me.ip === ref.ip) return me;
+  }
+  return null;
+}
+
+/**
+ * Premium search focus: champagne/pearl rings + FOUND label.
+ * Color deliberately avoids Connected cyan / Live blue / Seen slate / Me orange.
+ */
 function FocusNodeLayer({
   target,
   focusToken,
+  /** Keep rings while selection is open (search pick) */
+  persistent = true,
 }: {
   target: PeerMapMarker | null;
   focusToken: number;
+  persistent?: boolean;
 }) {
   const map = useMap();
+  const lastToken = useRef(0);
 
   useEffect(() => {
     if (!target || !focusToken) return;
     if (!Number.isFinite(target.lat) || !Number.isFinite(target.lon)) return;
 
     const latlng = L.latLng(target.lat, target.lon);
-    const destZoom = Math.min(
-      MAP_MAX_ZOOM,
-      Math.max(map.getZoom(), target.id === "me" ? 5 : 6.5)
-    );
+    const justPicked = focusToken !== lastToken.current;
+    lastToken.current = focusToken;
 
-    map.flyTo(latlng, destZoom, {
-      animate: true,
-      duration: 0.9,
-      easeLinearity: 0.22,
-    });
+    if (justPicked) {
+      const destZoom = Math.min(
+        MAP_MAX_ZOOM,
+        Math.max(map.getZoom(), target.id === "me" ? 5 : 6.75)
+      );
+      map.flyTo(latlng, destZoom, {
+        animate: true,
+        duration: 0.95,
+        easeLinearity: 0.2,
+      });
+    } else {
+      // Keep ring anchored if coords jitter slightly after refetch
+      // (layer recreated below)
+    }
 
+    const size = 120;
     const ring = L.marker(latlng, {
       interactive: false,
       keyboard: false,
-      zIndexOffset: 2000,
+      zIndexOffset: 2500,
       icon: L.divIcon({
         className: "lumen-focus-ring",
-        html: `<div class="lumen-focus-pulse"></div>`,
-        iconSize: [48, 48],
-        iconAnchor: [24, 24],
+        html: `<div class="lumen-focus-stage">
+          <div class="lumen-focus-wave lumen-focus-wave-a"></div>
+          <div class="lumen-focus-wave lumen-focus-wave-b"></div>
+          <div class="lumen-focus-core"></div>
+          <div class="lumen-focus-label">FOUND</div>
+        </div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
       }),
     });
     ring.addTo(map);
 
-    const t = window.setTimeout(() => {
-      try {
-        map.removeLayer(ring);
-      } catch {
-        /* ignore */
-      }
-    }, 2800);
+    let t: number | undefined;
+    if (!persistent) {
+      t = window.setTimeout(() => {
+        try {
+          map.removeLayer(ring);
+        } catch {
+          /* ignore */
+        }
+      }, 3200);
+    }
 
     return () => {
-      window.clearTimeout(t);
+      if (t) window.clearTimeout(t);
       try {
         map.removeLayer(ring);
       } catch {
         /* ignore */
       }
     };
-  }, [map, target, focusToken]);
+  }, [map, target, focusToken, persistent]);
 
   return null;
 }
@@ -1241,8 +1302,10 @@ export default function PeerMap({
   const [booms, setBooms] = useState<BoomEvent[]>([]);
   /** Increment on Refresh to re-apply default setView */
   const [viewToken, setViewToken] = useState(0);
-  /** Increment to re-trigger flyTo + pulse on the focused node */
+  /** Increment to re-trigger flyTo on search pick */
   const [focusToken, setFocusToken] = useState(0);
+  /** Node highlighted with premium FOUND rings (search only) */
+  const [searchFocus, setSearchFocus] = useState<PeerMapMarker | null>(null);
   /**
    * Map display filter:
    * - live (default Lumen): Connected + Live
@@ -1259,6 +1322,7 @@ export default function PeerMap({
   useEffect(() => {
     setMapFilter(nodeMode === "my" ? "connected" : "live");
     setSelected(null);
+    setSearchFocus(null);
     setFocusToken(0);
   }, [nodeMode]);
 
@@ -1302,26 +1366,80 @@ export default function PeerMap({
 
   const handleSelectPeer = useCallback(
     (m: PeerMapMarker, opts?: { fly?: boolean }) => {
-      ensureFilterForState(m.state);
-      setSelected(m);
-      if (opts?.fly !== false) {
+      // Always prefer the catalog/map marker so status matches pins & search
+      const canonical =
+        resolveMarkerFromList(allMarkers, data?.me, {
+          id: m.id,
+          ip: m.ip,
+        }) || m;
+      ensureFilterForState(canonical.state);
+      setSelected(canonical);
+      if (opts?.fly) {
+        // Search pick: premium FOUND highlight + fly
+        setSearchFocus(canonical);
         setFocusToken((t) => t + 1);
+      } else {
+        // Map pin click: keep status card, clear search-only highlight
+        setSearchFocus(null);
       }
     },
-    [ensureFilterForState]
+    [allMarkers, data?.me, ensureFilterForState]
   );
+
+  /** Keep selected / search-focus status in sync when map data refreshes */
+  useEffect(() => {
+    if (!selected && !searchFocus) return;
+    if (selected) {
+      const fresh = resolveMarkerFromList(allMarkers, data?.me, {
+        id: selected.id,
+        ip: selected.ip,
+      });
+      if (
+        fresh &&
+        (fresh.state !== selected.state ||
+          fresh.name !== selected.name ||
+          fresh.version !== selected.version ||
+          fresh.lat !== selected.lat ||
+          fresh.lon !== selected.lon)
+      ) {
+        setSelected(fresh);
+      }
+    }
+    if (searchFocus) {
+      const freshF = resolveMarkerFromList(allMarkers, data?.me, {
+        id: searchFocus.id,
+        ip: searchFocus.ip,
+      });
+      if (
+        freshF &&
+        (freshF.state !== searchFocus.state ||
+          freshF.lat !== searchFocus.lat ||
+          freshF.lon !== searchFocus.lon)
+      ) {
+        setSearchFocus(freshF);
+      }
+    }
+  }, [allMarkers, data?.me, selected, searchFocus]);
 
   /** Apply elegant status filters (Ghost never shown). */
   const peerMarkers = useMemo(() => {
     return allMarkers.filter((m) => {
       const s = normalizeState(m.state);
       if (s === "ghost") return false;
+      // Always keep the focused node visible even if filter would hide it
+      if (
+        selected &&
+        (m.id === selected.id || m.ip === selected.ip) &&
+        selected.id !== "me"
+      ) {
+        return true;
+      }
       if (mapFilter === "connected") return s === "connected";
       if (mapFilter === "live") return s === "connected" || s === "live";
       // all: connected + live + seen
       return s === "connected" || s === "live" || s === "seen";
     });
-  }, [allMarkers, mapFilter]);
+  }, [allMarkers, mapFilter, selected]);
 
   /** Search corpus: all non-ghost mapped nodes (+ me if present) */
   const searchNodes = useMemo(() => {
@@ -1552,7 +1670,12 @@ export default function PeerMap({
               markers={peerMarkers}
               boomIps={boomIps}
               onSelect={(m) => handleSelectPeer(m, { fly: false })}
-              focusId={selected?.id}
+              focusId={searchFocus?.id ?? selected?.id}
+              focusIp={
+                (searchFocus ?? selected)?.id === "me"
+                  ? null
+                  : (searchFocus ?? selected)?.ip
+              }
             />
 
             {data?.me && (
@@ -1563,7 +1686,12 @@ export default function PeerMap({
               />
             )}
 
-            <FocusNodeLayer target={selected} focusToken={focusToken} />
+            {/* Champagne FOUND rings — search picks only (not status colors) */}
+            <FocusNodeLayer
+              target={searchFocus}
+              focusToken={focusToken}
+              persistent
+            />
 
             {/* Boom: 3 pulses on peer + flying notice top→peer */}
             <BoomLayer booms={booms} onDone={dismissBoom} />
@@ -1610,11 +1738,7 @@ export default function PeerMap({
           selectedId={selected?.id}
           compact
           onSelect={(n) => {
-            const full =
-              allMarkers.find((m) => m.id === n.id) ||
-              (data?.me && data.me.id === n.id ? data.me : null) ||
-              (n as PeerMapMarker);
-            handleSelectPeer(full, { fly: true });
+            handleSelectPeer(n as PeerMapMarker, { fly: true });
           }}
           className="w-full"
         />
@@ -1781,11 +1905,7 @@ export default function PeerMap({
             nodes={searchNodes}
             selectedId={selected?.id}
             onSelect={(n) => {
-              const full =
-                allMarkers.find((m) => m.id === n.id) ||
-                (data?.me && data.me.id === n.id ? data.me : null) ||
-                (n as PeerMapMarker);
-              handleSelectPeer(full, { fly: true });
+              handleSelectPeer(n as PeerMapMarker, { fly: true });
             }}
             className="w-full"
           />
@@ -1908,7 +2028,10 @@ export default function PeerMap({
               </div>
               <button
                 type="button"
-                onClick={() => setSelected(null)}
+                onClick={() => {
+                  setSelected(null);
+                  setSearchFocus(null);
+                }}
                 className="text-[#A0A0B0] hover:text-white text-xs font-mono shrink-0"
               >
                 CLOSE
@@ -2084,7 +2207,10 @@ export default function PeerMap({
             </div>
             <button
               type="button"
-              onClick={() => setSelected(null)}
+              onClick={() => {
+                setSelected(null);
+                setSearchFocus(null);
+              }}
               className="text-[#A0A0B0] hover:text-white text-xs font-mono flex-shrink-0"
             >
               CLOSE
