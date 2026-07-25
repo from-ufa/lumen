@@ -21,13 +21,12 @@ export type BlockMinerInfo = {
   height: number;
   blockId: string;
   address: string;
-  /** Explorer's raw miner.name (often last 8 chars) */
+  /** Explorer's raw miner.name (often last 8 chars of address) */
   explorerName: string | null;
-  /** Resolved display: pool name / Solo / Unknown pool */
+  /** Resolved display: 2Miners / HeroMiners / Solo / … */
   label: string;
   kind: "pool" | "solo" | "unknown";
   short: string;
-  /** Full one-liner for toast */
   line: string;
 };
 
@@ -49,41 +48,71 @@ function toMinerInfo(item: ExplorerBlockItem): BlockMinerInfo | null {
   const address = item.miner?.address?.trim();
   if (!address || !item.id) return null;
   const height = Number(item.height) || 0;
-  const disp = resolveMinerDisplay(address);
+  const explorerName = item.miner?.name ?? null;
+  const disp = resolveMinerDisplay(address, explorerName);
   return {
     height,
     blockId: item.id,
     address,
-    explorerName: item.miner?.name ?? null,
+    explorerName,
     label: disp.label,
     kind: disp.kind,
     short: disp.short || shortMinerAddress(address),
-    line: formatMinerLine(height, address),
+    line: formatMinerLine(height, address, explorerName),
   };
+}
+
+async function fetchBlocksPage(
+  limit: number,
+  offset: number,
+  signal?: AbortSignal
+): Promise<ExplorerBlockItem[]> {
+  const url = `${ERGO_EXPLORER_API}/blocks?limit=${limit}&offset=${offset}`;
+  const res = await fetch(url, {
+    signal: signal ?? AbortSignal.timeout(12_000),
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    items?: ExplorerBlockItem[];
+    total?: number;
+  };
+  return data.items || [];
 }
 
 /**
  * Fetch miner for a block height from Explorer.
- * Preferred: GET /blocks?height={h} (includes miner.address).
+ * Note: `?height=` is unreliable on the public API — use tip window + offset.
  */
 export async function fetchBlockMinerByHeight(
   height: number,
   opts?: { signal?: AbortSignal }
 ): Promise<BlockMinerInfo | null> {
   if (!height || height <= 0) return null;
+  const signal = opts?.signal;
 
   try {
-    const url = `${ERGO_EXPLORER_API}/blocks?height=${height}&limit=5`;
-    const res = await fetch(url, {
-      signal: opts?.signal ?? AbortSignal.timeout(10_000),
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { items?: ExplorerBlockItem[] };
-    const hit =
-      (data.items || []).find((b) => b.height === height) || data.items?.[0];
-    if (hit) return toMinerInfo(hit);
+    // 1) Recent tip window (fast path for live tip)
+    const tipItems = await fetchBlocksPage(40, 0, signal);
+    const tipHit = tipItems.find((b) => b.height === height);
+    if (tipHit) return toMinerInfo(tipHit);
+
+    const tipHeight = tipItems[0]?.height;
+    if (tipHeight && tipHeight > height) {
+      // 2) Jump near target via offset ≈ tip - height
+      const offset = Math.max(0, tipHeight - height - 2);
+      const page = await fetchBlocksPage(20, offset, signal);
+      const hit = page.find((b) => b.height === height);
+      if (hit) return toMinerInfo(hit);
+      // small neighborhood scan
+      for (const delta of [-10, 10, -30, 30]) {
+        const o = Math.max(0, offset + delta);
+        const more = await fetchBlocksPage(20, o, signal);
+        const h2 = more.find((b) => b.height === height);
+        if (h2) return toMinerInfo(h2);
+      }
+    }
   } catch {
     /* ignore */
   }
@@ -91,34 +120,27 @@ export async function fetchBlockMinerByHeight(
   return null;
 }
 
-/**
- * Fetch miner when block id is known.
- * Full /blocks/{id} payload has no miner field — use list filter by height or id.
- */
+/** Fetch miner when block id is known. */
 export async function fetchBlockMinerById(
   blockId: string,
   heightHint?: number,
   opts?: { signal?: AbortSignal }
 ): Promise<BlockMinerInfo | null> {
   if (!blockId) return null;
+  const id = blockId.toLowerCase();
 
   if (heightHint && heightHint > 0) {
     const byH = await fetchBlockMinerByHeight(heightHint, opts);
-    if (byH && (byH.blockId === blockId || !blockId)) return byH;
     if (byH) return byH;
   }
 
   try {
-    // Recent tip scan as fallback
-    const res = await fetch(`${ERGO_EXPLORER_API}/blocks?limit=40`, {
-      signal: opts?.signal ?? AbortSignal.timeout(10_000),
-      headers: { Accept: "application/json" },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { items?: ExplorerBlockItem[] };
-    const hit = (data.items || []).find((b) => b.id === blockId);
-    if (hit) return toMinerInfo(hit);
+    // Scan recent pages for id
+    for (const offset of [0, 40, 80, 120]) {
+      const page = await fetchBlocksPage(40, offset, opts?.signal);
+      const hit = page.find((b) => (b.id || "").toLowerCase() === id);
+      if (hit) return toMinerInfo(hit);
+    }
   } catch {
     /* ignore */
   }

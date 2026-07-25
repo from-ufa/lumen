@@ -506,11 +506,13 @@ Do not:
 
 ### Block miner attribution (honest)
 
-- Source: `https://api.ergoplatform.com/api/v1/blocks?height={h}` → `miner.address` / `miner.name`
-- Pool labels: curated `app/lib/mining-pools.ts` (unknown `88…` → “Unknown pool”, `9…` → “Solo”)
-- **Never** infer miner from P2P peers or map pins
-- Map boom: decorative pulse only; notice shows `Block #H · Label · short`
-- Toast + block modal + timeline show the same attribution; links to SigmaSpace + official Explorer
+- Source: Explorer list `GET /api/v1/blocks?limit&offset` → `miner.address` / `miner.name` (never peers)
+- Label resolution (`app/lib/mining-pools.ts`):
+  1. Real Explorer pool name (if not a truncated address tail)
+  2. Address → pool map (verified vs pool APIs: **2Miners**, **HeroMiners**, **WoolyPooly**, **Kryptex**)
+  3. `9…` → **Solo**, other `88…` → **Unknown pool**
+- Map boom: decorative only; toast/modal/timeline: `Block #H · Label · short`
+- Links: SigmaSpace + official Explorer
 
 Recent commits live on `main` (`git log --oneline -20`).
 
