@@ -1660,35 +1660,39 @@ function Scene({
         />
       </Canvas>
 
-      {/* ── Mobile: controls + search ── */}
+      {/* ── Mobile: search top (same logic as World Map) ── */}
+      <div className="md:hidden absolute top-0 inset-x-0 z-30 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
+        <NodeMapSearch
+          nodes={searchNodes}
+          selectedId={focusAddress}
+          compact
+          clearToken={searchClearToken}
+          onSelect={handleSearchSelect}
+          className="w-full"
+        />
+      </div>
+
+      {/* ── Mobile: BOOM left · FOCUS right (bottom, symmetric) ── */}
       {!hideControls && (
-        <div className="md:hidden absolute top-0 inset-x-0 z-20 pointer-events-none p-2.5 space-y-2">
-          <div className="flex items-start justify-between gap-2">
-            {onSimulateBlock && (
-              <button
-                type="button"
-                onClick={triggerBlockPropagation}
-                className="pointer-events-auto flex items-center gap-1.5 h-10 px-3 rounded-2xl text-[10px] font-mono tracking-wider border border-[#E8C48A]/40 bg-[#0A0A0F]/90 text-[#E8C48A] shadow-lg backdrop-blur-md active:scale-[0.97]"
-              >
-                ✧ BOOM
-              </button>
-            )}
+        <div className="md:hidden absolute bottom-0 inset-x-0 z-30 pointer-events-none flex items-end justify-between gap-3 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
+          {onSimulateBlock ? (
             <button
               type="button"
-              onClick={focusOnMyNode}
-              className="pointer-events-auto ml-auto flex items-center gap-1.5 h-10 px-3 rounded-2xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/90 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
+              onClick={triggerBlockPropagation}
+              className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-[#E8C48A]/50 bg-[#0A0A0F]/92 text-[#E8C48A] shadow-lg backdrop-blur-md active:scale-[0.97]"
             >
-              FOCUS
+              ✧ BOOM
             </button>
-          </div>
-          <NodeMapSearch
-            nodes={searchNodes}
-            selectedId={focusAddress}
-            compact
-            clearToken={searchClearToken}
-            onSelect={handleSearchSelect}
-            className="w-full"
-          />
+          ) : (
+            <span className="min-h-11 w-px" aria-hidden />
+          )}
+          <button
+            type="button"
+            onClick={focusOnMyNode}
+            className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/92 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
+          >
+            FOCUS
+          </button>
         </div>
       )}
 
@@ -1862,16 +1866,16 @@ function Scene({
       <AnimatePresence>
         {infoPeer && !focusAddress && (
           <>
-            {/* Mobile — docked, full readable width inside map */}
+            {/* Mobile — docked above bottom controls, fully in-view */}
             <motion.div
               key="peer-info-mobile"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className="md:hidden absolute z-40 left-2.5 right-2.5 bottom-2.5 pointer-events-auto"
+              className="md:hidden absolute z-40 left-2.5 right-2.5 bottom-[4.25rem] pointer-events-auto"
             >
-              <div className="glass rounded-2xl px-4 py-3.5 text-sm border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.5)] max-h-[min(42vh,280px)] overflow-y-auto">
+              <div className="glass rounded-2xl px-4 py-3.5 text-sm border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.5)] max-h-[min(36vh,240px)] overflow-y-auto">
                 {infoCardBody}
               </div>
             </motion.div>
