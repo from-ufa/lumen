@@ -421,9 +421,14 @@ type MapPayload = {
   totalPeers: number;
   mapped: number;
   networkTotal?: number;
+  /** Alias of networkTotal — known IPs in catalog */
+  discovered?: number;
   networkMapped?: number;
+  withGeo?: number;
   connectedMapped?: number;
   liveMapped?: number;
+  /** connected + live */
+  liveTotal?: number;
   reachableMapped?: number;
   seenMapped?: number;
   ghostMapped?: number;
@@ -1211,37 +1216,39 @@ export default function PeerMap({
     [signalLinks]
   );
 
-  /** Counts from full catalog (not just filtered view) */
+  /** Live network stats (full catalog, independent of filter chips) */
   const mapStats = useMemo(() => {
     const markers = allMarkers;
     let connected = 0;
-    let live = 0;
+    let liveOnly = 0;
     let seen = 0;
     let ghost = 0;
     for (const m of markers) {
       const s = normalizeState(m.state);
       if (s === "connected") connected++;
-      else if (s === "live") live++;
+      else if (s === "live") liveOnly++;
       else if (s === "seen") seen++;
       else ghost++;
     }
-    // Prefer API counts when present
     connected = data?.connectedMapped ?? connected;
-    live = data?.liveMapped ?? data?.reachableMapped ?? live;
+    liveOnly = data?.liveMapped ?? data?.reachableMapped ?? liveOnly;
     seen = data?.seenMapped ?? seen;
     ghost = data?.ghostMapped ?? ghost;
-    const onMap = connected + live + seen; // default visible pool
-    const catalogTotal = data?.networkMapped ?? data?.mapped ?? markers.length;
+    const live = data?.liveTotal ?? connected + liveOnly;
+    const discovered =
+      data?.discovered ?? data?.networkTotal ?? markers.length;
+    const withGeo = data?.withGeo ?? data?.mapped ?? markers.length;
+    const unmapped = data?.unmapped ?? 0;
     return {
-      catalogTotal,
-      onMap,
-      connected,
+      discovered,
       live,
+      liveOnly,
+      connected,
       seen,
       ghost,
+      withGeo,
+      unmapped,
       showing: peerMarkers.length,
-      myPeers: connected,
-      online: connected + live,
     };
   }, [allMarkers, data, peerMarkers.length]);
 
@@ -1470,73 +1477,100 @@ export default function PeerMap({
             <Globe2 className="w-3.5 h-3.5" /> ERGO NETWORK MAP
           </div>
 
-          {/* Lumen: status filters · My Node: only connected peers — no filter chrome */}
           {nodeMode === "lumen" ? (
-            <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
-              {(
-                [
-                  { id: "live" as const, label: "Live" },
-                  { id: "connected" as const, label: "Linked" },
-                  { id: "all" as const, label: "All" },
-                ] as const
-              ).map((f) => {
-                const active = mapFilter === f.id;
-                return (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => setMapFilter(f.id)}
-                    className={`flex-1 px-2 py-1.5 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
-                      active
-                        ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
-                        : "text-[#A0A0B0] hover:text-[#E8E8F0]"
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="mb-3 rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-2.5">
-              <div className="font-mono text-[11px] tracking-wide text-[#E8E8F0] leading-snug">
-                <span className="text-[#00E5FF] tabular-nums font-semibold">
-                  {mapStats.connected.toLocaleString()}
-                </span>
-                {mapStats.connected === 1
-                  ? " peer connected to your node"
-                  : " peers connected to your node"}
+            <>
+              {/* Network stats — live, premium */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-2.5 py-2.5">
+                  <div className="font-mono text-lg sm:text-xl tabular-nums text-white leading-none tracking-tight">
+                    {mapStats.discovered.toLocaleString()}
+                  </div>
+                  <div className="text-[9px] font-mono tracking-wider text-[#A0A0B0] mt-1">
+                    DISCOVERED
+                  </div>
+                </div>
+                <div className="rounded-xl bg-[#38BDF8]/[0.08] border border-[#38BDF8]/20 px-2.5 py-2.5">
+                  <div className="font-mono text-lg sm:text-xl tabular-nums text-[#38BDF8] leading-none tracking-tight">
+                    {mapStats.live.toLocaleString()}
+                  </div>
+                  <div className="text-[9px] font-mono tracking-wider text-[#A0A0B0] mt-1">
+                    LIVE
+                  </div>
+                </div>
+                <div className="rounded-xl bg-[#00E5FF]/[0.08] border border-[#00E5FF]/20 px-2.5 py-2.5">
+                  <div className="font-mono text-lg sm:text-xl tabular-nums text-[#00E5FF] leading-none tracking-tight">
+                    {mapStats.connected.toLocaleString()}
+                  </div>
+                  <div className="text-[9px] font-mono tracking-wider text-[#A0A0B0] mt-1">
+                    CONNECTED
+                  </div>
+                </div>
               </div>
+              <div className="flex items-center justify-between gap-2 mb-3 px-0.5 text-[10px] font-mono text-[#A0A0B0]/80 tracking-wide">
+                <span>
+                  <span className="text-[#E8E8F0] tabular-nums">
+                    {mapStats.withGeo.toLocaleString()}
+                  </span>{" "}
+                  on map
+                  {mapStats.unmapped > 0 && (
+                    <span className="text-[#A0A0B0]/50">
+                      {" "}
+                      · {mapStats.unmapped} no geo
+                    </span>
+                  )}
+                </span>
+                <span className="text-[#A0A0B0]/60">
+                  showing{" "}
+                  <span className="text-[#E8E8F0] tabular-nums">
+                    {mapStats.showing}
+                  </span>
+                </span>
+              </div>
+
+              {/* Status filters */}
+              <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
+                {(
+                  [
+                    { id: "live" as const, label: "Live" },
+                    { id: "connected" as const, label: "Linked" },
+                    { id: "all" as const, label: "All" },
+                  ] as const
+                ).map((f) => {
+                  const active = mapFilter === f.id;
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setMapFilter(f.id)}
+                      className={`flex-1 px-2 py-1.5 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
+                        active
+                          ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
+                          : "text-[#A0A0B0] hover:text-[#E8E8F0]"
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="mb-3 rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-3">
+              <div className="font-mono text-2xl tabular-nums text-[#00E5FF] leading-none tracking-tight">
+                {mapStats.connected.toLocaleString()}
+              </div>
+              <div className="text-[10px] font-mono tracking-wider text-[#A0A0B0] mt-1.5">
+                {mapStats.connected === 1
+                  ? "PEER CONNECTED TO YOUR NODE"
+                  : "PEERS CONNECTED TO YOUR NODE"}
+              </div>
+              {mapStats.withGeo > 0 && (
+                <div className="text-[10px] font-mono text-[#A0A0B0]/70 mt-1">
+                  {mapStats.withGeo.toLocaleString()} mapped · GeoIP
+                </div>
+              )}
             </div>
           )}
-
-          {/* Numbers */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 mb-3">
-            <div>
-              <div className="font-mono text-xl tabular-nums text-white leading-none">
-                {mapStats.showing}
-              </div>
-              <div className="text-[10px] text-[#A0A0B0] mt-0.5">showing</div>
-            </div>
-            <div>
-              <div className="font-mono text-xl tabular-nums text-[#00E5FF] leading-none">
-                {mapStats.connected}
-              </div>
-              <div className="text-[10px] text-[#A0A0B0] mt-0.5">connected</div>
-            </div>
-            <div>
-              <div className="font-mono text-xl tabular-nums text-[#38BDF8] leading-none">
-                {mapStats.live}
-              </div>
-              <div className="text-[10px] text-[#A0A0B0] mt-0.5">live</div>
-            </div>
-            <div>
-              <div className="font-mono text-xl tabular-nums text-[#94A3B8] leading-none">
-                {mapStats.seen}
-              </div>
-              <div className="text-[10px] text-[#A0A0B0] mt-0.5">seen</div>
-            </div>
-          </div>
 
           {/* Legend */}
           <div className="border-t border-white/10 pt-2.5 space-y-1.5 text-[11px] leading-snug">
@@ -1720,71 +1754,75 @@ export default function PeerMap({
     <div className="md:hidden mt-3 space-y-2.5">
       <div className="glass rounded-2xl px-3 py-3 border border-white/10">
         {nodeMode === "lumen" ? (
-          <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
-            {(
-              [
-                { id: "live" as const, label: "Live" },
-                { id: "connected" as const, label: "Linked" },
-                { id: "all" as const, label: "All" },
-              ] as const
-            ).map((f) => {
-              const active = mapFilter === f.id;
-              return (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setMapFilter(f.id)}
-                  className={`flex-1 px-2 py-2 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
-                    active
-                      ? "bg-white/10 text-white"
-                      : "text-[#A0A0B0]"
-                  }`}
-                >
-                  {f.label}
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              <div className="rounded-xl bg-white/5 px-2 py-2 text-center">
+                <div className="font-mono text-lg tabular-nums text-white">
+                  {mapStats.discovered.toLocaleString()}
+                </div>
+                <div className="text-[9px] font-mono text-[#A0A0B0] tracking-wider">
+                  DISCOVERED
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#38BDF8]/10 px-2 py-2 text-center border border-[#38BDF8]/15">
+                <div className="font-mono text-lg tabular-nums text-[#38BDF8]">
+                  {mapStats.live.toLocaleString()}
+                </div>
+                <div className="text-[9px] font-mono text-[#A0A0B0] tracking-wider">
+                  LIVE
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#00E5FF]/10 px-2 py-2 text-center border border-[#00E5FF]/15">
+                <div className="font-mono text-lg tabular-nums text-[#00E5FF]">
+                  {mapStats.connected.toLocaleString()}
+                </div>
+                <div className="text-[9px] font-mono text-[#A0A0B0] tracking-wider">
+                  CONNECTED
+                </div>
+              </div>
+            </div>
+            <div className="text-[10px] font-mono text-[#A0A0B0] mb-3 text-center">
+              {mapStats.withGeo.toLocaleString()} on map · showing{" "}
+              {mapStats.showing}
+            </div>
+            <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
+              {(
+                [
+                  { id: "live" as const, label: "Live" },
+                  { id: "connected" as const, label: "Linked" },
+                  { id: "all" as const, label: "All" },
+                ] as const
+              ).map((f) => {
+                const active = mapFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setMapFilter(f.id)}
+                    className={`flex-1 px-2 py-2 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
+                      active
+                        ? "bg-white/10 text-white"
+                        : "text-[#A0A0B0]"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
         ) : (
-          <div className="mb-3 rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-2.5">
-            <div className="font-mono text-[11px] tracking-wide text-[#E8E8F0]">
-              <span className="text-[#00E5FF] tabular-nums font-semibold">
-                {mapStats.connected.toLocaleString()}
-              </span>
-              {mapStats.connected === 1
-                ? " peer connected to your node"
-                : " peers connected to your node"}
+          <div className="mb-3 rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-3 text-center">
+            <div className="font-mono text-2xl tabular-nums text-[#00E5FF]">
+              {mapStats.connected.toLocaleString()}
+            </div>
+            <div className="text-[10px] font-mono tracking-wider text-[#A0A0B0] mt-1">
+              PEERS CONNECTED TO YOUR NODE
             </div>
           </div>
         )}
         <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[2px] mb-2">
           <Globe2 className="w-3.5 h-3.5" /> MAP
-        </div>
-        <div className="grid grid-cols-2 gap-2 text-center mb-3">
-          <div className="rounded-xl bg-white/5 px-2 py-2">
-            <div className="font-mono text-lg tabular-nums text-white">
-              {mapStats.showing}
-            </div>
-            <div className="text-[10px] text-[#A0A0B0]">showing</div>
-          </div>
-          <div className="rounded-xl bg-white/5 px-2 py-2">
-            <div className="font-mono text-lg tabular-nums text-[#00E5FF]">
-              {mapStats.connected}
-            </div>
-            <div className="text-[10px] text-[#A0A0B0]">connected</div>
-          </div>
-          <div className="rounded-xl bg-white/5 px-2 py-2">
-            <div className="font-mono text-lg tabular-nums text-[#38BDF8]">
-              {mapStats.live}
-            </div>
-            <div className="text-[10px] text-[#A0A0B0]">live</div>
-          </div>
-          <div className="rounded-xl bg-white/5 px-2 py-2">
-            <div className="font-mono text-lg tabular-nums text-[#94A3B8]">
-              {mapStats.seen}
-            </div>
-            <div className="text-[10px] text-[#A0A0B0]">seen</div>
-          </div>
         </div>
         <div className="space-y-1.5 text-[11px] text-[#A0A0B0]">
           <div className="flex items-center gap-2">
@@ -1857,17 +1895,22 @@ export default function PeerMap({
           </div>
         </div>
       )}
-      {/* Compact mapped stats on mobile */}
-      <div className="flex items-center justify-between px-1 text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-        <span>
-          <span className="text-[#00E5FF] tabular-nums">{data?.mapped ?? "—"}</span>
-          {" mapped / "}
-          {data?.totalPeers ?? "—"} peers
-        </span>
-        {(data?.unmapped ?? 0) > 0 && (
-          <span>{data!.unmapped} unmapped</span>
-        )}
-      </div>
+      {nodeMode === "lumen" && (
+        <div className="flex items-center justify-between px-1 text-[10px] font-mono text-[#A0A0B0] tracking-wider">
+          <span>
+            discovered{" "}
+            <span className="text-white tabular-nums">
+              {mapStats.discovered}
+            </span>
+            {" · live "}
+            <span className="text-[#38BDF8] tabular-nums">{mapStats.live}</span>
+            {" · connected "}
+            <span className="text-[#00E5FF] tabular-nums">
+              {mapStats.connected}
+            </span>
+          </span>
+        </div>
+      )}
     </div>
     </div>
   );

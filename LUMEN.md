@@ -506,6 +506,8 @@ Do not:
 | 2026-07-25 | **Multi-seed map discovery:** `network-seeds.json` + open-REST scan; catalog ~443 → ~800+ nodes |
 | 2026-07-25 | **Map statuses + filters:** Connected / Live / Seen / Ghost; chips Live · Linked · All |
 | 2026-07-25 | **Fan-out + prune:** dual-pass fan-out (max 200, dedup REST), prune dead IPs after 21d (live protected) |
+| 2026-07-25 | **Docs:** README + LUMEN.md — multi-seed, statuses, filters, prune report paths |
+| 2026-07-25 | **Network stats HUD:** Discovered / Live / Connected (+ on map) on World Map |
 
 ### Block miner attribution (honest)
 
@@ -586,6 +588,20 @@ Logic: `lib/network-peers.ts` → `resolveCatalogNodeState()`.
 | **All** | Connected + Live + Seen (Ghost still hidden) |
 
 My Node: no chips — only the user’s connected peers exist, so a single line like **“95 peers connected to your node”** is shown instead.
+
+#### Network stats (map HUD)
+
+Live counters from `GET /api/peers/map` (map refetches ~12s):
+
+| Metric | Field | Meaning |
+|--------|--------|---------|
+| **Discovered** | `discovered` / `networkTotal` | IPs in multi-seed catalog |
+| **Live** | `liveTotal` | Connected + answering |
+| **Connected** | `connectedMapped` | In active node’s `/peers/connected` |
+| **on map** | `withGeo` | Markers with GeoIP |
+| **showing** | client filter | After Live / Linked / All chip |
+
+Lumen Node: three premium stat tiles + subtle “on map · showing”. My Node: connected count only.
 
 #### Prune (catalog cleanup)
 

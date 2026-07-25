@@ -296,8 +296,6 @@ function buildUserOwnedMap(opts: {
   }
 
   const connectedMapped = markers.length;
-  // All shown peers are connected (user node live set)
-  const reachableMapped = 0;
 
   return {
     markers,
@@ -305,11 +303,17 @@ function buildUserOwnedMap(opts: {
     links,
     totalPeers: connectedRaw.length,
     mapped: markers.length,
-    /** User-owned map: totals equal the live connected set, not Lumen catalog */
+    /** User-owned: no global catalog */
     networkTotal: connectedRaw.length,
+    discovered: connectedRaw.length,
     networkMapped: markers.length,
+    withGeo: markers.length,
     connectedMapped,
-    reachableMapped,
+    liveMapped: 0,
+    liveTotal: connectedMapped,
+    reachableMapped: 0,
+    seenMapped: 0,
+    ghostMapped: 0,
     unmapped,
     countries,
     catalogUpdatedAt: null as number | null,
@@ -459,9 +463,12 @@ function buildLumenMap(opts: {
   }
 
   const connectedMapped = markers.filter((m) => m.state === "connected").length;
-  const liveMapped = markers.filter((m) => m.state === "live").length;
+  const liveOnlyMapped = markers.filter((m) => m.state === "live").length;
   const seenMapped = markers.filter((m) => m.state === "seen").length;
   const ghostMapped = markers.filter((m) => m.state === "ghost").length;
+  const networkTotal = Object.keys(catalog.nodes).length;
+  /** Live network = connected + answering (map “Live” chip pool) */
+  const liveTotal = connectedMapped + liveOnlyMapped;
 
   return {
     markers,
@@ -469,13 +476,19 @@ function buildLumenMap(opts: {
     links,
     totalPeers: connectedRaw.length,
     mapped: markers.length,
-    networkTotal: Object.keys(catalog.nodes).length,
+    /** Catalog size (discovered IPs) */
+    networkTotal,
+    discovered: networkTotal,
     networkMapped: markers.length,
+    /** Markers with geo coordinates */
+    withGeo: markers.length,
     connectedMapped,
-    /** live only (not counting connected) */
-    liveMapped,
-    /** @deprecated alias — connected + live */
-    reachableMapped: liveMapped,
+    /** Answering but not in local connected set */
+    liveMapped: liveOnlyMapped,
+    /** connected + live — “who’s up” */
+    liveTotal,
+    /** @deprecated alias */
+    reachableMapped: liveOnlyMapped,
     seenMapped,
     ghostMapped,
     unmapped,
