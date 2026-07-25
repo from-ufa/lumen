@@ -1,7 +1,7 @@
 # Lumen — Ergo Node Dashboard
 
 **Handoff / context pack** for humans and AI sessions.  
-Snapshot: **2026-07-24**. Read this first, then code.
+Snapshot: **2026-07-25**. Read this first, then code.
 
 > **Rebrand:** product was **Aether → Lumen** (2026-07-24).  
 > **Deploy path:** `/home/lumen` (compat symlink `/home/aether` → `/home/lumen`).  
@@ -517,45 +517,104 @@ Do not:
 - Map boom: decorative only; toast/modal/timeline: `Block #H · Label · short`
 - Links: SigmaSpace + official Explorer
 
-### Network map discovery (multi-seed)
+### Network map — architecture (current)
 
-Catalog file: `data/network-catalog.json` (gitignored), built by `scripts/crawl-network.mjs` (`aether-crawl.timer` ~12 min).
+Two different map modes share the same UI chrome but **different data**:
 
-**Sources (Lumen Node map only — My Node stays bridge-only):**
+| Mode | Data | Filters |
+|------|------|---------|
+| **Lumen Node** | Global catalog (~800+ IPs) + local Ergo connected set | Live · Linked · All |
+| **My Node** | **Only** peers from the user’s Bridge session | Filters hidden; label “N peers connected to your node” |
 
-1. Local node `ERGO_NODE_URL` (`/peers/all` + `/peers/connected`)
-2. Curated public REST seeds — `scripts/network-seeds.json`
-3. Official `mainnet.conf` knownPeers (P2P host:port)
-4. Fan-out to discovered `restApiUrl` hosts (max 120)
-5. Open-REST scan: `http://IP:9053/info` + peers on nodes without known API
-6. TCP `:9030` reachability + GeoIP
+#### Multi-seed discovery
+
+Catalog: `data/network-catalog.json` (gitignored), built by `scripts/crawl-network.mjs`.  
+Timer: `aether-crawl.timer` (~every 12 minutes).
+
+```text
+seeds (REST) ──► /peers/all + /peers/connected
+mainnet knownPeers ──► catalog as P2P endpoints
+        │
+        ▼
+   merge + dedupe by public IPv4
+        │
+        ├── fan-out (unique restApiUrl, 2 passes, max 200)
+        ├── open-REST scan (http://IP:9053/info + peers)
+        ├── /info enrichment (name, height, version)
+        ├── TCP :9030 probe → reachable flag
+        └── prune (drop long-dead IPs)
+        │
+        ▼
+  network-catalog.json  ──►  GET /api/peers/map  ──►  PeerMap UI
+```
+
+**Sources (in order):**
+
+1. **Local node** — `ERGO_NODE_URL` (`/peers/all`, `/peers/connected`)
+2. **Curated REST seeds** — `scripts/network-seeds.json` (eutxo, oette, ergopool, sigmaspace, official seeds, …)
+3. **Official knownPeers** — from Ergo `mainnet.conf` (host:port only)
+4. **Fan-out** — crawl discovered `restApiUrl` hosts (normalized/deduped URL, dual pass, concurrency 8, ~7s timeout)
+5. **Open-REST** — try `http://IP:9053` on nodes without known API
+6. **TCP probe** — port 9030 for reachability + **GeoIP** for map pins
+
+Each catalog row keeps `sources[]` (e.g. `seed:eutxo:connected`, `fanout:p1`, `open-rest:1.2.3.4`).
 
 ```bash
 cd /home/lumen
 npm run crawl:network
-# or
-node scripts/crawl-network.mjs
+# env: LUMEN_MAX_FANOUT=200  LUMEN_FANOUT_CONCURRENCY=8
+#      LUMEN_PRUNE_DAYS=21   LUMEN_CRAWL_SKIP_PROBE=1
 ```
 
-Tune: `LUMEN_MAX_FANOUT` (default 200), `LUMEN_FANOUT_CONCURRENCY` (8), `LUMEN_SEED_CONCURRENCY`, `LUMEN_OPEN_REST_MAX`, `LUMEN_CRAWL_SKIP_PROBE=1`.
+#### Node statuses
 
-**Fan-out:** two passes over unique `restApiUrl` (normalized host/port dedup), prefers recently-live hosts, timeouts ~7s.
+| Status | Meaning | Map visual |
+|--------|---------|------------|
+| **Connected** | In the active node’s live `/peers/connected` set | Bright cyan + strong glow |
+| **Live** | Answering now (TCP open and/or recent REST `/info`, ~2h window) | Blue, solid |
+| **Seen** | Observed in discovery recently, not answering now (~7d) | Dim slate |
+| **Ghost** | Not observed as live for a long time | Hidden on map |
 
-**Prune:** after each crawl, drop IPs not seen for `LUMEN_PRUNE_DAYS` (default **21**). Never prune if `reachable` or recent `/info`/probe. Soft mode: `LUMEN_PRUNE_SOFT=1` marks `ghost` instead of delete. Report: `data/catalog-prune-last.json`.
+Logic: `lib/network-peers.ts` → `resolveCatalogNodeState()`.
 
-Each node keeps `sources[]` (e.g. `seed:eutxo:connected`, `open-rest:1.2.3.4`).
+#### Map filters (Lumen Node only)
 
-**Map statuses (Lumen Node):**
+| Chip | Shows |
+|------|--------|
+| **Live** (default) | Connected + Live — clean “who’s up” view |
+| **Linked** | Connected only — your current peer links |
+| **All** | Connected + Live + Seen (Ghost still hidden) |
 
-| Status | Meaning | Default filter |
-|--------|---------|----------------|
-| **Connected** | Linked to the active node right now | shown in Live + Linked |
-| **Live** | Answering (TCP / recent REST) | shown in Live |
-| **Seen** | Seen recently, not answering | only in All |
-| **Ghost** | Stale for 7d+ | always hidden |
+My Node: no chips — only the user’s connected peers exist, so a single line like **“95 peers connected to your node”** is shown instead.
 
-Filter chips on the map: **Live** (default) · **Linked** · **All**.  
-My Node mode defaults to **Linked** (connected peers only). Visual hierarchy: Connected brightest → Live → Seen dim.
+#### Prune (catalog cleanup)
+
+**What:** after every crawl, remove (or soft-mark) IPs that are long dead so the catalog and map stats do not grow forever with garbage.
+
+**Default age:** **`LUMEN_PRUNE_DAYS=21`** (21 days). Override via env; set `0` to disable.
+
+**What is never pruned aggressively:**
+
+- Nodes with `reachable === true` (Live / TCP ok)
+- Nodes with recent `lastReachableAt` or `lastInfoAt` inside the prune window  
+  (= Connected / Live stay safe)
+
+**Age basis:** last **live** signal (`lastReachableAt` / `lastInfoAt`), **not** gossip `lastSeenAt` alone (peer lists would otherwise keep dead IPs “fresh” forever). Never-live IPs age from `firstSeenAt` after a failed probe.
+
+**Soft mode:** `LUMEN_PRUNE_SOFT=1` sets `ghost=true` instead of deleting.
+
+**Where to read the last prune report:**
+
+| File | Content |
+|------|---------|
+| `data/catalog-prune-last.json` | Last run: pruned count, soft count, sample IPs, before/after |
+| `data/network-catalog.json` → `seeds.report.prune` | Same summary embedded in catalog |
+
+```bash
+cat data/catalog-prune-last.json
+# or
+jq '.seeds.report.prune' data/network-catalog.json
+```
 
 ### Unknown miners watcher
 

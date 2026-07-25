@@ -33,8 +33,8 @@ It is built for **node runners** who want beauty and situational awareness, and 
 |------|----------------|
 | **Lumen Node** | Dashboard on the public host reads the server’s local Ergo (`/api/node` → `:9053`) |
 | **My Node** | Same UI, data via **Lumen Bridge** from *your* machine |
-| **3D / Map** | Peer graph + map pins; center label switches with mode |
-| **Blocks & mempool** | Timeline with real `txCount`, unconfirmed list |
+| **3D / Map** | Peer graph + world map with status filters; multi-seed network catalog |
+| **Blocks & mempool** | Timeline with real `txCount`, honest miner (Explorer + pool map) |
 | **Bridge** | Outbound WebSocket agent; allowlisted GET only |
 | **No inbound ports** | Your node never needs a public REST port for Lumen |
 
@@ -50,6 +50,7 @@ It is built for **node runners** who want beauty and situational awareness, and 
 │  lumen-bridge       │   outbound only              │    UI  → :3000 (Next.js) │
 │  (Docker or node)   │                              │    WS  → :3100 (hub)     │
 └─────────────────────┘                              │  Ergo (Lumen Node) :9053 │
+                                                     │  crawler → catalog.json  │
                                                      └──────────────────────────┘
 ```
 
@@ -57,7 +58,7 @@ It is built for **node runners** who want beauty and situational awareness, and 
 
 | Mode | Source | When to use |
 |------|--------|-------------|
-| **Lumen Node** | Server’s Ergo via `/api/node` | Browse the public dashboard / host node |
+| **Lumen Node** | Server’s Ergo via `/api/node` + global peer catalog for the map | Browse the public dashboard / host node |
 | **My Node** | Your Ergo via Bridge → `/api/bridge/node` | Personal node as the center of the UI |
 
 **Bridge flow**
@@ -69,6 +70,78 @@ It is built for **node runners** who want beauty and situational awareness, and 
 
 Agent code and Docker context live in this repo under [`bridge/`](./bridge/).  
 The hub is [`bridge-server/`](./bridge-server/) (runs on the Lumen host).
+
+---
+
+## Network map
+
+The world map behaves differently in each mode:
+
+| Mode | What you see |
+|------|----------------|
+| **Lumen Node** | Broad Ergo network from a multi-seed catalog (~800+ known IPs), with filters |
+| **My Node** | Only peers currently connected to **your** node (Bridge). No network catalog, no filter chips |
+
+### Multi-seed discovery
+
+A background crawler (`scripts/crawl-network.mjs`, timer ~12 min) builds `data/network-catalog.json`:
+
+1. **Local Ergo** — `/peers/all` + `/peers/connected`
+2. **Public REST seeds** — curated list in [`scripts/network-seeds.json`](./scripts/network-seeds.json)
+3. **Official knownPeers** — from Ergo `mainnet.conf`
+4. **Fan-out** — dual-pass crawl of unique `restApiUrl` hosts (deduped, max 200, careful timeouts)
+5. **Open-REST scan** — try `http://IP:9053` where no API was known
+6. **TCP probe** on `:9030` + GeoIP for pins
+7. **Prune** — drop long-dead entries (see below)
+
+```bash
+npm run crawl:network
+```
+
+### Node statuses
+
+| Status | Meaning |
+|--------|---------|
+| **Connected** | In the active node’s live peer list right now |
+| **Live** | Answering now (open P2P port and/or recent REST `/info`) |
+| **Seen** | Seen in discovery recently, not answering |
+| **Ghost** | Stale for a long time — **hidden** on the map |
+
+Visual hierarchy: Connected (bright cyan) → Live (blue) → Seen (dim).
+
+### Map filters (Lumen Node)
+
+| Chip | Shows |
+|------|--------|
+| **Live** (default) | Connected + Live — clean “who’s up” view |
+| **Linked** | Connected only |
+| **All** | Connected + Live + Seen |
+
+My Node does not show these chips (only connected peers exist). Instead:
+
+> **N peers connected to your node**
+
+### Prune (catalog cleanup)
+
+**Prune** keeps the catalog healthy: after each crawl, IPs that have been **dead for a long time** are removed so the map and stats are not flooded with garbage.
+
+| Rule | Detail |
+|------|--------|
+| **Default age** | **21 days** (`LUMEN_PRUNE_DAYS`) |
+| **Never pruned while live** | `reachable` nodes and nodes with recent probe / REST `/info` |
+| **Age signal** | Last **live** activity — not gossip “seen in someone’s peer list” alone |
+| **Soft mode** | `LUMEN_PRUNE_SOFT=1` marks ghost instead of delete |
+| **Disable** | `LUMEN_PRUNE_DAYS=0` |
+
+**Last prune report:**
+
+```bash
+cat data/catalog-prune-last.json
+# or embedded:
+# data/network-catalog.json → seeds.report.prune
+```
+
+Full ops detail: [LUMEN.md](./LUMEN.md) → *Network map — architecture*.
 
 ---
 
@@ -127,7 +200,7 @@ Requires **Node.js 18+** next to Ergo.
 | **Top bar** | Live status, Lumen / My Node badge, Share card, **NODE SETTINGS**, refresh |
 | **Hero** | Height (headers / full), source chip (`SOURCE · LUMEN` or `SOURCE · BRIDGE`) |
 | **3D constellation** | Peers as a spatial graph; your node as the center |
-| **World map** | Peer locations + optional My Node pin (agent public IP) |
+| **World map** | Multi-seed network (Lumen) or your connected peers (My Node); status filters |
 | **Metrics** | Height, peers, mempool, avg block time |
 | **Blocks + mempool** | Recent blocks with real TX counts; unconfirmed txs |
 | **NODE SETTINGS** | Data source toggle + Connect my node (Docker / status / token) |
