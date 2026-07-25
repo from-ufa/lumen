@@ -1,0 +1,25 @@
+[Unit]
+Description=Lumen Ergo Node Dashboard (Next.js)
+Documentation=https://github.com/from-ufa/lumen
+After=network.target ergonode.service
+Wants=ergonode.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/lumen
+Environment=NODE_ENV=production
+Environment=ERGO_NODE_URL=http://127.0.0.1:9053
+EnvironmentFile=-/home/lumen/.env.local
+# Bind localhost only — public access via Caddy HTTPS (ergolumen.net)
+ExecStart=/usr/bin/npx next start -H 127.0.0.1 -p 3000
+Restart=on-failure
+RestartSec=5
+Nice=10
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
+# Legacy name still works: systemctl restart aether → same unit
+Alias=aether.service

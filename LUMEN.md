@@ -5,7 +5,7 @@ Snapshot: **2026-07-25**. Read this first, then code.
 
 > **Rebrand:** product was **Aether → Lumen** (2026-07-24).  
 > **Deploy path:** `/home/lumen` (compat symlink `/home/aether` → `/home/lumen`).  
-> **systemd unit names** still `aether.service` / `aether-crawl.*` (legacy) + `lumen.service` / `lumen-bridge-server`.  
+> **systemd:** primary UI unit is **`lumen.service`** (alias `aether.service` for old scripts). Crawl timer still `aether-crawl.*`. Bridge: `lumen-bridge-server`.  
 > Auth accepts Lumen + legacy Aether cookie/header/password file names.
 
 | | |
@@ -368,9 +368,10 @@ Dashboard shows **`NODE · <name>`** from live `/info` so you can verify the act
 | Unit | Role |
 |------|------|
 | `caddy.service` | HTTPS edge · `ergolumen.net` → :3000 / `/ws` → :3100 |
-| `aether.service` | Next.js `0.0.0.0:3000` (still binds all ifcs; public via Caddy) |
+| **`lumen.service`** | Next.js **`127.0.0.1:3000`** (public only via Caddy). Repo unit: `deploy/lumen.service` |
+| `aether.service` | **Alias** → `lumen.service` (`Alias=` / symlink). Old scripts keep working |
 | `lumen-bridge-server.service` | Bridge hub **`127.0.0.1:3100`** |
-| `aether-crawl.timer` | Network catalog every ~12m |
+| `aether-crawl.timer` | Network catalog every ~12m (legacy unit name) |
 | `ergonode.service` | Ergo node (independent) |
 | `nginx` | **disabled** (replaced by Caddy for :80/:443) |
 
@@ -379,10 +380,10 @@ Dashboard shows **`NODE · <name>`** from live `/info` so you can verify the act
 ```bash
 cd /home/lumen
 npm run build
-systemctl restart aether
+systemctl restart lumen
 systemctl restart lumen-bridge-server   # if hub code changed
 systemctl reload caddy                  # if Caddyfile changed
-systemctl is-active caddy aether lumen-bridge-server aether-crawl.timer ergonode
+systemctl is-active caddy lumen lumen-bridge-server aether-crawl.timer ergonode
 ```
 
 ### View
@@ -403,7 +404,7 @@ cd /home/lumen
 git status
 git add …
 git commit -m "…"
-git push origin main   # github.com:from-ufa/aether
+git push origin main   # github.com:from-ufa/lumen
 ```
 
 ---
@@ -452,8 +453,8 @@ ls -la /home/lumen/data/network-catalog.json
 | Peers without public IP | Unmapped on world map (NAT / empty address) |
 | Public Mode | Single shared password file; not multi-user accounts |
 | PWA | No service worker / offline cache |
-| Repo name | GitHub still `from-ufa/aether`; product name is Lumen |
-| Deploy paths | Still `/home/lumen` + `aether.service` (intentional, no downtime rename) |
+| Repo name | Public GitHub is `from-ufa/lumen` |
+| Deploy paths | `/home/lumen` + **`lumen.service`** (alias `aether.service`) |
 | Copy on HTTP | Clipboard uses fallback (`execCommand`) for plain `http://` (no secure context) |
 | Docker agent | Designed for **Linux `--network host`**; other Docker network modes need different `LUMEN_NODE` |
 
@@ -465,11 +466,11 @@ ls -la /home/lumen/data/network-catalog.json
 Project: Lumen — Ergo Node Dashboard
 URL:     https://ergolumen.net
 Path:    /home/lumen
-Git:     from-ufa/aether (main)
+Git:     from-ufa/lumen (main)
 Handoff: /home/lumen/LUMEN.md  (+ /root/SERVER.md for host)
 
 Services:
-  systemctl is-active caddy aether lumen-bridge-server aether-crawl.timer ergonode
+  systemctl is-active caddy lumen lumen-bridge-server aether-crawl.timer ergonode
 
 Modes:
   Lumen Node → /api/node/*
@@ -510,6 +511,7 @@ Do not:
 | 2026-07-25 | **Network stats HUD:** Discovered / Live / Connected (+ on map) on World Map |
 | 2026-07-25 | **Ghost as history:** soft-prune keeps dead IPs; stats Ghost + Total ever; no hard-delete by default |
 | 2026-07-25 | **Premium node search:** right-side live search (name / IP / country / version), fly-to + highlight |
+| 2026-07-25 | **systemd rename:** primary unit `aether.service` → **`lumen.service`** (`Alias=aether.service` for compat); bind remains `127.0.0.1:3000` |
 
 ### Block miner attribution (honest)
 
@@ -683,9 +685,9 @@ Recent commits live on `main` (`git log --oneline -20`).
 
 ```bash
 cd /home/lumen
-npm run build && systemctl restart aether
+npm run build && systemctl restart lumen
 # optional hub:
 # systemctl restart lumen-bridge-server
 
-systemctl is-active aether lumen-bridge-server ergonode oracle-core oracle-core-usd aether-crawl.timer
+systemctl is-active lumen lumen-bridge-server ergonode oracle-core oracle-core-usd aether-crawl.timer
 ```

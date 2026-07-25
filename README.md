@@ -258,8 +258,8 @@ For local hub tests you may set `AUTO_REGISTER_TOKENS=1` on the server.
 
 ```bash
 cd /home/lumen   # or your clone
-npm run build && systemctl restart aether
-systemctl is-active caddy aether lumen-bridge-server
+npm run build && systemctl restart lumen
+systemctl is-active caddy lumen lumen-bridge-server
 ```
 
 Full ops map: **[LUMEN.md](./LUMEN.md)**.

@@ -9,7 +9,7 @@
 |--|--|
 | Product name | **Lumen** (was Aether) |
 | Code path | still `/home/lumen` |
-| systemd | still `aether.service` / `aether-crawl.timer` |
+| systemd | **`lumen.service`** (alias `aether.service`); crawl still `aether-crawl.timer` |
 | Password file | `.lumen-public-password` (reads legacy `.aether-public-password`) |
-| GitHub | `from-ufa/aether` (repo name unchanged for now) |
+| GitHub | **`from-ufa/lumen`** (public) |
 
