@@ -1649,13 +1649,6 @@ export default function PeerMap({
     }
   }, [refetch]);
 
-  const topCountries = useMemo(() => {
-    if (!data?.countries) return [];
-    return Object.entries(data.countries)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8);
-  }, [data]);
-
   /** No peer-IP boom highlight — miner is not a map pin */
   const boomIps = useMemo(() => new Set<string>(), []);
 
@@ -1753,6 +1746,21 @@ export default function PeerMap({
       return s === "connected" || s === "live" || s === "seen";
     });
   }, [allMarkers, mapFilter, selected?.id, selected?.ip]);
+
+  /**
+   * Top regions follow the active map filter (Live / Linked / All),
+   * so counts match pins currently shown — not the full API snapshot.
+   */
+  const topCountries = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const m of peerMarkers) {
+      const cc = (m.country || "??").toUpperCase();
+      counts[cc] = (counts[cc] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8);
+  }, [peerMarkers]);
 
   /** Search corpus: all non-ghost mapped nodes (+ me if present) */
   const searchNodes = useMemo(() => {
