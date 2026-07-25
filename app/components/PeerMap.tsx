@@ -2197,8 +2197,60 @@ export default function PeerMap({
       </div>
     </div>
 
-    {/* ── Mobile: filters + legend UNDER the map ── */}
+    {/* ── Mobile: UNDER map — selected card first, then stats / regions ── */}
     <div className="md:hidden mt-3 space-y-2.5">
+      {/* Node card: immediately below the map canvas */}
+      {selected && (
+        <div className="glass rounded-2xl px-4 py-3.5 border border-white/10 shadow-[0_8px_28px_rgba(0,0,0,0.35)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div
+                className="font-mono text-[10px] tracking-[2px] mb-1 flex items-center gap-1"
+                style={{
+                  color:
+                    selected.id === "me"
+                      ? "#FF7A3D"
+                      : stateMeta(normalizeState(selected.state)).color,
+                }}
+              >
+                <MapPin className="w-3 h-3" />{" "}
+                {selected.id === "me"
+                  ? nodeMode === "my"
+                    ? "MY NODE"
+                    : "LUMEN NODE"
+                  : stateMeta(normalizeState(selected.state)).short}
+              </div>
+              <div className="font-semibold text-sm break-all">
+                {selected.name}
+              </div>
+              <div className="font-mono text-xs text-[#A0A0B0] mt-1 break-all">
+                {selected.ip}
+                {selected.port ? `:${selected.port}` : ""}
+              </div>
+              <div className="text-xs mt-1.5 text-[#E8E8F0]/90">
+                {[selected.city, selected.country].filter(Boolean).join(", ") ||
+                  "Unknown location"}
+              </div>
+              {shortVersion(selected.version) && (
+                <div className="text-[10px] font-mono text-[#00E5FF]/75 mt-1">
+                  v{shortVersion(selected.version)}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelected(null);
+                setSearchFocus(null);
+              }}
+              className="text-[#A0A0B0] hover:text-white text-xs font-mono flex-shrink-0"
+            >
+              CLOSE
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="glass rounded-2xl px-3 py-3 border border-white/10">
         {nodeMode === "lumen" ? (
           <>
@@ -2318,49 +2370,6 @@ export default function PeerMap({
         </div>
       </div>
       {topRegionsBlock}
-      {selected && (
-        <div className="glass rounded-2xl px-4 py-3 border border-white/10">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div
-                className="font-mono text-[10px] tracking-[2px] mb-1 flex items-center gap-1"
-                style={{
-                  color:
-                    selected.id === "me"
-                      ? "#FF7A3D"
-                      : stateMeta(normalizeState(selected.state)).color,
-                }}
-              >
-                <MapPin className="w-3 h-3" />{" "}
-                {selected.id === "me"
-                  ? nodeMode === "my"
-                    ? "MY NODE"
-                    : "LUMEN NODE"
-                  : stateMeta(normalizeState(selected.state)).short}
-              </div>
-              <div className="font-semibold text-sm break-all">{selected.name}</div>
-              <div className="font-mono text-xs text-[#A0A0B0] mt-1 break-all">
-                {selected.ip}
-                {selected.port ? `:${selected.port}` : ""}
-              </div>
-              <div className="text-xs mt-1.5">
-                {[selected.city, selected.country].filter(Boolean).join(", ") ||
-                  "Unknown location"}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setSelected(null);
-                setSearchFocus(null);
-              }}
-              className="text-[#A0A0B0] hover:text-white text-xs font-mono flex-shrink-0"
-            >
-              CLOSE
-            </button>
-          </div>
-        </div>
-      )}
       {nodeMode === "lumen" && (
         <div className="flex items-center justify-between px-1 text-[10px] font-mono text-[#A0A0B0] tracking-wider">
           <span>
