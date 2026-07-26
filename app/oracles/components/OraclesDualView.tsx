@@ -288,17 +288,17 @@ function LegendItem({
   hint: string;
 }) {
   return (
-    <div className="flex items-start gap-2.5 min-w-0">
-      <div className="mt-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+    <div className="flex items-start gap-2 min-w-0 overflow-hidden">
+      <div className="mt-0.5 shrink-0 flex items-center justify-center w-3.5 h-3.5">
         {shape === "dot" && (
           <span
-            className="block w-2.5 h-2.5 rounded-full"
+            className="block w-2 h-2 rounded-full"
             style={{ background: color, boxShadow: `0 0 8px ${color}66` }}
           />
         )}
         {shape === "hex" && (
           <span
-            className="block w-3 h-3"
+            className="block w-2.5 h-2.5"
             style={{
               background: color,
               clipPath:
@@ -308,21 +308,21 @@ function LegendItem({
         )}
         {shape === "diamond" && (
           <span
-            className="block w-2.5 h-2.5 rotate-45"
+            className="block w-2 h-2 rotate-45"
             style={{ background: color }}
           />
         )}
         {shape === "star" && (
-          <span className="text-[11px] leading-none" style={{ color }}>
+          <span className="text-[10px] leading-none" style={{ color }}>
             ★
           </span>
         )}
       </div>
-      <div className="min-w-0">
-        <div className="text-[11px] font-medium text-[#D0D0D8] leading-tight">
+      <div className="min-w-0 overflow-hidden">
+        <div className="text-[10px] sm:text-[11px] font-medium text-[#D0D0D8] leading-tight truncate">
           {label}
         </div>
-        <div className="text-[10px] text-[#6B6B78] leading-snug mt-0.5">
+        <div className="text-[9px] sm:text-[10px] text-[#6B6B78] leading-snug mt-0.5 line-clamp-1">
           {hint}
         </div>
       </div>
@@ -357,7 +357,7 @@ function OracleBlock({
 
   return (
     <section
-      className="h-full min-h-0 flex flex-col rounded-2xl sm:rounded-[1.35rem] border overflow-hidden"
+      className="h-full w-full min-w-0 max-w-full flex flex-col rounded-2xl sm:rounded-[1.35rem] border overflow-hidden"
       style={{
         borderColor: theme.border,
         background: `linear-gradient(180deg, ${theme.surface} 0%, rgba(9,9,12,0.98) 45%)`,
@@ -365,8 +365,8 @@ function OracleBlock({
       }}
     >
       {/* Compact header: title left · epoch ring+copy right */}
-      <header className="shrink-0 flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 lg:px-5 py-3 border-b border-white/[0.06] min-h-[4.75rem]">
-        <div className="min-w-0 flex items-center gap-2">
+      <header className="shrink-0 flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 lg:px-5 py-3 border-b border-white/[0.06] h-[4.75rem]">
+        <div className="min-w-0 flex items-center gap-2 overflow-hidden">
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0"
             style={{
@@ -402,8 +402,8 @@ function OracleBlock({
         />
       </header>
 
-      {/* Human status strip — fixed min-height so dual panes align */}
-      <div className="shrink-0 px-3.5 sm:px-4 lg:px-5 py-2 border-b border-white/[0.04] bg-black/20 min-h-[3.25rem] flex items-center">
+      {/* Human status strip — fixed height so dual panes align */}
+      <div className="shrink-0 px-3.5 sm:px-4 lg:px-5 py-2 border-b border-white/[0.04] bg-black/20 h-[3.25rem] flex items-center overflow-hidden">
         <p className="text-[11px] sm:text-[12px] text-[#B0B0BC] leading-snug line-clamp-2">
           <span className="font-medium" style={{ color: st.color }}>
             {st.label}
@@ -423,10 +423,10 @@ function OracleBlock({
         </p>
       </div>
 
-      {/* Map stage — flex-grow keeps dual panes same height */}
-      <div className="flex-1 min-h-0 flex flex-col px-3 sm:px-4 pt-3 sm:pt-3.5">
+      {/* Map stage — fixed dual height, identical box on both panes */}
+      <div className="shrink-0 px-3 sm:px-4 pt-3 sm:pt-3.5">
         <div
-          className="relative flex-1 min-h-0 rounded-2xl overflow-hidden border border-white/[0.06]"
+          className="relative w-full rounded-2xl overflow-hidden border border-white/[0.06]"
           style={{
             background: "#050508",
             boxShadow: `inset 0 0 80px ${theme.accentDim}`,
@@ -453,7 +453,7 @@ function OracleBlock({
             </div>
           )}
 
-          <div className="lumen-oracle-panel lumen-oracle-panel--dual relative w-full h-full">
+          <div className="lumen-oracle-panel lumen-oracle-panel--dual relative w-full">
             <OracleConstellation
               feed={feed}
               compact
@@ -521,54 +521,56 @@ function OracleBlock({
         </div>
       </div>
 
-      {/* Single price + activity + legend — stacked for dual-column rhythm */}
+      {/* Footer slots — fixed heights so USD/XAU stay pixel-symmetric */}
       <div className="shrink-0 px-3 sm:px-4 py-3 sm:py-3.5 grid grid-cols-1 gap-2.5 sm:gap-3">
-        <div className="rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center min-h-[88px]">
+        {/* Price — always same box; alt line reserved even when empty */}
+        <div className="h-[6.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center overflow-hidden">
           <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-1.5">
             On-chain price
           </div>
           <div
-            className="font-mono text-[1.35rem] sm:text-[1.5rem] font-semibold tabular-nums tracking-tight leading-none"
+            className="font-mono text-[1.35rem] sm:text-[1.5rem] font-semibold tabular-nums tracking-tight leading-none truncate"
             style={{ color: theme.label }}
           >
             {feed.priceLabel || "—"}
           </div>
-          <div className="mt-1 text-[10px] text-[#8B8B9A] font-mono">
+          <div className="mt-1 text-[10px] text-[#8B8B9A] font-mono truncate">
             {feed.unitLabel}
           </div>
-          {feed.priceAlt && (
-            <div
-              className="mt-1.5 text-[11px] font-mono"
-              style={{ color: `${theme.accent}dd` }}
-            >
-              {feed.priceAlt}
-            </div>
-          )}
+          <div
+            className="mt-1.5 text-[11px] font-mono truncate min-h-[1rem]"
+            style={{ color: feed.priceAlt ? `${theme.accent}dd` : "transparent" }}
+          >
+            {feed.priceAlt || "\u00a0"}
+          </div>
         </div>
 
-        <div className="rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 min-h-[88px] flex flex-col">
-          <div className="flex items-center justify-between mb-2">
+        {/* Publish activity — fixed height; list or empty state never resizes the pane */}
+        <div className="h-[6.5rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between mb-2 shrink-0">
             <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase">
               Publish activity
             </div>
-            {activity.some((a) => a.kind === "datapoint") && (
-              <span
-                className="text-[9px] font-mono tracking-wider uppercase"
-                style={{ color: theme.accent }}
-              >
-                ● firing
-              </span>
-            )}
+            <span
+              className="text-[9px] font-mono tracking-wider uppercase min-w-[3.5rem] text-right"
+              style={{
+                color: activity.some((a) => a.kind === "datapoint")
+                  ? theme.accent
+                  : "transparent",
+              }}
+            >
+              ● firing
+            </span>
           </div>
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 overflow-hidden">
             {activity.length === 0 ? (
-              <p className="text-[11px] text-[#5C5C6A] leading-relaxed">
+              <p className="text-[11px] text-[#5C5C6A] leading-snug line-clamp-3">
                 When an operator posts a datapoint, a diamond flies from their
                 node into the pool core.
               </p>
             ) : (
-              <ul className="space-y-1 max-h-[72px] overflow-hidden">
-                {activity.slice(0, 4).map((row) => (
+              <ul className="space-y-1 h-full overflow-hidden">
+                {activity.slice(0, 3).map((row) => (
                   <li
                     key={row.id}
                     className="text-[10px] sm:text-[11px] font-mono truncate leading-snug"
@@ -601,11 +603,12 @@ function OracleBlock({
           </div>
         </div>
 
-        <div className="rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3">
-          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2.5">
+        {/* Legend — fixed height, 2×2 grid */}
+        <div className="h-[7.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 overflow-hidden">
+          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2">
             Map legend
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
             <LegendItem
               shape="hex"
               color={theme.accent}
@@ -650,12 +653,12 @@ export default function OraclesDualView({
 
   if (isLoading && !data) {
     return (
-      <div className="flex flex-col gap-5 sm:gap-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 lg:gap-6 items-stretch">
+      <div className="flex flex-col gap-5 sm:gap-6 w-full min-w-0">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:gap-5 lg:gap-6 items-stretch w-full">
           {[0, 1].map((i) => (
             <div
               key={i}
-              className="rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] h-[640px] animate-pulse"
+              className="min-w-0 w-full rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] h-[640px] animate-pulse"
             />
           ))}
         </div>
@@ -681,15 +684,13 @@ export default function OraclesDualView({
   }
 
   return (
-    <div className="flex flex-col gap-5 sm:gap-6">
-      {/* Side-by-side dual panels — equal height, shared rhythm */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 lg:gap-6 items-stretch">
+    <div className="flex flex-col gap-5 sm:gap-6 w-full min-w-0">
+      {/* Side-by-side dual panels — equal columns (minmax 0 prevents content stretch) */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:gap-5 lg:gap-6 items-stretch w-full">
         {panes.map((feed) => (
-          <OracleBlock
-            key={feed.id}
-            feed={feed}
-            tipHeight={data?.tipHeight ?? null}
-          />
+          <div key={feed.id} className="min-w-0 w-full h-full">
+            <OracleBlock feed={feed} tipHeight={data?.tipHeight ?? null} />
+          </div>
         ))}
       </div>
 
