@@ -77,7 +77,7 @@ export default function ConnectNodeInvite({
               opacity: { duration: 0.45 },
               filter: { duration: 0.55 },
             }}
-            style={{ originX: 1, originY: 1, transformOrigin: "right bottom" }}
+            style={{ originX: 1, originY: 0, transformOrigin: "right top" }}
             className="relative w-full max-w-[min(100%,22rem)] md:max-w-[22rem]"
           >
             {/* Outer pulse halo — keeps drawing the eye */}
@@ -228,10 +228,10 @@ export default function ConnectNodeInvite({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.8 }}
             transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-2 bottom-0 pointer-events-none w-0 h-0"
+            className="absolute right-2 top-1 pointer-events-none w-0 h-0"
             aria-hidden
           >
-            <span className="relative flex h-2.5 w-2.5 -translate-y-1">
+            <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#FF7A3D]/5" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#FF7A3D] shadow-[0_0_14px_rgba(255,122,61,0.85)]" />
             </span>

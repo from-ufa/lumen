@@ -605,9 +605,20 @@ export default function LumenDashboard() {
       </div>
 
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
-        {/* HERO — same bottom rhythm as pre-layout: mb-6 sm:mb-8 → toggle */}
+        {/* HERO — invite aligned with ERGO NODE VISUALIZER for even top/bottom rhythm */}
         <div className="mb-6 sm:mb-8 min-w-0">
-          <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#FF7A3D] mb-1">ERGO NODE VISUALIZER</div>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-6 mb-1">
+            <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#FF7A3D] pt-0.5 shrink-0">
+              ERGO NODE VISUALIZER
+            </div>
+            <div className="w-full sm:w-auto sm:max-w-[22rem] sm:min-w-[16rem] flex justify-end shrink-0">
+              <ConnectNodeInvite
+                enabled={nodeMode === "lumen"}
+                delayMs={5000}
+                onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+              />
+            </div>
+          </div>
           <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05]">
             The living network.
           </h1>
@@ -669,13 +680,8 @@ export default function LumenDashboard() {
           )}
         </div>
 
-        {/*
-          Same spacing as before: hero mb-6/8 → this row mb-4 → viz.
-          Heights sit on the right of the mode switcher; invite floats above
-          heights without reserving gap when closed.
-        */}
+        {/* Mode switcher + heights — same mb-4 → viz as before */}
         <div className="mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-6">
-          {/* Desktop view toggle — same shell as historical VIEW TOGGLE */}
           <div className="hidden md:flex items-center gap-2 min-w-0">
             <div className="inline-flex p-1 rounded-2xl glass border border-white/10">
               <button
@@ -706,17 +712,7 @@ export default function LumenDashboard() {
             </span>
           </div>
 
-          {/* Heights + invite (invite absolute so closed state = zero extra gap) */}
-          <div className="relative flex items-end justify-end gap-3 sm:gap-6 text-sm shrink-0 self-end md:self-auto">
-            <div className="absolute bottom-full right-0 mb-2.5 z-20 w-[min(100vw-1.5rem,22rem)] flex justify-end pointer-events-none">
-              <div className="pointer-events-auto w-full flex justify-end">
-                <ConnectNodeInvite
-                  enabled={nodeMode === "lumen"}
-                  delayMs={5000}
-                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
-                />
-              </div>
-            </div>
+          <div className="flex items-end justify-end gap-3 sm:gap-6 text-sm shrink-0 self-end md:self-auto">
             <div className="text-right">
               <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest font-mono">
                 HEADERS
