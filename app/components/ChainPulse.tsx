@@ -1,8 +1,7 @@
 "use client";
 
 /**
- * Block Genesis v1.1 — Vision Pro polish
- * Seal→Dock climax · TX storyboard · frosted glass + soft gaussian light
+ * Block Genesis v1.1.1 — soft Points · frosted glass · physical dock squash
  * Data plane: /api/chain/feed + txGroups (unchanged)
  */
 
@@ -53,10 +52,40 @@ function getSoftTex(): THREE.CanvasTexture | null {
 }
 
 const GEO_SPRITE = new THREE.PlaneGeometry(1, 1);
-const GEO_NUCLEUS = new THREE.SphereGeometry(1, 32, 32);
-const GEO_CRYSTAL = new THREE.IcosahedronGeometry(1, 2);
+const GEO_CRYSTAL = new THREE.IcosahedronGeometry(1, 3);
 const GEO_DISC = new THREE.CylinderGeometry(1, 1, 0.09, 48);
 const GEO_HIT = new THREE.SphereGeometry(1, 12, 12);
+
+/* Soft additive Points shader — true circular gaussian, never hard spheres */
+const softPointsVert = /* glsl */ `
+  attribute float aSize;
+  attribute vec3 aColor;
+  varying vec3 vColor;
+  varying float vAlpha;
+  uniform float uPixelRatio;
+  void main() {
+    vColor = aColor;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    float dist = max(0.5, -mv.z);
+    gl_PointSize = aSize * uPixelRatio * (280.0 / dist);
+    gl_PointSize = clamp(gl_PointSize, 2.0, 96.0);
+    vAlpha = smoothstep(0.0, 1.0, aSize * 0.15);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+const softPointsFrag = /* glsl */ `
+  uniform sampler2D uMap;
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    vec4 tex = texture2D(uMap, gl_PointCoord);
+    float a = tex.a * vAlpha;
+    if (a < 0.015) discard;
+    // Additive-friendly: color * falloff
+    gl_FragColor = vec4(vColor * tex.r, a);
+  }
+`;
 
 function hash01(s: string, salt = 0): number {
   let h = 2166136261 ^ salt;
@@ -258,10 +287,10 @@ function TxConstellations({
   }, [particles]);
 
   const map = useMemo(() => getSoftTex(), []);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
   const _tmp = useMemo(() => new THREE.Vector3(), []);
   const _axis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
+  const { gl } = useThree();
 
   const flatParts = useMemo(() => {
     const out: Array<{
@@ -288,8 +317,43 @@ function TxConstellations({
     return out;
   }, [slots, partsByTx]);
 
-  const instRef = useRef<THREE.InstancedMesh>(null!);
-  const count = flatParts.length;
+  const count = Math.max(1, flatParts.length);
+  const posArr = useMemo(() => new Float32Array(count * 3), [count]);
+  const colArr = useMemo(() => new Float32Array(count * 3), [count]);
+  const sizeArr = useMemo(() => new Float32Array(count), [count]);
+
+  const pointsGeo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(posArr, 3));
+    g.setAttribute("aColor", new THREE.BufferAttribute(colArr, 3));
+    g.setAttribute("aSize", new THREE.BufferAttribute(sizeArr, 1));
+    g.setDrawRange(0, flatParts.length);
+    return g;
+  }, [posArr, colArr, sizeArr, flatParts.length]);
+
+  const pointsMat = useMemo(() => {
+    return new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: map },
+        uPixelRatio: { value: Math.min(2, gl.getPixelRatio()) },
+      },
+      vertexShader: softPointsVert,
+      fragmentShader: softPointsFrag,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      toneMapped: false,
+    });
+  }, [map, gl]);
+
+  useEffect(
+    () => () => {
+      pointsGeo.dispose();
+      pointsMat.dispose();
+    },
+    [pointsGeo, pointsMat]
+  );
+
   const centers = useRef<Map<string, THREE.Vector3>>(new Map());
 
   useFrame((state) => {
@@ -297,6 +361,8 @@ function TxConstellations({
     const camQ = state.camera.quaternion;
     const cap = genesis.capture;
     const cry = genesis.crystal;
+    pointsMat.uniforms.uPixelRatio.value = Math.min(2, state.gl.getPixelRatio());
+
     // Only mempool groups fully capture; sealed dim & partially draw in
     for (const s of slots) {
       const g = groupRefs.current.get(s.group.txId);
@@ -322,38 +388,23 @@ function TxConstellations({
       g.position.lerp(_tmp, 0.14);
       centers.current.set(s.group.txId, g.position.clone());
 
-      const nuc = g.children.find((c) => c.name === "nucleus") as
-        | THREE.Mesh
-        | undefined;
       const glow = g.children.find((c) => c.name === "glow") as
         | THREE.Mesh
         | undefined;
       const sel =
         selection?.kind === "tx" && selection.txId === s.group.txId;
-      if (nuc) {
-        const mat = nuc.material as THREE.MeshBasicMaterial;
-        mat.opacity = Math.max(
-          0,
-          0.9 * (1 - cryW) * (isMem ? 1 : 0.5) * (sel ? 1 : 0.92)
-        );
-        nuc.scale.setScalar(
-          (sel ? 0.14 : 0.1) *
-            (1 + Math.sin(t * 2.1 + s.phase) * 0.05) *
-            (1 - cryW * 0.75)
-        );
-      }
       if (glow) {
         (glow.material as THREE.MeshBasicMaterial).opacity =
-          (sel ? 0.5 : 0.22) * (1 - cryW) * (isMem ? 1 : 0.55);
-        glow.scale.setScalar(2.6 * (1 - cryW * 0.5));
+          (sel ? 0.55 : 0.28) * (1 - cryW) * (isMem ? 1 : 0.5);
+        glow.scale.setScalar((sel ? 0.55 : 0.38) * (1 - cryW * 0.55));
         glow.quaternion.copy(camQ);
       }
       g.visible = cryW < 0.97;
     }
 
-    const mesh = instRef.current;
-    if (!mesh || count === 0) return;
-    for (let i = 0; i < count; i++) {
+    // Soft Points — molecular cloud around each TX center
+    const n = flatParts.length;
+    for (let i = 0; i < n; i++) {
       const fp = flatParts[i];
       const center = centers.current.get(fp.txId) || _tmp.set(0, 0, 0);
       const isMem = fp.p.pending;
@@ -362,32 +413,36 @@ function TxConstellations({
       const ang = fp.localPhase + t * fp.localSpeed;
       const localScale = Math.max(0, 1 - cryW * 0.98);
       const lr = fp.localR * localScale * (1 - capW * 0.35);
-      // Particles spiral inward as capture rises
       const spiral = 1 - capW * 0.55;
-      const x = center.x + Math.cos(ang) * lr * spiral;
-      const y = center.y + fp.elev * localScale;
-      const z = center.z + Math.sin(ang) * lr * spiral;
+      const o = i * 3;
+      posArr[o] = center.x + Math.cos(ang) * lr * spiral;
+      posArr[o + 1] = center.y + fp.elev * localScale;
+      posArr[o + 2] = center.z + Math.sin(ang) * lr * spiral;
 
       const size =
-        (0.08 + fp.p.weight * 0.12) *
-        (1 + Math.sin(t * 2.5 + fp.localPhase) * 0.07) *
+        (8 + fp.p.weight * 14) *
+        (1 + Math.sin(t * 2.5 + fp.localPhase) * 0.08) *
         localScale *
-        (focusMode && fp.p.stage !== "focus" ? 0.75 : 1);
-
-      dummy.position.set(x, y, z);
-      dummy.quaternion.copy(camQ);
-      dummy.scale.setScalar(Math.max(0.008, size));
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
+        (focusMode && fp.p.stage !== "focus" ? 0.7 : 1) *
+        (1 + genesis.bloom * 0.2);
+      sizeArr[i] = Math.max(1.5, size);
 
       color.set(fp.p.color);
-      color.multiplyScalar(
-        (fp.p.pending ? 1.2 : 0.65) * (1 - cryW * 0.5) * (1 + genesis.bloom * 0.25)
-      );
-      mesh.setColorAt(i, color);
+      const mul =
+        (fp.p.pending ? 1.25 : 0.7) *
+        (1 - cryW * 0.45) *
+        (1 + genesis.bloom * 0.3);
+      colArr[o] = Math.min(1, color.r * mul);
+      colArr[o + 1] = Math.min(1, color.g * mul);
+      colArr[o + 2] = Math.min(1, color.b * mul);
     }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    pointsGeo.setDrawRange(0, n);
+    const posAttr = pointsGeo.getAttribute("position") as THREE.BufferAttribute;
+    const colAttr = pointsGeo.getAttribute("aColor") as THREE.BufferAttribute;
+    const sizeAttr = pointsGeo.getAttribute("aSize") as THREE.BufferAttribute;
+    posAttr.needsUpdate = true;
+    colAttr.needsUpdate = true;
+    sizeAttr.needsUpdate = true;
   });
 
   return (
@@ -405,31 +460,13 @@ function TxConstellations({
             }}
             position={s.home}
           >
-            <mesh
-              name="nucleus"
-              geometry={GEO_NUCLEUS}
-              onClick={(e: ThreeEvent<MouseEvent>) => {
-                e.stopPropagation();
-                const w = new THREE.Vector3();
-                e.object.getWorldPosition(w);
-                onSelectTx(s.group.txId, w);
-              }}
-            >
-              <meshBasicMaterial
-                color={selected ? "#F5E0B0" : accent}
-                transparent
-                opacity={0.9}
-                depthWrite={false}
-                blending={THREE.AdditiveBlending}
-                toneMapped={false}
-              />
-            </mesh>
-            <mesh name="glow" scale={2.6} geometry={GEO_SPRITE} renderOrder={1}>
+            {/* Soft gaussian nucleus only — no hard sphere */}
+            <mesh name="glow" scale={0.42} geometry={GEO_SPRITE} renderOrder={2}>
               <meshBasicMaterial
                 map={map}
                 color={selected ? "#F5E0B0" : accent}
                 transparent
-                opacity={selected ? 0.5 : 0.24}
+                opacity={selected ? 0.55 : 0.3}
                 depthWrite={false}
                 blending={THREE.AdditiveBlending}
                 toneMapped={false}
@@ -438,7 +475,7 @@ function TxConstellations({
             </mesh>
             <mesh
               geometry={GEO_HIT}
-              scale={0.5}
+              scale={0.52}
               onClick={(e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation();
                 const w = new THREE.Vector3();
@@ -452,23 +489,13 @@ function TxConstellations({
         );
       })}
 
-      {count > 0 && (
-        <instancedMesh
-          ref={instRef}
-          args={[GEO_SPRITE, undefined, count]}
+      {flatParts.length > 0 && (
+        <points
+          geometry={pointsGeo}
+          material={pointsMat}
           frustumCulled={false}
-        >
-          <meshBasicMaterial
-            map={map}
-            color="#ffffff"
-            transparent
-            opacity={0.95}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-            toneMapped={false}
-            side={THREE.DoubleSide}
-          />
-        </instancedMesh>
+          renderOrder={3}
+        />
       )}
     </group>
   );
@@ -483,60 +510,81 @@ function FocusShell({
   particles: ChainParticle[];
   highlight: boolean;
 }) {
-  const meshRef = useRef<THREE.InstancedMesh>(null!);
-  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const { gl } = useThree();
   const color = useMemo(() => new THREE.Color(), []);
   const map = useMemo(() => getSoftTex(), []);
   const focus = useMemo(
     () => particles.filter((p) => p.stage === "focus"),
     [particles]
   );
-  const count = focus.length;
+  const count = Math.max(1, focus.length);
+  const posArr = useMemo(() => new Float32Array(count * 3), [count]);
+  const colArr = useMemo(() => new Float32Array(count * 3), [count]);
+  const sizeArr = useMemo(() => new Float32Array(count), [count]);
+  const geo = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(posArr, 3));
+    g.setAttribute("aColor", new THREE.BufferAttribute(colArr, 3));
+    g.setAttribute("aSize", new THREE.BufferAttribute(sizeArr, 1));
+    g.setDrawRange(0, focus.length);
+    return g;
+  }, [posArr, colArr, sizeArr, focus.length]);
+  const mat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uMap: { value: map },
+          uPixelRatio: { value: Math.min(2, gl.getPixelRatio()) },
+        },
+        vertexShader: softPointsVert,
+        fragmentShader: softPointsFrag,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        toneMapped: false,
+      }),
+    [map, gl]
+  );
+  useEffect(
+    () => () => {
+      geo.dispose();
+      mat.dispose();
+    },
+    [geo, mat]
+  );
 
   useFrame((state) => {
-    const mesh = meshRef.current;
-    if (!mesh || count === 0) return;
+    if (focus.length === 0) return;
     const t = state.clock.elapsedTime;
-    const camQ = state.camera.quaternion;
-    for (let i = 0; i < count; i++) {
+    mat.uniforms.uPixelRatio.value = Math.min(2, state.gl.getPixelRatio());
+    for (let i = 0; i < focus.length; i++) {
       const p = focus[i];
       const ang =
         hash01(p.id, 1) * Math.PI * 2 + t * (0.32 + hash01(p.id, 2) * 0.35);
       const R = 0.65 + hash01(p.id, 3) * 1.25;
       const y = 0.45 + (hash01(p.id, 4) - 0.5) * 1.1;
       const pull = highlight ? 0.82 : 1;
-      dummy.position.set(Math.cos(ang) * R * pull, y, Math.sin(ang) * R * pull);
-      dummy.quaternion.copy(camQ);
-      dummy.scale.setScalar(
-        (0.11 + p.weight * 0.12) * (1 + Math.sin(t * 2 + i) * 0.07)
-      );
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
+      const o = i * 3;
+      posArr[o] = Math.cos(ang) * R * pull;
+      posArr[o + 1] = y;
+      posArr[o + 2] = Math.sin(ang) * R * pull;
+      sizeArr[i] =
+        (10 + p.weight * 16) * (1 + Math.sin(t * 2 + i) * 0.08) * (highlight ? 1.15 : 1);
       color.set(p.color);
-      color.multiplyScalar(highlight ? 1.4 : 1.1);
-      mesh.setColorAt(i, color);
+      color.multiplyScalar(highlight ? 1.45 : 1.15);
+      colArr[o] = color.r;
+      colArr[o + 1] = color.g;
+      colArr[o + 2] = color.b;
     }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    geo.setDrawRange(0, focus.length);
+    (geo.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+    (geo.getAttribute("aColor") as THREE.BufferAttribute).needsUpdate = true;
+    (geo.getAttribute("aSize") as THREE.BufferAttribute).needsUpdate = true;
   });
 
-  if (count === 0) return null;
+  if (focus.length === 0) return null;
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[GEO_SPRITE, undefined, count]}
-      frustumCulled={false}
-    >
-      <meshBasicMaterial
-        map={map}
-        transparent
-        opacity={0.95}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-        toneMapped={false}
-        side={THREE.DoubleSide}
-      />
-    </instancedMesh>
+    <points geometry={geo} material={mat} frustumCulled={false} renderOrder={4} />
   );
 }
 
@@ -571,82 +619,88 @@ function GenesisCrystal({
   const bloomRef = useRef<THREE.Mesh>(null!);
   const dockGroup = useRef<THREE.Group>(null!);
   const stackRef = useRef<THREE.Group>(null!);
+  /** Impulse 0..1 then damps — drives visible squash */
   const stackSquash = useRef(0);
+  const landedRef = useRef(false);
   const map = useMemo(() => getSoftTex(), []);
+
+  // Reset land latch when a new cycle starts
+  useEffect(() => {
+    if (genesis.active && genesis.t < 0.05) landedRef.current = false;
+  }, [genesis.active, genesis.t, genesis.tipId]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
+    const dt = Math.min(0.05, state.clock.getDelta());
     const cry = genesis.crystal;
     const seal = genesis.seal;
     const dock = genesis.dock;
     const bloom = genesis.bloom;
 
     if (crystalRef.current) {
+      // Glass volume grows; wireframe stays secondary (static child scale)
       const grow = genesis.active
-        ? 0.12 + cry * 1.0 + seal * 0.08
-        : 1.02 + Math.sin(t * 1.2) * 0.018;
-      // Lift slightly before dock
+        ? 0.18 + cry * 1.05 + seal * 0.12
+        : 1.04 + Math.sin(t * 1.15) * 0.02;
       const lift = genesis.active
-        ? Math.sin(Math.min(1, Math.max(0, (genesis.t - 0.55) / 0.15)) * Math.PI) *
-          0.28 *
+        ? Math.sin(
+            Math.min(1, Math.max(0, (genesis.t - 0.52) / 0.14)) * Math.PI
+          ) *
+          0.32 *
           (1 - dock)
         : 0;
       crystalRef.current.position.y = lift;
-      crystalRef.current.scale.setScalar(grow * (1 - dock * 0.15));
-      crystalRef.current.rotation.y = t * 0.18 + seal * 0.4;
-      crystalRef.current.rotation.x = Math.sin(t * 0.28) * 0.07;
-      // Fade core slightly when docking disc takes over
-      crystalRef.current.visible = dock < 0.95 || !genesis.active;
+      crystalRef.current.scale.setScalar(grow * (1 - dock * 0.12));
+      crystalRef.current.rotation.y = t * 0.16 + seal * 0.55;
+      crystalRef.current.rotation.x = Math.sin(t * 0.26) * 0.06;
+      crystalRef.current.visible = dock < 0.92 || !genesis.active;
     }
 
     if (bloomRef.current) {
-      const s = 2.2 + bloom * 2.8 + cry * 0.6;
+      const s = 2.4 + bloom * 3.4 + cry * 0.8 + seal * 0.5;
       bloomRef.current.scale.setScalar(s);
       (bloomRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.06 + bloom * 0.28 + seal * 0.08;
+        0.05 + bloom * 0.38 + seal * 0.12;
       bloomRef.current.quaternion.copy(state.camera.quaternion);
     }
 
     if (dockGroup.current) {
-      const startY = 0.15;
+      const startY = 0.2;
       const endY = -2.12;
-      // Weighted dock with overshoot already in easeOutBack
-      const y = THREE.MathUtils.lerp(startY, endY, Math.min(1, dock));
-      const sxy = THREE.MathUtils.lerp(0.25, 1.18, Math.min(1, dock * 1.15));
+      // dock already easeOutBack → overshoot past end then recover
+      const y = THREE.MathUtils.lerp(startY, endY, Math.min(1.08, dock));
+      const sxy = THREE.MathUtils.lerp(0.2, 1.2, Math.min(1, dock * 1.2));
+      // Vertical squash of disc on impact
+      const impact = dock > 0.88 ? Math.sin((dock - 0.88) / 0.12 * Math.PI) : 0;
       dockGroup.current.position.y = y;
-      dockGroup.current.scale.set(sxy, 1, sxy);
+      dockGroup.current.scale.set(sxy * (1 + impact * 0.08), 1 - impact * 0.35, sxy * (1 + impact * 0.08));
       dockGroup.current.visible = genesis.active && dock > 0.02;
-      // Trigger stack squash near landing
-      if (dock > 0.85 && dock < 0.98) {
-        stackSquash.current = Math.max(stackSquash.current, (dock - 0.85) / 0.13);
-      } else if (dock >= 0.98) {
-        stackSquash.current = THREE.MathUtils.damp(
-          stackSquash.current,
-          0,
-          8,
-          state.clock.getDelta()
-        );
-      } else if (!genesis.active) {
-        stackSquash.current = THREE.MathUtils.damp(
-          stackSquash.current,
-          0,
-          6,
-          state.clock.getDelta()
-        );
+
+      // Fire stack squash impulse once near landing
+      if (dock >= 0.9 && !landedRef.current) {
+        landedRef.current = true;
+        stackSquash.current = 1;
       }
     }
 
+    // Damped recovery of stack squash
+    stackSquash.current = THREE.MathUtils.damp(stackSquash.current, 0, 5.5, dt);
+
     if (stackRef.current) {
       const sq = stackSquash.current;
-      // Soft physical response: compress Y, widen XZ
-      stackRef.current.scale.set(1 + sq * 0.06, 1 - sq * 0.12, 1 + sq * 0.06);
-      stackRef.current.position.y = -2.32 + sq * 0.04;
+      // Visible physical weight: compress Y, bulge XZ, slight drop
+      stackRef.current.scale.set(
+        1 + sq * 0.12,
+        1 - sq * 0.22,
+        1 + sq * 0.12
+      );
+      stackRef.current.position.y = -2.32 - sq * 0.06;
     }
   });
 
   return (
     <group>
-      {/* Soft volumetric bloom sprite behind core */}
+      {/* Soft bloom pulse (seal climax) */}
       <mesh ref={bloomRef} geometry={GEO_SPRITE} renderOrder={0}>
         <meshBasicMaterial
           map={map}
@@ -660,81 +714,87 @@ function GenesisCrystal({
         />
       </mesh>
 
-      {/* Frosted glass crystal — Apple-grade transmission */}
+      {/* Frosted glass volume — transmission dominates */}
       <group ref={crystalRef}>
         <mesh geometry={GEO_CRYSTAL}>
           <MeshTransmissionMaterial
             backside
-            samples={4}
-            resolution={256}
-            transmission={0.92}
-            roughness={0.12}
-            thickness={0.55}
-            ior={1.45}
-            chromaticAberration={0.03}
-            anisotropy={0.1}
-            distortion={0.05}
-            distortionScale={0.15}
-            temporalDistortion={0.05}
-            color="#d8e4f5"
+            samples={6}
+            resolution={384}
+            transmission={0.96}
+            roughness={0.08 + genesis.seal * 0.18}
+            thickness={0.85}
+            ior={1.5}
+            chromaticAberration={0.04}
+            anisotropy={0.15}
+            anisotropicBlur={0.2}
+            distortion={0.08}
+            distortionScale={0.2}
+            temporalDistortion={0.04}
+            color={genesis.seal > 0.4 ? "#e8eef8" : "#c5d6f0"}
             attenuationColor="#E8C48A"
-            attenuationDistance={0.8}
+            attenuationDistance={0.55}
+            clearcoat={0.6 + genesis.seal * 0.35}
+            clearcoatRoughness={0.12}
           />
         </mesh>
-        {/* Soft specular shell */}
-        <mesh geometry={GEO_CRYSTAL} scale={1.015}>
-          <meshStandardMaterial
-            color="#ffffff"
-            metalness={0.35}
-            roughness={0.18}
+        {/* Soft internal glow fill */}
+        <mesh geometry={GEO_CRYSTAL} scale={0.72}>
+          <meshBasicMaterial
+            color="#E8C48A"
             transparent
-            opacity={0.12}
-            emissive="#E8C48A"
-            emissiveIntensity={0.2}
+            opacity={0.08 + genesis.bloom * 0.18}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
           />
         </mesh>
-        <mesh geometry={GEO_CRYSTAL} scale={1.03}>
+        {/* Secondary structure only — never dominates */}
+        <mesh geometry={GEO_CRYSTAL} scale={1.02}>
           <meshBasicMaterial
             color="#E8C48A"
             wireframe
             transparent
-            opacity={0.06}
+            opacity={0.035 + genesis.seal * 0.025}
             depthWrite={false}
           />
         </mesh>
       </group>
 
-      <pointLight color="#F0D4A0" intensity={1.1 + genesis.bloom} distance={14} />
+      <pointLight
+        color="#F0D4A0"
+        intensity={0.9 + genesis.bloom * 1.4 + genesis.seal * 0.5}
+        distance={14}
+      />
       <pointLight
         color="#7EC8FF"
-        intensity={0.4 + genesis.seal * 0.3}
-        distance={10}
-        position={[2.4, 1.6, 2.2]}
+        intensity={0.35 + genesis.seal * 0.45}
+        distance={11}
+        position={[2.6, 1.8, 2.4]}
       />
 
-      {/* Docking sealed disc */}
+      {/* Docking disc */}
       <group ref={dockGroup}>
         <mesh geometry={GEO_DISC}>
           <meshStandardMaterial
             color="#1a2233"
             emissive="#E8C48A"
-            emissiveIntensity={0.65}
-            metalness={0.75}
-            roughness={0.22}
+            emissiveIntensity={0.7 + genesis.seal * 0.3}
+            metalness={0.8}
+            roughness={0.18}
           />
         </mesh>
-        <mesh geometry={GEO_DISC} scale={[1.02, 1.4, 1.02]}>
+        <mesh geometry={GEO_DISC} scale={[1.04, 1.5, 1.04]}>
           <meshBasicMaterial
             color="#E8C48A"
             transparent
-            opacity={0.15}
+            opacity={0.18}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
         </mesh>
       </group>
 
-      {/* Sealed stack — refined layers */}
+      {/* Sealed stack — responds physically to dock */}
       <group ref={stackRef} position={[0, -2.32, 0]}>
         {stackHeights.map((h, i) => {
           const isTip = tipHeight != null && h === tipHeight && i === 0;
@@ -766,21 +826,20 @@ function GenesisCrystal({
                     selected ? "#F0D4A0" : isTip ? "#C9A86C" : "#2a4060"
                   }
                   emissiveIntensity={selected ? 0.5 : isTip ? 0.28 : 0.08}
-                  metalness={0.62}
-                  roughness={isTip ? 0.28 : 0.42}
+                  metalness={0.65}
+                  roughness={isTip ? 0.26 : 0.4}
                   transparent
-                  opacity={0.92 - i * 0.06}
+                  opacity={0.94 - i * 0.06}
                 />
               </mesh>
-              {/* Thin rim light */}
               <mesh
                 geometry={GEO_DISC}
-                scale={[1.18 - i * 0.03, 0.4, 1.18 - i * 0.03]}
+                scale={[1.18 - i * 0.03, 0.35, 1.18 - i * 0.03]}
               >
                 <meshBasicMaterial
                   color={isTip ? "#E8C48A" : "#4a6a90"}
                   transparent
-                  opacity={isTip ? 0.12 : 0.04}
+                  opacity={isTip ? 0.14 : 0.045}
                   depthWrite={false}
                   blending={THREE.AdditiveBlending}
                 />
