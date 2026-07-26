@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Block Genesis — premium cinematic block-birth visualizer
- * Built on thin explorer feed: TX constellations → crystallize → seal → dock
+ * Block Genesis v1.1 — Vision Pro polish
+ * Seal→Dock climax · TX storyboard · frosted glass + soft gaussian light
+ * Data plane: /api/chain/feed + txGroups (unchanged)
  */
 
 import React, {
@@ -13,44 +14,49 @@ import React, {
   useCallback,
 } from "react";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { OrbitControls, Stars } from "@react-three/drei";
+import {
+  OrbitControls,
+  Stars,
+  Environment,
+  MeshTransmissionMaterial,
+} from "@react-three/drei";
 import * as THREE from "three";
 import { useQuery } from "@tanstack/react-query";
-import type {
-  ChainFeed,
-  ChainParticle,
-  ChainTxGroup,
-} from "@/lib/chain";
+import type { ChainFeed, ChainParticle, ChainTxGroup } from "@/lib/chain";
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Soft textures & geometry
+   Soft gaussian sprite (true circular falloff — no hard spheres)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 let softTex: THREE.CanvasTexture | null = null;
 function getSoftTex(): THREE.CanvasTexture | null {
   if (typeof document === "undefined") return null;
   if (softTex) return softTex;
-  const size = 128;
+  const size = 256;
   const c = document.createElement("canvas");
   c.width = c.height = size;
   const ctx = c.getContext("2d")!;
-  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
-  g.addColorStop(0, "rgba(255,255,255,1)");
-  g.addColorStop(0.15, "rgba(255,255,255,0.8)");
-  g.addColorStop(0.45, "rgba(255,255,255,0.22)");
-  g.addColorStop(1, "rgba(255,255,255,0)");
+  const g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+  // Soft gaussian-ish stops
+  g.addColorStop(0.0, "rgba(255,255,255,1.00)");
+  g.addColorStop(0.08, "rgba(255,255,255,0.92)");
+  g.addColorStop(0.22, "rgba(255,255,255,0.55)");
+  g.addColorStop(0.45, "rgba(255,255,255,0.18)");
+  g.addColorStop(0.7, "rgba(255,255,255,0.04)");
+  g.addColorStop(1.0, "rgba(255,255,255,0.00)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
   softTex = new THREE.CanvasTexture(c);
+  softTex.colorSpace = THREE.SRGBColorSpace;
   softTex.needsUpdate = true;
   return softTex;
 }
 
 const GEO_SPRITE = new THREE.PlaneGeometry(1, 1);
-const GEO_NUCLEUS = new THREE.SphereGeometry(1, 24, 24);
-const GEO_CRYSTAL = new THREE.IcosahedronGeometry(1, 1);
-const GEO_DISC = new THREE.CylinderGeometry(1, 1, 0.1, 40);
-const GEO_HIT = new THREE.SphereGeometry(1, 10, 10);
+const GEO_NUCLEUS = new THREE.SphereGeometry(1, 32, 32);
+const GEO_CRYSTAL = new THREE.IcosahedronGeometry(1, 2);
+const GEO_DISC = new THREE.CylinderGeometry(1, 1, 0.09, 48);
+const GEO_HIT = new THREE.SphereGeometry(1, 12, 12);
 
 function hash01(s: string, salt = 0): number {
   let h = 2166136261 ^ salt;
@@ -66,6 +72,21 @@ function easeInOutCubic(t: number) {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
 
+/** Anticipation dip then smooth rise */
+function easeAnticipate(t: number) {
+  const x = Math.min(1, Math.max(0, t));
+  // slight reverse then accelerate
+  return x * x * ((1.6 + 1) * x - 1.6) + x * (1 - x) * 0.15;
+}
+
+/** Overshoot settle for dock */
+function easeOutBack(t: number) {
+  const x = Math.min(1, Math.max(0, t));
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
 function formatErg(nano: string): string {
   try {
     const n = Number(BigInt(nano)) / 1e9;
@@ -77,24 +98,7 @@ function formatErg(nano: string): string {
   }
 }
 
-function formatAmt(amount: string, decimals?: number | null): string {
-  try {
-    const d = decimals ?? 0;
-    if (!d) {
-      const n = Number(amount);
-      if (n > 1e12) return (n / 1e9).toFixed(2) + "e9";
-      return amount.length > 10 ? amount.slice(0, 8) + "…" : amount;
-    }
-    const n = Number(BigInt(amount)) / 10 ** d;
-    if (n >= 1000) return n.toFixed(1);
-    if (n >= 1) return n.toFixed(3);
-    return n.toPrecision(3);
-  } catch {
-    return amount;
-  }
-}
-
-/* ─── Sound ─────────────────────────────────────────────────────────────── */
+/* ─── Sound (default OFF) ───────────────────────────────────────────────── */
 
 function playSealSound() {
   try {
@@ -105,67 +109,71 @@ function playSealSound() {
     if (!AC) return;
     const ctx = new AC();
     const now = ctx.currentTime;
-
-    // Soft glass chime
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
     osc.type = "sine";
-    osc.frequency.setValueAtTime(660, now);
-    osc.frequency.exponentialRampToValueAtTime(990, now + 0.14);
+    osc.frequency.setValueAtTime(620, now);
+    osc.frequency.exponentialRampToValueAtTime(920, now + 0.12);
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.06, now + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+    g.gain.exponentialRampToValueAtTime(0.05, now + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
     osc.connect(g);
     g.connect(ctx.destination);
     osc.start(now);
-    osc.stop(now + 0.75);
+    osc.stop(now + 0.6);
 
-    // Low seal thud
     const osc2 = ctx.createOscillator();
     const g2 = ctx.createGain();
-    osc2.type = "triangle";
-    osc2.frequency.setValueAtTime(90, now + 0.08);
-    osc2.frequency.exponentialRampToValueAtTime(40, now + 0.35);
-    g2.gain.setValueAtTime(0.0001, now + 0.08);
-    g2.gain.exponentialRampToValueAtTime(0.09, now + 0.1);
-    g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(70, now + 0.1);
+    osc2.frequency.exponentialRampToValueAtTime(32, now + 0.32);
+    g2.gain.setValueAtTime(0.0001, now + 0.1);
+    g2.gain.exponentialRampToValueAtTime(0.07, now + 0.12);
+    g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
     osc2.connect(g2);
     g2.connect(ctx.destination);
-    osc2.start(now + 0.08);
-    osc2.stop(now + 0.5);
-
-    window.setTimeout(() => ctx.close().catch(() => {}), 900);
+    osc2.start(now + 0.1);
+    osc2.stop(now + 0.45);
+    window.setTimeout(() => ctx.close().catch(() => {}), 700);
   } catch {
     /* silent */
   }
 }
 
-/* ─── Genesis phase machine ─────────────────────────────────────────────── */
+/* ─── Genesis phase (2.6s climax) ───────────────────────────────────────── */
 
-/** 0..1 timeline of one seal cycle */
 export type GenesisPhase = {
-  /** overall 0 idle → 1 done */
   t: number;
-  /** capture 0-1 */
+  /** 0–1 anticipation + capture */
   capture: number;
-  /** crystallize 0-1 */
   crystal: number;
-  /** seal material 0-1 */
   seal: number;
-  /** dock to stack 0-1 */
   dock: number;
+  /** bloom intensity cue */
+  bloom: number;
   active: boolean;
   tipId: string | null;
 };
 
 function phaseFromT(t: number, tipId: string | null): GenesisPhase {
   const x = Math.min(1, Math.max(0, t));
+  // Timeline (~2.6s wall): capture 0–0.30 · crystal 0.18–0.55 · seal 0.48–0.68 · dock 0.62–1.0
+  const capture = easeAnticipate(Math.min(1, x / 0.3));
+  const crystal = easeInOutCubic(Math.min(1, Math.max(0, (x - 0.18) / 0.37)));
+  const seal = easeInOutCubic(Math.min(1, Math.max(0, (x - 0.48) / 0.2)));
+  const dock = easeOutBack(Math.min(1, Math.max(0, (x - 0.62) / 0.38)));
+  // Soft bloom pulse peaks at seal
+  const bloom =
+    seal > 0
+      ? Math.sin(Math.min(1, seal) * Math.PI) * 0.85 + crystal * 0.15
+      : crystal * 0.25;
   return {
     t: x,
-    capture: easeInOutCubic(Math.min(1, x / 0.32)),
-    crystal: easeInOutCubic(Math.min(1, Math.max(0, (x - 0.22) / 0.38))),
-    seal: easeInOutCubic(Math.min(1, Math.max(0, (x - 0.55) / 0.2))),
-    dock: easeInOutCubic(Math.min(1, Math.max(0, (x - 0.72) / 0.28))),
+    capture,
+    crystal,
+    seal,
+    dock: Math.min(1, Math.max(0, dock)),
+    bloom,
     active: x > 0 && x < 1,
     tipId,
   };
@@ -181,14 +189,12 @@ async function fetchFeed(address: string | null): Promise<ChainFeed> {
   return res.json();
 }
 
-/* ─── Shared selection bridge ───────────────────────────────────────────── */
-
 type Selection =
   | { kind: "tx"; txId: string }
-  | { kind: "block"; blockId: string; height: number }
+  | { kind: "block"; blockId: string; height: number; txCount?: number; ergNano?: string }
   | null;
 
-/* ─── TX Constellation nucleus + orbits ─────────────────────────────────── */
+/* ─── TX layout ─────────────────────────────────────────────────────────── */
 
 type TxSlot = {
   group: ChainTxGroup;
@@ -200,29 +206,29 @@ type TxSlot = {
 function layoutTxHomes(groups: ChainTxGroup[], focusMode: boolean): TxSlot[] {
   const mem = groups.filter((g) => g.stage === "mempool" || g.pending);
   const sealed = groups.filter((g) => g.stage === "sealed" && !g.pending);
-  // Prefer showing mempool constellations; a few sealed for context
   const show = [
     ...mem.slice(0, 14),
-    ...sealed.slice(0, focusMode ? 4 : 8),
+    ...sealed.slice(0, focusMode ? 3 : 7),
   ];
   return show.map((group, i) => {
     const n = show.length || 1;
-    const ring = group.pending ? 4.2 : 2.35;
-    const elev =
-      (hash01(group.txId, 3) - 0.5) * (group.pending ? 2.4 : 1.1);
-    const ang = (i / n) * Math.PI * 2 + hash01(group.txId, 1) * 0.4;
+    const ring = group.pending ? 4.4 : 2.4;
+    const elev = (hash01(group.txId, 3) - 0.5) * (group.pending ? 2.2 : 1.0);
+    const ang = (i / n) * Math.PI * 2 + hash01(group.txId, 1) * 0.35;
     return {
       group,
       home: new THREE.Vector3(
         Math.cos(ang) * ring,
-        elev + (focusMode && group.pending ? 0.3 : 0),
+        elev,
         Math.sin(ang) * ring
       ),
       phase: hash01(group.txId, 7) * Math.PI * 2,
-      speed: 0.15 + hash01(group.txId, 8) * 0.25,
+      speed: 0.12 + hash01(group.txId, 8) * 0.22,
     };
   });
 }
+
+/* ─── TX Constellations ─────────────────────────────────────────────────── */
 
 function TxConstellations({
   slots,
@@ -254,8 +260,9 @@ function TxConstellations({
   const map = useMemo(() => getSoftTex(), []);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
+  const _tmp = useMemo(() => new THREE.Vector3(), []);
+  const _axis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
 
-  // One instanced mesh for all orbiting particles across TX groups
   const flatParts = useMemo(() => {
     const out: Array<{
       p: ChainParticle;
@@ -271,10 +278,10 @@ function TxConstellations({
         out.push({
           p,
           txId: s.group.txId,
-          localR: 0.28 + hash01(p.id, 2) * 0.55,
-          localPhase: hash01(p.id, 3) * Math.PI * 2 + i,
-          localSpeed: 0.8 + hash01(p.id, 4) * 1.4,
-          elev: (hash01(p.id, 5) - 0.5) * 0.35,
+          localR: 0.32 + hash01(p.id, 2) * 0.58,
+          localPhase: hash01(p.id, 3) * Math.PI * 2 + i * 0.7,
+          localSpeed: 0.7 + hash01(p.id, 4) * 1.5,
+          elev: (hash01(p.id, 5) - 0.5) * 0.38,
         });
       });
     }
@@ -283,8 +290,6 @@ function TxConstellations({
 
   const instRef = useRef<THREE.InstancedMesh>(null!);
   const count = flatParts.length;
-
-  // World centers of each TX (updated each frame for particle parenting)
   const centers = useRef<Map<string, THREE.Vector3>>(new Map());
 
   useFrame((state) => {
@@ -292,71 +297,92 @@ function TxConstellations({
     const camQ = state.camera.quaternion;
     const cap = genesis.capture;
     const cry = genesis.crystal;
-
+    // Only mempool groups fully capture; sealed dim & partially draw in
     for (const s of slots) {
       const g = groupRefs.current.get(s.group.txId);
       if (!g) continue;
+      const isMem = s.group.pending || s.group.stage === "mempool";
+      const capW = isMem ? cap : cap * 0.25;
+      const cryW = isMem ? cry : cry * 0.35;
 
-      // Home orbit drift
-      const drift = s.home
-        .clone()
-        .applyAxisAngle(new THREE.Vector3(0, 1, 0), t * s.speed * 0.15);
-      drift.y = s.home.y + Math.sin(t * 0.5 + s.phase) * 0.12;
+      // Home drift
+      _tmp.copy(s.home).applyAxisAngle(_axis, t * s.speed * 0.12);
+      _tmp.y = s.home.y + Math.sin(t * 0.45 + s.phase) * 0.1;
 
-      // Capture: pull toward origin
-      const target = drift.multiplyScalar(1 - cap * 0.92);
-      // Crystallize: collapse further into core
-      target.multiplyScalar(1 - cry * 0.85);
+      // Anticipation: slight outward before capture bites
+      const anti = genesis.t < 0.08 ? 1 + (0.08 - genesis.t) * 1.2 : 1;
+      _tmp.multiplyScalar(anti);
 
-      g.position.lerp(target, 0.12);
+      // Gravitational capture of whole group
+      _tmp.multiplyScalar(1 - capW * 0.94);
+      // Dissolve into crystal
+      _tmp.multiplyScalar(1 - cryW * 0.88);
+
+      // Smooth lerp (weighted, physical)
+      g.position.lerp(_tmp, 0.14);
       centers.current.set(s.group.txId, g.position.clone());
 
-      // Fade nucleus as crystallize
-      const nuc = g.children.find((c) => c.name === "nucleus") as THREE.Mesh;
+      const nuc = g.children.find((c) => c.name === "nucleus") as
+        | THREE.Mesh
+        | undefined;
+      const glow = g.children.find((c) => c.name === "glow") as
+        | THREE.Mesh
+        | undefined;
+      const sel =
+        selection?.kind === "tx" && selection.txId === s.group.txId;
       if (nuc) {
         const mat = nuc.material as THREE.MeshBasicMaterial;
-        mat.opacity = Math.max(0, 0.85 * (1 - cry) * (s.group.pending ? 1 : 0.55));
+        mat.opacity = Math.max(
+          0,
+          0.9 * (1 - cryW) * (isMem ? 1 : 0.5) * (sel ? 1 : 0.92)
+        );
         nuc.scale.setScalar(
-          (selection?.kind === "tx" && selection.txId === s.group.txId
-            ? 0.16
-            : 0.11) *
-            (1 + Math.sin(t * 2 + s.phase) * 0.06) *
-            (1 - cry * 0.7)
+          (sel ? 0.14 : 0.1) *
+            (1 + Math.sin(t * 2.1 + s.phase) * 0.05) *
+            (1 - cryW * 0.75)
         );
       }
-      // Hide entire group when fully crystallized
-      g.visible = cry < 0.98;
+      if (glow) {
+        (glow.material as THREE.MeshBasicMaterial).opacity =
+          (sel ? 0.5 : 0.22) * (1 - cryW) * (isMem ? 1 : 0.55);
+        glow.scale.setScalar(2.6 * (1 - cryW * 0.5));
+        glow.quaternion.copy(camQ);
+      }
+      g.visible = cryW < 0.97;
     }
 
-    // Orbit particles around their TX center
     const mesh = instRef.current;
     if (!mesh || count === 0) return;
     for (let i = 0; i < count; i++) {
       const fp = flatParts[i];
-      const center =
-        centers.current.get(fp.txId) || new THREE.Vector3(0, 0, 0);
+      const center = centers.current.get(fp.txId) || _tmp.set(0, 0, 0);
+      const isMem = fp.p.pending;
+      const cryW = isMem ? cry : cry * 0.35;
+      const capW = isMem ? cap : cap * 0.25;
       const ang = fp.localPhase + t * fp.localSpeed;
-      const localScale = 1 - cry * 0.95;
-      const lr = fp.localR * localScale * (1 - cap * 0.3);
-      const x = center.x + Math.cos(ang) * lr;
+      const localScale = Math.max(0, 1 - cryW * 0.98);
+      const lr = fp.localR * localScale * (1 - capW * 0.35);
+      // Particles spiral inward as capture rises
+      const spiral = 1 - capW * 0.55;
+      const x = center.x + Math.cos(ang) * lr * spiral;
       const y = center.y + fp.elev * localScale;
-      const z = center.z + Math.sin(ang) * lr;
+      const z = center.z + Math.sin(ang) * lr * spiral;
 
       const size =
-        (0.07 + fp.p.weight * 0.1) *
-        (1 + Math.sin(t * 2.4 + fp.localPhase) * 0.08) *
-        (1 - cry * 0.6) *
-        (focusMode && fp.p.stage !== "focus" ? 0.85 : 1);
+        (0.08 + fp.p.weight * 0.12) *
+        (1 + Math.sin(t * 2.5 + fp.localPhase) * 0.07) *
+        localScale *
+        (focusMode && fp.p.stage !== "focus" ? 0.75 : 1);
 
       dummy.position.set(x, y, z);
       dummy.quaternion.copy(camQ);
-      dummy.scale.setScalar(Math.max(0.01, size));
+      dummy.scale.setScalar(Math.max(0.008, size));
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
 
       color.set(fp.p.color);
       color.multiplyScalar(
-        (fp.p.pending ? 1.15 : 0.7) * (1 - cry * 0.4)
+        (fp.p.pending ? 1.2 : 0.65) * (1 - cryW * 0.5) * (1 + genesis.bloom * 0.25)
       );
       mesh.setColorAt(i, color);
     }
@@ -369,7 +395,7 @@ function TxConstellations({
       {slots.map((s) => {
         const selected =
           selection?.kind === "tx" && selection.txId === s.group.txId;
-        const accent = s.group.pending ? "#5EFFD0" : "#7AB8FF";
+        const accent = s.group.pending ? "#7EF5D4" : "#8EBBFF";
         return (
           <group
             key={s.group.txId}
@@ -379,7 +405,6 @@ function TxConstellations({
             }}
             position={s.home}
           >
-            {/* Soft nucleus */}
             <mesh
               name="nucleus"
               geometry={GEO_NUCLEUS}
@@ -391,31 +416,29 @@ function TxConstellations({
               }}
             >
               <meshBasicMaterial
-                color={selected ? "#F0D4A0" : accent}
+                color={selected ? "#F5E0B0" : accent}
                 transparent
-                opacity={0.85}
+                opacity={0.9}
                 depthWrite={false}
                 blending={THREE.AdditiveBlending}
                 toneMapped={false}
               />
             </mesh>
-            {/* Soft glow shell */}
-            <mesh scale={2.4} geometry={GEO_SPRITE} renderOrder={1}>
+            <mesh name="glow" scale={2.6} geometry={GEO_SPRITE} renderOrder={1}>
               <meshBasicMaterial
                 map={map}
-                color={selected ? "#F0D4A0" : accent}
+                color={selected ? "#F5E0B0" : accent}
                 transparent
-                opacity={selected ? 0.45 : 0.22}
+                opacity={selected ? 0.5 : 0.24}
                 depthWrite={false}
                 blending={THREE.AdditiveBlending}
                 toneMapped={false}
                 side={THREE.DoubleSide}
               />
             </mesh>
-            {/* Fat invisible hit */}
             <mesh
               geometry={GEO_HIT}
-              scale={0.45}
+              scale={0.5}
               onClick={(e: ThreeEvent<MouseEvent>) => {
                 e.stopPropagation();
                 const w = new THREE.Vector3();
@@ -439,7 +462,7 @@ function TxConstellations({
             map={map}
             color="#ffffff"
             transparent
-            opacity={0.9}
+            opacity={0.95}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             toneMapped={false}
@@ -451,7 +474,7 @@ function TxConstellations({
   );
 }
 
-/* ─── Focus particles (address) ─────────────────────────────────────────── */
+/* ─── Address focus shell ───────────────────────────────────────────────── */
 
 function FocusShell({
   particles,
@@ -477,24 +500,20 @@ function FocusShell({
     const camQ = state.camera.quaternion;
     for (let i = 0; i < count; i++) {
       const p = focus[i];
-      const ang = hash01(p.id, 1) * Math.PI * 2 + t * (0.35 + hash01(p.id, 2) * 0.4);
-      const R = 0.7 + hash01(p.id, 3) * 1.3;
-      const y = 0.4 + (hash01(p.id, 4) - 0.5) * 1.2;
-      // Gentle pull when highlighted
-      const pull = highlight ? 0.85 : 1;
-      dummy.position.set(
-        Math.cos(ang) * R * pull,
-        y,
-        Math.sin(ang) * R * pull
-      );
+      const ang =
+        hash01(p.id, 1) * Math.PI * 2 + t * (0.32 + hash01(p.id, 2) * 0.35);
+      const R = 0.65 + hash01(p.id, 3) * 1.25;
+      const y = 0.45 + (hash01(p.id, 4) - 0.5) * 1.1;
+      const pull = highlight ? 0.82 : 1;
+      dummy.position.set(Math.cos(ang) * R * pull, y, Math.sin(ang) * R * pull);
       dummy.quaternion.copy(camQ);
       dummy.scale.setScalar(
-        (0.1 + p.weight * 0.12) * (1 + Math.sin(t * 2 + i) * 0.08)
+        (0.11 + p.weight * 0.12) * (1 + Math.sin(t * 2 + i) * 0.07)
       );
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
       color.set(p.color);
-      color.multiplyScalar(highlight ? 1.35 : 1.1);
+      color.multiplyScalar(highlight ? 1.4 : 1.1);
       mesh.setColorAt(i, color);
     }
     mesh.instanceMatrix.needsUpdate = true;
@@ -521,13 +540,15 @@ function FocusShell({
   );
 }
 
-/* ─── Crystal block + dock ──────────────────────────────────────────────── */
+/* ─── Crystal core + dock + stack ───────────────────────────────────────── */
 
 function GenesisCrystal({
   genesis,
   stackHeights,
   tipHeight,
   tipId,
+  tipTxCount,
+  tipErg,
   onSelectBlock,
   selectedBlockId,
 }: {
@@ -535,12 +556,22 @@ function GenesisCrystal({
   stackHeights: number[];
   tipHeight: number | null;
   tipId: string | null;
-  onSelectBlock: (id: string, height: number, world: THREE.Vector3) => void;
+  tipTxCount: number;
+  tipErg: string;
+  onSelectBlock: (
+    id: string,
+    height: number,
+    world: THREE.Vector3,
+    txCount?: number,
+    ergNano?: string
+  ) => void;
   selectedBlockId: string | null;
 }) {
-  const crystalRef = useRef<THREE.Mesh>(null!);
-  const glassRef = useRef<THREE.MeshStandardMaterial>(null!);
+  const crystalRef = useRef<THREE.Group>(null!);
+  const bloomRef = useRef<THREE.Mesh>(null!);
   const dockGroup = useRef<THREE.Group>(null!);
+  const stackRef = useRef<THREE.Group>(null!);
+  const stackSquash = useRef(0);
   const map = useMemo(() => getSoftTex(), []);
 
   useFrame((state) => {
@@ -548,129 +579,213 @@ function GenesisCrystal({
     const cry = genesis.crystal;
     const seal = genesis.seal;
     const dock = genesis.dock;
+    const bloom = genesis.bloom;
 
     if (crystalRef.current) {
-      // Grow during crystallize
       const grow = genesis.active
-        ? 0.15 + cry * 0.95 + seal * 0.1
-        : 1.05 + Math.sin(t * 1.3) * 0.02;
-      crystalRef.current.scale.setScalar(grow);
-      crystalRef.current.rotation.y = t * 0.2 + seal * 0.5;
-      crystalRef.current.rotation.x = Math.sin(t * 0.3) * 0.08;
-      crystalRef.current.visible = true;
+        ? 0.12 + cry * 1.0 + seal * 0.08
+        : 1.02 + Math.sin(t * 1.2) * 0.018;
+      // Lift slightly before dock
+      const lift = genesis.active
+        ? Math.sin(Math.min(1, Math.max(0, (genesis.t - 0.55) / 0.15)) * Math.PI) *
+          0.28 *
+          (1 - dock)
+        : 0;
+      crystalRef.current.position.y = lift;
+      crystalRef.current.scale.setScalar(grow * (1 - dock * 0.15));
+      crystalRef.current.rotation.y = t * 0.18 + seal * 0.4;
+      crystalRef.current.rotation.x = Math.sin(t * 0.28) * 0.07;
+      // Fade core slightly when docking disc takes over
+      crystalRef.current.visible = dock < 0.95 || !genesis.active;
     }
 
-    if (glassRef.current) {
-      // Frosted glass → metal on seal
-      glassRef.current.metalness = 0.18 + seal * 0.55;
-      glassRef.current.roughness = 0.22 + seal * 0.2;
-      glassRef.current.opacity = 0.55 + cry * 0.25 + seal * 0.15;
-      glassRef.current.emissiveIntensity = 0.4 + cry * 0.45 + seal * 0.35;
-      glassRef.current.color.set(seal > 0.5 ? "#d4dde8" : "#a8bdd8");
+    if (bloomRef.current) {
+      const s = 2.2 + bloom * 2.8 + cry * 0.6;
+      bloomRef.current.scale.setScalar(s);
+      (bloomRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.06 + bloom * 0.28 + seal * 0.08;
+      bloomRef.current.quaternion.copy(state.camera.quaternion);
     }
 
     if (dockGroup.current) {
-      // New disc starts at core, docks into stack
-      const startY = 0.1;
-      const endY = -2.15;
-      const y = THREE.MathUtils.lerp(startY, endY, dock);
-      const s = THREE.MathUtils.lerp(0.2, 1, Math.min(1, dock * 1.4));
+      const startY = 0.15;
+      const endY = -2.12;
+      // Weighted dock with overshoot already in easeOutBack
+      const y = THREE.MathUtils.lerp(startY, endY, Math.min(1, dock));
+      const sxy = THREE.MathUtils.lerp(0.25, 1.18, Math.min(1, dock * 1.15));
       dockGroup.current.position.y = y;
-      dockGroup.current.scale.setScalar(
-        genesis.active && dock > 0.01 ? s : 0.001
-      );
-      dockGroup.current.visible = genesis.active && dock > 0.01;
+      dockGroup.current.scale.set(sxy, 1, sxy);
+      dockGroup.current.visible = genesis.active && dock > 0.02;
+      // Trigger stack squash near landing
+      if (dock > 0.85 && dock < 0.98) {
+        stackSquash.current = Math.max(stackSquash.current, (dock - 0.85) / 0.13);
+      } else if (dock >= 0.98) {
+        stackSquash.current = THREE.MathUtils.damp(
+          stackSquash.current,
+          0,
+          8,
+          state.clock.getDelta()
+        );
+      } else if (!genesis.active) {
+        stackSquash.current = THREE.MathUtils.damp(
+          stackSquash.current,
+          0,
+          6,
+          state.clock.getDelta()
+        );
+      }
+    }
+
+    if (stackRef.current) {
+      const sq = stackSquash.current;
+      // Soft physical response: compress Y, widen XZ
+      stackRef.current.scale.set(1 + sq * 0.06, 1 - sq * 0.12, 1 + sq * 0.06);
+      stackRef.current.position.y = -2.32 + sq * 0.04;
     }
   });
 
   return (
     <group>
-      {/* Living crystal / tip core — frosted glass → metal */}
-      <mesh ref={crystalRef} geometry={GEO_CRYSTAL}>
-        <meshStandardMaterial
-          ref={glassRef}
-          color="#a8bdd8"
-          emissive="#E8C48A"
-          emissiveIntensity={0.45}
-          metalness={0.25}
-          roughness={0.22}
-          transparent
-          opacity={0.72}
-        />
-      </mesh>
-      <mesh geometry={GEO_CRYSTAL} scale={1.02}>
-        <meshBasicMaterial
-          color="#E8C48A"
-          wireframe
-          transparent
-          opacity={0.12}
-          depthWrite={false}
-        />
-      </mesh>
-      <mesh scale={2.8} geometry={GEO_SPRITE} renderOrder={0}>
+      {/* Soft volumetric bloom sprite behind core */}
+      <mesh ref={bloomRef} geometry={GEO_SPRITE} renderOrder={0}>
         <meshBasicMaterial
           map={map}
           color="#E8C48A"
           transparent
-          opacity={0.12}
+          opacity={0.08}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
+          side={THREE.DoubleSide}
         />
       </mesh>
-      <pointLight color="#E8C48A" intensity={1.3} distance={12} />
-      <pointLight
-        color="#00E5FF"
-        intensity={0.45}
-        distance={9}
-        position={[2, 1.5, 2]}
-      />
 
-      {/* Docking disc (new sealed block) */}
-      <group ref={dockGroup}>
-        <mesh geometry={GEO_DISC} scale={[1.2, 1, 1.2]}>
+      {/* Frosted glass crystal — Apple-grade transmission */}
+      <group ref={crystalRef}>
+        <mesh geometry={GEO_CRYSTAL}>
+          <MeshTransmissionMaterial
+            backside
+            samples={4}
+            resolution={256}
+            transmission={0.92}
+            roughness={0.12}
+            thickness={0.55}
+            ior={1.45}
+            chromaticAberration={0.03}
+            anisotropy={0.1}
+            distortion={0.05}
+            distortionScale={0.15}
+            temporalDistortion={0.05}
+            color="#d8e4f5"
+            attenuationColor="#E8C48A"
+            attenuationDistance={0.8}
+          />
+        </mesh>
+        {/* Soft specular shell */}
+        <mesh geometry={GEO_CRYSTAL} scale={1.015}>
           <meshStandardMaterial
-            color="#1c2436"
+            color="#ffffff"
+            metalness={0.35}
+            roughness={0.18}
+            transparent
+            opacity={0.12}
             emissive="#E8C48A"
-            emissiveIntensity={0.55}
-            metalness={0.7}
-            roughness={0.28}
+            emissiveIntensity={0.2}
+          />
+        </mesh>
+        <mesh geometry={GEO_CRYSTAL} scale={1.03}>
+          <meshBasicMaterial
+            color="#E8C48A"
+            wireframe
+            transparent
+            opacity={0.06}
+            depthWrite={false}
           />
         </mesh>
       </group>
 
-      {/* Sealed stack */}
-      <group position={[0, -2.35, 0]}>
+      <pointLight color="#F0D4A0" intensity={1.1 + genesis.bloom} distance={14} />
+      <pointLight
+        color="#7EC8FF"
+        intensity={0.4 + genesis.seal * 0.3}
+        distance={10}
+        position={[2.4, 1.6, 2.2]}
+      />
+
+      {/* Docking sealed disc */}
+      <group ref={dockGroup}>
+        <mesh geometry={GEO_DISC}>
+          <meshStandardMaterial
+            color="#1a2233"
+            emissive="#E8C48A"
+            emissiveIntensity={0.65}
+            metalness={0.75}
+            roughness={0.22}
+          />
+        </mesh>
+        <mesh geometry={GEO_DISC} scale={[1.02, 1.4, 1.02]}>
+          <meshBasicMaterial
+            color="#E8C48A"
+            transparent
+            opacity={0.15}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      </group>
+
+      {/* Sealed stack — refined layers */}
+      <group ref={stackRef} position={[0, -2.32, 0]}>
         {stackHeights.map((h, i) => {
           const isTip = tipHeight != null && h === tipHeight && i === 0;
-          const bid =
-            i === 0 && tipId
-              ? tipId
-              : `h-${h}`;
-          const selected = selectedBlockId === bid || (isTip && selectedBlockId === tipId);
+          const bid = i === 0 && tipId ? tipId : `h-${h}`;
+          const selected =
+            selectedBlockId === bid ||
+            (isTip && selectedBlockId === tipId);
           return (
-            <mesh
-              key={`${h}-${i}`}
-              position={[0, -i * 0.24, 0]}
-              geometry={GEO_DISC}
-              scale={[1.18 - i * 0.035, 1, 1.18 - i * 0.035]}
-              onClick={(e: ThreeEvent<MouseEvent>) => {
-                e.stopPropagation();
-                const w = new THREE.Vector3();
-                e.object.getWorldPosition(w);
-                onSelectBlock(isTip && tipId ? tipId : bid, h, w);
-              }}
-            >
-              <meshStandardMaterial
-                color={selected ? "#2a384f" : isTip ? "#222c40" : "#121722"}
-                emissive={selected ? "#F0D4A0" : isTip ? "#E8C48A" : "#3a5070"}
-                emissiveIntensity={selected ? 0.55 : isTip ? 0.32 : 0.1}
-                metalness={0.55}
-                roughness={0.4}
-                transparent
-                opacity={0.9 - i * 0.07}
-              />
-            </mesh>
+            <group key={`${h}-${i}`} position={[0, -i * 0.22, 0]}>
+              <mesh
+                geometry={GEO_DISC}
+                scale={[1.16 - i * 0.03, 1, 1.16 - i * 0.03]}
+                onClick={(e: ThreeEvent<MouseEvent>) => {
+                  e.stopPropagation();
+                  const w = new THREE.Vector3();
+                  e.object.getWorldPosition(w);
+                  onSelectBlock(
+                    isTip && tipId ? tipId : bid,
+                    h,
+                    w,
+                    isTip ? tipTxCount : undefined,
+                    isTip ? tipErg : undefined
+                  );
+                }}
+              >
+                <meshStandardMaterial
+                  color={selected ? "#2a384f" : isTip ? "#1e283c" : "#10151f"}
+                  emissive={
+                    selected ? "#F0D4A0" : isTip ? "#C9A86C" : "#2a4060"
+                  }
+                  emissiveIntensity={selected ? 0.5 : isTip ? 0.28 : 0.08}
+                  metalness={0.62}
+                  roughness={isTip ? 0.28 : 0.42}
+                  transparent
+                  opacity={0.92 - i * 0.06}
+                />
+              </mesh>
+              {/* Thin rim light */}
+              <mesh
+                geometry={GEO_DISC}
+                scale={[1.18 - i * 0.03, 0.4, 1.18 - i * 0.03]}
+              >
+                <meshBasicMaterial
+                  color={isTip ? "#E8C48A" : "#4a6a90"}
+                  transparent
+                  opacity={isTip ? 0.12 : 0.04}
+                  depthWrite={false}
+                  blending={THREE.AdditiveBlending}
+                />
+              </mesh>
+            </group>
           );
         })}
       </group>
@@ -678,64 +793,77 @@ function GenesisCrystal({
   );
 }
 
-/* ─── Camera ────────────────────────────────────────────────────────────── */
+/* ─── Camera: dolly + graceful home ─────────────────────────────────────── */
 
 function GenesisCamera({
   flyTo,
+  homeRequest,
   genesis,
   focusMode,
   selected,
 }: {
   flyTo: THREE.Vector3 | null;
+  homeRequest: number;
   genesis: GenesisPhase;
   focusMode: boolean;
   selected: boolean;
 }) {
   const { camera } = useThree();
   const controlsRef = useRef<any>(null);
-  const base = useMemo(
-    () =>
-      new THREE.Vector3(
-        0,
-        focusMode ? 2.8 : 3.6,
-        focusMode ? 7.5 : 10
-      ),
+  const homePos = useMemo(
+    () => new THREE.Vector3(0, focusMode ? 2.9 : 3.5, focusMode ? 7.8 : 9.8),
     [focusMode]
   );
+  const homeTarget = useMemo(() => new THREE.Vector3(0, 0.05, 0), []);
   const fly = useRef<{
     active: boolean;
     t0: number;
+    dur: number;
     from: THREE.Vector3;
     to: THREE.Vector3;
     fromT: THREE.Vector3;
     toT: THREE.Vector3;
   } | null>(null);
 
+  // Dolly to selection
   useEffect(() => {
     if (!flyTo) return;
+    const dir = flyTo.clone().normalize();
     const to = flyTo
       .clone()
-      .normalize()
-      .multiplyScalar(3.2)
-      .add(new THREE.Vector3(0, 1.1, 0))
-      .add(flyTo.clone().multiplyScalar(0.35));
-    // ensure not inside
-    if (to.length() < 4) to.setLength(4.5);
+      .add(dir.multiplyScalar(2.4))
+      .add(new THREE.Vector3(0, 1.0, 0.6));
+    if (to.length() < 4.2) to.setLength(4.5);
     fly.current = {
       active: true,
       t0: performance.now(),
+      dur: 1200,
       from: camera.position.clone(),
       to,
-      fromT: controlsRef.current?.target?.clone() ?? new THREE.Vector3(),
+      fromT: controlsRef.current?.target?.clone() ?? homeTarget.clone(),
       toT: flyTo.clone(),
     };
-  }, [flyTo, camera]);
+  }, [flyTo, camera, homeTarget]);
+
+  // Graceful return home
+  useEffect(() => {
+    if (!homeRequest) return;
+    fly.current = {
+      active: true,
+      t0: performance.now(),
+      dur: 1000,
+      from: camera.position.clone(),
+      to: homePos.clone(),
+      fromT: controlsRef.current?.target?.clone() ?? homeTarget.clone(),
+      toT: homeTarget.clone(),
+    };
+  }, [homeRequest, camera, homePos, homeTarget]);
 
   useFrame(() => {
     const f = fly.current;
     if (f?.active) {
       const u = easeInOutCubic(
-        Math.min(1, (performance.now() - f.t0) / 1100)
+        Math.min(1, (performance.now() - f.t0) / f.dur)
       );
       camera.position.lerpVectors(f.from, f.to, u);
       if (controlsRef.current) {
@@ -746,18 +874,23 @@ function GenesisCamera({
       return;
     }
 
-    // Cinematic breathe when idle
     if (!selected && !genesis.active) {
       const t = performance.now() / 1000;
-      const target = base.clone();
-      target.z += Math.sin(t * 0.2) * 0.2;
-      target.y += Math.sin(t * 0.15) * 0.08;
-      camera.position.lerp(target, 0.02);
-    } else if (genesis.dock > 0.2) {
-      // Slight pull back during dock
-      const target = base.clone();
-      target.z += 0.8 * genesis.dock;
-      camera.position.lerp(target, 0.04);
+      const target = homePos.clone();
+      target.z += Math.sin(t * 0.18) * 0.22;
+      target.y += Math.sin(t * 0.14) * 0.08;
+      // Subtle push-back during seal
+      camera.position.lerp(target, 0.025);
+    } else if (genesis.dock > 0.15) {
+      const target = homePos.clone();
+      target.z += 0.9 * genesis.dock;
+      target.y += 0.15 * genesis.dock;
+      camera.position.lerp(target, 0.05);
+    } else if (genesis.seal > 0.2) {
+      // Micro push-in at seal for drama
+      const target = homePos.clone();
+      target.z -= 0.35 * genesis.bloom;
+      camera.position.lerp(target, 0.06);
     }
   });
 
@@ -766,14 +899,14 @@ function GenesisCamera({
       ref={controlsRef}
       enablePan={false}
       minDistance={4}
-      maxDistance={22}
+      maxDistance={20}
       enableDamping
-      dampingFactor={0.05}
+      dampingFactor={0.048}
       autoRotate={!selected && !focusMode && !genesis.active}
-      autoRotateSpeed={0.22}
+      autoRotateSpeed={0.18}
       target={[0, 0.05, 0]}
-      maxPolarAngle={Math.PI * 0.85}
-      minPolarAngle={0.2}
+      maxPolarAngle={Math.PI * 0.84}
+      minPolarAngle={0.22}
     />
   );
 }
@@ -787,7 +920,9 @@ function GenesisWorld({
   setSelection,
   flyTarget,
   setFlyTarget,
+  homeRequest,
   focusMode,
+  tipErg,
 }: {
   feed: ChainFeed;
   genesis: GenesisPhase;
@@ -795,13 +930,14 @@ function GenesisWorld({
   setSelection: (s: Selection) => void;
   flyTarget: THREE.Vector3 | null;
   setFlyTarget: (v: THREE.Vector3 | null) => void;
+  homeRequest: number;
   focusMode: boolean;
+  tipErg: string;
 }) {
   const slots = useMemo(
     () => layoutTxHomes(feed.txGroups || [], focusMode),
     [feed.txGroups, focusMode]
   );
-
   const stackHeights = useMemo(
     () => feed.recent.map((b) => b.height).slice(0, 7),
     [feed.recent]
@@ -816,8 +952,20 @@ function GenesisWorld({
   );
 
   const onSelectBlock = useCallback(
-    (blockId: string, height: number, world: THREE.Vector3) => {
-      setSelection({ kind: "block", blockId, height });
+    (
+      blockId: string,
+      height: number,
+      world: THREE.Vector3,
+      txCount?: number,
+      ergNano?: string
+    ) => {
+      setSelection({
+        kind: "block",
+        blockId,
+        height,
+        txCount,
+        ergNano,
+      });
       setFlyTarget(world.clone());
     },
     [setSelection, setFlyTarget]
@@ -825,36 +973,49 @@ function GenesisWorld({
 
   return (
     <>
-      <color attach="background" args={["#01020a"]} />
-      <fog attach="fog" args={["#01020a", 12, 36]} />
-      <ambientLight intensity={0.18} color="#7a8aaa" />
-      <directionalLight position={[5, 9, 4]} intensity={0.65} color="#fff6ec" />
-      <directionalLight position={[-4, -2, -3]} intensity={0.15} color="#1a3060" />
-      <Stars
-        radius={80}
-        depth={50}
-        count={3800}
-        factor={2.6}
-        saturation={0.1}
-        fade
-        speed={0.1}
+      <color attach="background" args={["#000108"]} />
+      <fog attach="fog" args={["#000108", 11, 32]} />
+      <ambientLight intensity={0.14} color="#6a7a98" />
+      {/* Soft key */}
+      <directionalLight
+        position={[4.5, 8, 5]}
+        intensity={0.55}
+        color="#fff5ea"
       />
-      <mesh position={[-14, 5, -20]} scale={18}>
-        <sphereGeometry args={[1, 12, 12]} />
+      {/* Cool rim */}
+      <directionalLight
+        position={[-5, 2, -4]}
+        intensity={0.28}
+        color="#4a7ab5"
+      />
+      <Environment preset="night" environmentIntensity={0.35} />
+
+      <Stars
+        radius={70}
+        depth={48}
+        count={2800}
+        factor={2.2}
+        saturation={0.08}
+        fade
+        speed={0.08}
+      />
+
+      <mesh position={[-12, 4, -18]} scale={15}>
+        <sphereGeometry args={[1, 10, 10]} />
         <meshBasicMaterial
-          color="#100828"
+          color="#0c0620"
           transparent
-          opacity={0.14}
+          opacity={0.16}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      <mesh position={[12, -4, -18]} scale={14}>
-        <sphereGeometry args={[1, 12, 12]} />
+      <mesh position={[11, -3, -16]} scale={12}>
+        <sphereGeometry args={[1, 10, 10]} />
         <meshBasicMaterial
-          color="#051020"
+          color="#040e1c"
           transparent
-          opacity={0.12}
+          opacity={0.14}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
@@ -865,6 +1026,8 @@ function GenesisWorld({
         stackHeights={stackHeights}
         tipHeight={feed.tip?.height ?? null}
         tipId={feed.tip?.id ?? null}
+        tipTxCount={feed.tip?.txCount ?? 0}
+        tipErg={tipErg}
         onSelectBlock={onSelectBlock}
         selectedBlockId={
           selection?.kind === "block" ? selection.blockId : null
@@ -880,13 +1043,11 @@ function GenesisWorld({
         focusMode={focusMode}
       />
 
-      <FocusShell
-        particles={feed.particles}
-        highlight={focusMode}
-      />
+      <FocusShell particles={feed.particles} highlight={focusMode} />
 
       <GenesisCamera
         flyTo={flyTarget}
+        homeRequest={homeRequest}
         genesis={genesis}
         focusMode={focusMode}
         selected={!!selection}
@@ -895,20 +1056,20 @@ function GenesisWorld({
   );
 }
 
-/* ─── HUD helpers ───────────────────────────────────────────────────────── */
+/* ─── Shell ─────────────────────────────────────────────────────────────── */
 
-function findTxGroup(feed: ChainFeed, txId: string): ChainTxGroup | null {
+function findTx(feed: ChainFeed, txId: string): ChainTxGroup | null {
   return (feed.txGroups || []).find((g) => g.txId === txId) || null;
 }
-
-/* ─── Shell ─────────────────────────────────────────────────────────────── */
 
 export default function ChainPulse() {
   const [addressInput, setAddressInput] = useState("");
   const [focusAddress, setFocusAddress] = useState<string | null>(null);
-  const [soundOn, setSoundOn] = useState(true);
+  /** Sound default OFF per v1.1 spec */
+  const [soundOn, setSoundOn] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
   const [flyTarget, setFlyTarget] = useState<THREE.Vector3 | null>(null);
+  const [homeRequest, setHomeRequest] = useState(0);
   const [genesisT, setGenesisT] = useState(0);
   const [genesisTip, setGenesisTip] = useState<string | null>(null);
   const prevTip = useRef<string | null>(null);
@@ -921,7 +1082,7 @@ export default function ChainPulse() {
       staleTime: 2000,
     });
 
-  // Seal cycle on new tip
+  // ~2.6s seal choreography on new tip
   useEffect(() => {
     const id = data?.tip?.id ?? null;
     if (!id) return;
@@ -930,7 +1091,7 @@ export default function ChainPulse() {
       setGenesisTip(id);
       setGenesisT(0.001);
       const t0 = performance.now();
-      const DUR = 3200;
+      const DUR = 2600;
       let raf = 0;
       const tick = (now: number) => {
         const u = Math.min(1, (now - t0) / DUR);
@@ -967,25 +1128,46 @@ export default function ChainPulse() {
   const clearSelection = useCallback(() => {
     setSelection(null);
     setFlyTarget(null);
+    setHomeRequest((n) => n + 1);
   }, []);
+
+  // ESC → return
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") clearSelection();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [clearSelection]);
 
   const focusMode = !!focusAddress && !!data?.focus;
   const selectedTx =
     data && selection?.kind === "tx"
-      ? findTxGroup(data, selection.txId)
+      ? findTx(data, selection.txId)
       : null;
 
   const mempoolN = (data?.txGroups || []).filter((g) => g.pending).length;
   const sealedN = (data?.txGroups || []).filter((g) => !g.pending).length;
 
-  // Mobile / reduced motion: still render but simpler note
+  const tipErg = data?.tip
+    ? data.tip.transactions
+        .reduce((s, t) => {
+          try {
+            return s + BigInt(t.ergNano);
+          } catch {
+            return s;
+          }
+        }, BigInt(0))
+        .toString()
+    : "0";
+
   const [webglOk, setWebglOk] = useState(true);
   useEffect(() => {
     try {
       const c = document.createElement("canvas");
-      const gl =
-        c.getContext("webgl") || c.getContext("experimental-webgl");
-      setWebglOk(!!gl);
+      setWebglOk(
+        !!(c.getContext("webgl") || c.getContext("experimental-webgl"))
+      );
     } catch {
       setWebglOk(false);
     }
@@ -993,11 +1175,11 @@ export default function ChainPulse() {
 
   return (
     <div className="w-full space-y-2.5">
-      <div className="canvas-container lumen-viz relative w-full bg-[#01020a] overflow-hidden rounded-2xl border border-white/10">
-        <div className="absolute inset-0 w-full h-full min-h-[420px] md:min-h-[560px]">
+      <div className="canvas-container lumen-viz relative w-full bg-[#000108] overflow-hidden rounded-2xl border border-white/[0.07]">
+        <div className="absolute inset-0 w-full h-full min-h-[440px] md:min-h-[580px]">
           {data && webglOk ? (
             <Canvas
-              camera={{ position: [0, 3.6, 10], fov: 38 }}
+              camera={{ position: [0, 3.5, 9.8], fov: 36 }}
               dpr={[1, 1.5]}
               gl={{
                 antialias: true,
@@ -1006,7 +1188,9 @@ export default function ChainPulse() {
                 preserveDrawingBuffer: true,
               }}
               className="!absolute !inset-0 !h-full !w-full"
-              onPointerMissed={() => clearSelection()}
+              onPointerMissed={() => {
+                if (selection) clearSelection();
+              }}
             >
               <GenesisWorld
                 feed={data}
@@ -1015,7 +1199,9 @@ export default function ChainPulse() {
                 setSelection={setSelection}
                 flyTarget={flyTarget}
                 setFlyTarget={setFlyTarget}
+                homeRequest={homeRequest}
                 focusMode={focusMode}
+                tipErg={tipErg}
               />
             </Canvas>
           ) : (
@@ -1023,71 +1209,58 @@ export default function ChainPulse() {
               {isLoading
                 ? "CRYSTALLIZING…"
                 : !webglOk
-                  ? "WebGL unavailable — use API /api/chain/feed"
+                  ? "WebGL unavailable"
                   : "CHAIN UNAVAILABLE"}
-              {error && (
-                <span className="text-[10px] opacity-60 max-w-md">
-                  {error instanceof Error ? error.message : "error"}
-                </span>
-              )}
             </div>
           )}
         </div>
 
-        {/* HUD */}
-        <div className="pointer-events-none absolute inset-0 z-10 p-3 md:p-4 flex flex-col justify-between gap-2">
-          {/* Top row */}
+        {/* HUD — almost invisible until needed */}
+        <div className="pointer-events-none absolute inset-0 z-10 p-3 md:p-5 flex flex-col justify-between gap-2">
           <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="glass rounded-2xl border border-white/10 px-3.5 py-2.5 max-w-[min(100%,360px)]">
-              <div className="text-[9px] font-mono tracking-[0.28em] text-[#E8C48A] mb-1">
+            <div className="rounded-2xl bg-black/35 backdrop-blur-xl border border-white/[0.06] px-3.5 py-2.5 max-w-[min(100%,340px)]">
+              <div className="text-[9px] font-mono tracking-[0.32em] text-white/40 mb-1">
                 BLOCK GENESIS
               </div>
-              <div className="text-[12px] font-mono text-[#E8E8F0] tabular-nums tracking-wide">
-                tip{" "}
-                <span className="text-[#FF7A3D]">
+              <div className="text-[13px] font-mono text-white/90 tabular-nums tracking-wide">
+                <span className="text-[#E8C48A]">
                   {data?.tip?.height?.toLocaleString() ?? "—"}
                 </span>
-                {data?.indexedHeight != null && (
-                  <span className="text-[#A0A0B0]/70 text-[11px]">
-                    {" "}
-                    · idx {data.indexedHeight.toLocaleString()}
-                  </span>
-                )}
-              </div>
-              <div className="text-[10px] font-mono text-[#A0A0B0] mt-1 tracking-wide">
-                {mempoolN} tx constellations · {sealedN} sealed ·{" "}
-                {data?.particles?.length ?? 0} particles
+                <span className="text-white/30 text-[11px] ml-2">
+                  {mempoolN} live · {sealedN} sealed
+                </span>
               </div>
               {genesis.active && (
-                <div className="mt-1.5 h-0.5 rounded-full bg-white/10 overflow-hidden">
+                <div className="mt-2 h-[2px] rounded-full bg-white/[0.06] overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-[#5EFFD0] via-[#E8C48A] to-[#FF7A3D] transition-[width] duration-75"
+                    className="h-full rounded-full bg-gradient-to-r from-[#7EF5D4] via-[#E8C48A] to-[#FF7A3D]"
                     style={{ width: `${Math.round(genesis.t * 100)}%` }}
                   />
                 </div>
               )}
             </div>
 
-            <div className="flex flex-wrap gap-1.5 pointer-events-auto">
+            <div className="flex gap-1.5 pointer-events-auto">
               <button
                 type="button"
                 onClick={() => setSoundOn((v) => !v)}
-                className="glass rounded-full border border-white/10 px-3 py-2 text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white transition-colors"
+                className="rounded-full bg-black/35 backdrop-blur-xl border border-white/[0.06] w-9 h-9 text-[11px] text-white/40 hover:text-white/80 transition-colors"
+                title={soundOn ? "Sound on" : "Sound off"}
               >
                 {soundOn ? "♪" : "♩"}
               </button>
               <button
                 type="button"
                 onClick={() => refetch()}
-                className="glass rounded-full border border-white/10 px-3 py-2 text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white"
+                className="rounded-full bg-black/35 backdrop-blur-xl border border-white/[0.06] w-9 h-9 text-[12px] text-white/40 hover:text-white/80"
               >
                 {isFetching ? "…" : "↻"}
               </button>
             </div>
           </div>
 
-          {/* Address focus — minimal */}
-          <div className="pointer-events-auto glass rounded-2xl border border-white/10 px-3 py-2 w-full max-w-[min(100%,400px)]">
+          {/* Address — minimal */}
+          <div className="pointer-events-auto rounded-2xl bg-black/30 backdrop-blur-xl border border-white/[0.06] px-3 py-2 w-full max-w-[min(100%,380px)]">
             <div className="flex gap-2 items-center">
               <input
                 value={addressInput}
@@ -1095,12 +1268,12 @@ export default function ChainPulse() {
                 onKeyDown={(e) => e.key === "Enter" && applyFocus()}
                 placeholder="address focus"
                 spellCheck={false}
-                className="lumen-search-input flex-1 min-w-0 bg-transparent outline-none border-0 text-[#E8E8F0] font-mono text-[12px] placeholder:text-[#A0A0B0]/40"
+                className="lumen-search-input flex-1 min-w-0 bg-transparent outline-none border-0 text-white/85 font-mono text-[12px] placeholder:text-white/25"
               />
               <button
                 type="button"
                 onClick={applyFocus}
-                className="text-[10px] font-mono tracking-widest text-[#E8C48A] px-2"
+                className="text-[10px] font-mono tracking-widest text-[#E8C48A]/80 px-1.5"
               >
                 FOCUS
               </button>
@@ -1108,140 +1281,153 @@ export default function ChainPulse() {
                 <button
                   type="button"
                   onClick={clearFocus}
-                  className="text-[10px] font-mono tracking-widest text-[#A0A0B0] px-1"
+                  className="text-[10px] font-mono text-white/35 px-1"
                 >
                   ✕
                 </button>
               )}
             </div>
             {focusMode && data?.focus && (
-              <div className="mt-1.5 text-[10px] font-mono text-[#A0A0B0]">
-                <span className="text-[#E8E8F0]">
-                  {formatErg(data.focus.confirmed.nanoErgs)} ERG
-                </span>
-                {" · "}
-                {data.focus.confirmed.tokens.length} tokens highlighted
+              <div className="mt-1 text-[10px] font-mono text-white/40">
+                {formatErg(data.focus.confirmed.nanoErgs)} ERG ·{" "}
+                {data.focus.confirmed.tokens.length} tokens
               </div>
             )}
           </div>
 
-          {/* Selection storyboard + timeline */}
+          {/* Storyboard / timeline */}
           <div className="flex flex-wrap items-end justify-between gap-2">
             {selectedTx ? (
-              <div className="pointer-events-auto glass rounded-2xl border border-[#E8C48A]/30 px-3.5 py-3 max-w-[min(100%,340px)] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="text-[9px] font-mono tracking-[0.22em] text-[#E8C48A]">
+              <div className="pointer-events-auto rounded-2xl bg-black/50 backdrop-blur-2xl border border-white/[0.08] px-4 py-3.5 max-w-[min(100%,320px)] shadow-[0_20px_60px_rgba(0,0,0,0.55)]">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[9px] font-mono tracking-[0.28em] text-white/35">
                     TRANSACTION
                   </div>
                   <button
                     type="button"
                     onClick={clearSelection}
-                    className="text-[10px] font-mono text-[#A0A0B0] hover:text-white"
+                    className="text-[9px] font-mono tracking-widest text-white/30 hover:text-white/70"
                   >
-                    CLOSE
+                    ESC
                   </button>
                 </div>
-                <div className="text-[11px] font-mono text-[#E8E8F0] break-all mb-2">
-                  {selectedTx.txId.slice(0, 18)}…
+                <div className="text-[12px] font-mono text-white/90 tracking-wide mb-2.5">
+                  {selectedTx.txId.slice(0, 10)}…{selectedTx.txId.slice(-6)}
                 </div>
-                <div className="flex gap-3 text-[10px] font-mono text-[#A0A0B0] mb-2">
+                <div className="flex items-center gap-2.5 text-[11px] font-mono text-white/50 mb-2.5">
                   <span>
-                    <span className="text-[#5EFFD0]">{selectedTx.inputs}</span>{" "}
-                    in
+                    <span className="text-[#7EF5D4]">{selectedTx.inputs}</span>
+                    <span className="text-white/25"> in</span>
                   </span>
-                  <span>→</span>
+                  <span className="text-white/20">→</span>
                   <span>
-                    <span className="text-[#E8C48A]">{selectedTx.outputs}</span>{" "}
-                    out
+                    <span className="text-[#E8C48A]">{selectedTx.outputs}</span>
+                    <span className="text-white/25"> out</span>
                   </span>
-                  <span className="text-[#FF7A3D]">
+                  <span className="ml-auto text-[#FF8A4A]">
                     {formatErg(selectedTx.ergNano)} ERG
                   </span>
                 </div>
                 {selectedTx.tokens.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 max-h-16 overflow-y-auto">
-                    {selectedTx.tokens.slice(0, 10).map((t) => (
+                  <div className="flex flex-wrap gap-1.5">
+                    {selectedTx.tokens.slice(0, 8).map((t) => (
                       <span
                         key={t.tokenId}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-white/10 text-[9px] font-mono"
+                        className="inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 rounded-full bg-white/[0.04] border border-white/[0.06] text-[9px] font-mono text-white/70"
                       >
                         <span
                           className="w-1.5 h-1.5 rounded-full"
-                          style={{ background: t.color }}
+                          style={{
+                            background: t.color,
+                            boxShadow: `0 0 6px ${t.color}`,
+                          }}
                         />
-                        <span className="text-[#E8E8F0]">
-                          {t.label || t.name || t.tokenId.slice(0, 6)}
-                        </span>
+                        {t.label || t.name || t.tokenId.slice(0, 6)}
                       </span>
                     ))}
                   </div>
                 )}
-                <div className="mt-2 text-[9px] font-mono text-[#A0A0B0]/50 tracking-wider">
-                  {selectedTx.pending ? "MEMPOOL CONSTELLATION" : "SEALED IN TIP"}
+                <div className="mt-2.5 text-[9px] font-mono tracking-[0.18em] text-white/25">
+                  {selectedTx.pending ? "MEMPOOL" : "SEALED"}
                 </div>
               </div>
             ) : selection?.kind === "block" ? (
-              <div className="pointer-events-auto glass rounded-2xl border border-[#7AB8FF]/30 px-3.5 py-3 max-w-[min(100%,300px)]">
-                <div className="flex justify-between mb-1">
-                  <div className="text-[9px] font-mono tracking-[0.22em] text-[#7AB8FF]">
+              <div className="pointer-events-auto rounded-2xl bg-black/50 backdrop-blur-2xl border border-white/[0.08] px-4 py-3.5 max-w-[min(100%,280px)] shadow-[0_20px_60px_rgba(0,0,0,0.55)]">
+                <div className="flex justify-between mb-2">
+                  <div className="text-[9px] font-mono tracking-[0.28em] text-white/35">
                     BLOCK
                   </div>
                   <button
                     type="button"
                     onClick={clearSelection}
-                    className="text-[10px] font-mono text-[#A0A0B0]"
+                    className="text-[9px] font-mono tracking-widest text-white/30 hover:text-white/70"
                   >
-                    CLOSE
+                    ESC
                   </button>
                 </div>
-                <div className="text-[13px] font-mono text-[#E8E8F0] tabular-nums">
+                <div className="text-[18px] font-mono text-white/90 tabular-nums tracking-tight">
                   #{selection.height.toLocaleString()}
                 </div>
-                <div className="text-[10px] font-mono text-[#A0A0B0] mt-0.5 break-all">
-                  {selection.blockId.slice(0, 20)}…
+                {(selection.txCount != null || selection.ergNano) && (
+                  <div className="text-[11px] font-mono text-white/45 mt-1">
+                    {selection.txCount != null && (
+                      <span>{selection.txCount} tx</span>
+                    )}
+                    {selection.ergNano && (
+                      <span>
+                        {selection.txCount != null ? " · " : ""}
+                        {formatErg(selection.ergNano)} ERG
+                      </span>
+                    )}
+                  </div>
+                )}
+                <div className="text-[10px] font-mono text-white/25 mt-1.5 break-all">
+                  {selection.blockId.slice(0, 18)}…
                 </div>
               </div>
             ) : (
-              <div className="glass rounded-2xl border border-white/10 px-3 py-2 text-[9px] font-mono tracking-[0.16em] text-[#A0A0B0] max-w-[min(100%,360px)]">
+              <div className="rounded-2xl bg-black/25 backdrop-blur-xl border border-white/[0.05] px-3 py-2 text-[9px] font-mono tracking-[0.14em] text-white/30 max-w-[min(100%,380px)]">
                 <div className="flex flex-wrap gap-2 items-center">
-                  <span className="text-[#5EFFD0]">TX CONSTELLATIONS</span>
-                  <span className="opacity-40">→</span>
                   <span
                     className={
-                      genesis.crystal > 0.1 ? "text-[#E8C48A]" : "opacity-50"
+                      genesis.capture > 0.05 ? "text-[#7EF5D4]" : ""
                     }
                   >
-                    CRYSTALLIZE
+                    CAPTURE
                   </span>
-                  <span className="opacity-40">→</span>
+                  <span className="opacity-30">→</span>
                   <span
                     className={
-                      genesis.seal > 0.1 ? "text-[#FF7A3D]" : "opacity-50"
+                      genesis.crystal > 0.05 ? "text-[#E8C48A]" : ""
                     }
+                  >
+                    CRYSTAL
+                  </span>
+                  <span className="opacity-30">→</span>
+                  <span
+                    className={genesis.seal > 0.05 ? "text-[#FF8A4A]" : ""}
                   >
                     SEAL
                   </span>
-                  <span className="opacity-40">→</span>
+                  <span className="opacity-30">→</span>
                   <span
-                    className={
-                      genesis.dock > 0.1 ? "text-[#7AB8FF]" : "opacity-50"
-                    }
+                    className={genesis.dock > 0.05 ? "text-[#8EBBFF]" : ""}
                   >
                     DOCK
                   </span>
                 </div>
-                <div className="mt-1.5 opacity-50 normal-case tracking-normal">
-                  tap a soft nucleus · watch value crystallize into the chain
+                <div className="mt-1 opacity-50 normal-case tracking-normal text-white/25">
+                  tap a constellation · watch a block being born
                 </div>
               </div>
             )}
 
-            {data?.tip && (
-              <div className="glass rounded-2xl border border-white/10 px-3 py-2 text-[10px] font-mono text-right">
-                <div className="text-[9px] tracking-[0.2em] text-[#E8C48A]/80">
+            {data?.tip && !selection && (
+              <div className="rounded-2xl bg-black/25 backdrop-blur-xl border border-white/[0.05] px-3 py-2 text-[10px] font-mono text-right text-white/40">
+                <div className="text-[9px] tracking-[0.2em] text-white/25">
                   TIP
                 </div>
-                <div className="text-[#E8E8F0] tabular-nums">
+                <div className="text-white/70 tabular-nums">
                   {data.tip.txCount} tx
                 </div>
               </div>
@@ -1250,7 +1436,7 @@ export default function ChainPulse() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 px-0.5 text-[10px] font-mono tracking-wider text-[#A0A0B0]">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 px-0.5 text-[10px] font-mono tracking-wider text-white/25">
         <span>
           {error
             ? `error: ${error instanceof Error ? error.message : "failed"}`
@@ -1258,8 +1444,8 @@ export default function ChainPulse() {
               ? `genesis · ${new Date(dataUpdatedAt).toLocaleTimeString()}`
               : "…"}
         </span>
-        <span className="opacity-45">
-          thin explorer · /api/chain/feed · local node
+        <span className="opacity-60">
+          {mempoolN} constellations · thin explorer
         </span>
       </div>
     </div>
