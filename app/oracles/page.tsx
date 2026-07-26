@@ -271,40 +271,33 @@ export default function OraclesPage() {
             </div>
           </div>
 
-          <div className="flex items-end gap-4 sm:gap-8 text-sm flex-wrap">
-            {feeds.map((f) => (
-              <div key={f.id}>
-                <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest">
-                  {f.pair}
-                </div>
+          {/* Status chips only — price lives once per feed panel below */}
+          <div className="flex items-end gap-2 sm:gap-3 text-sm flex-wrap">
+            {feeds.map((f) => {
+              const tone =
+                f.status === "live"
+                  ? { c: "#34D399", bg: "rgba(52,211,153,0.1)", b: "rgba(52,211,153,0.28)" }
+                  : f.status === "stale"
+                    ? { c: "#D4A574", bg: "rgba(212,165,116,0.1)", b: "rgba(212,165,116,0.28)" }
+                    : { c: "#F87171", bg: "rgba(248,113,113,0.1)", b: "rgba(248,113,113,0.28)" };
+              return (
                 <div
-                  className="font-mono text-2xl sm:text-4xl tracking-[-1px] tabular-nums mt-0.5"
-                  style={{
-                    color:
-                      f.status === "live"
-                        ? "#E8E8F0"
-                        : f.status === "stale"
-                          ? "#F59E0B"
-                          : "#EF4444",
-                  }}
+                  key={f.id}
+                  className="rounded-xl border px-3 py-2 min-w-[7.5rem]"
+                  style={{ borderColor: tone.b, background: tone.bg }}
                 >
-                  {f.priceLabel || "—"}
+                  <div className="text-[10px] font-mono tracking-[0.14em] text-[#8B8B9A] uppercase">
+                    {f.pair}
+                  </div>
+                  <div
+                    className="mt-1 text-[11px] font-mono tracking-[0.16em] font-medium uppercase"
+                    style={{ color: tone.c }}
+                  >
+                    {f.status}
+                  </div>
                 </div>
-                <div
-                  className="text-[10px] font-mono tracking-widest mt-0.5"
-                  style={{
-                    color:
-                      f.status === "live"
-                        ? "#10B981"
-                        : f.status === "stale"
-                          ? "#F59E0B"
-                          : "#EF4444",
-                  }}
-                >
-                  {f.status.toUpperCase()}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

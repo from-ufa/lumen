@@ -32,6 +32,8 @@ interface Oracle {
   x?: number;
   y?: number;
   pulse?: number;
+  /** 0–1 flash when this oracle just published a datapoint */
+  publishFlash?: number;
 }
 
 interface Datapoint {
@@ -216,6 +218,8 @@ export default function OracleConstellation({
   chrome = true,
   /** Override core/glow accent (gold for XAU, cyan for USD) */
   accentOverride,
+  /** When true, omit center price readout (parent shows single price panel) */
+  hideCenterPrice = false,
   /** Bubble activity log for parent shell */
   onActivity,
 }: {
@@ -224,6 +228,7 @@ export default function OracleConstellation({
   compact?: boolean;
   chrome?: boolean;
   accentOverride?: string;
+  hideCenterPrice?: boolean;
   onActivity?: (
     rows: { id: string; t: number; kind: string; message: string }[]
   ) => void;
@@ -300,11 +305,19 @@ export default function OracleConstellation({
     CY: 0,
     epochHistory: [] as EpochData[],
     compact: compact,
+    hideCenterPrice: hideCenterPrice,
     lastSettlement: feed.settlementHeight as number | null,
     /** Real network events to animate (datapoints / rewards / refresh) */
     eventQueue: [] as OracleLiveEvent[],
     seenEventIds: new Set<string>(),
   });
+
+  // Keep layout flags in sync without restarting the canvas loop
+  useEffect(() => {
+    animDataRef.current.compact = compact;
+    animDataRef.current.hideCenterPrice = hideCenterPrice;
+    if (accentOverride) animDataRef.current.accent = accentOverride;
+  }, [compact, hideCenterPrice, accentOverride]);
 
   // Sync live feed → React state + queue REAL events for animation
   useEffect(() => {
@@ -318,6 +331,7 @@ export default function OracleConstellation({
         o.x = prev.x;
         o.y = prev.y;
         o.pulse = prev.pulse;
+        o.publishFlash = prev.publishFlash;
       }
       return o;
     });
@@ -701,29 +715,29 @@ export default function OracleConstellation({
       ctx.fill();
       glow(ad.CX, ad.CY, 18, accent, 0.4);
 
-      // Clean center readout — keep short so corner chips never collide
-      const label = ad.priceLabel || "—";
-      // Prefer primary number only on canvas; long secondary lives in shell Price panel
-      let display = label;
-      if (display.length > 16) {
-        // e.g. "609,080 ERG/oz" → keep as-is if fits, else trim unit
-        display = display.replace(" ERG/oz", "");
-      }
-      const fontSize =
-        display.length > 12 ? 16 : display.length > 9 ? 18 : 22;
-      ctx.fillStyle = "rgba(250,250,252,0.97)";
-      ctx.font = `350 ${fontSize}px "SF Mono", ui-monospace, monospace`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(display, ad.CX, ad.CY - 8);
+      // Center price only when chrome owns the layout; dual shell has a single price panel
+      if (!ad.hideCenterPrice) {
+        const label = ad.priceLabel || "—";
+        let display = label;
+        if (display.length > 16) {
+          display = display.replace(" ERG/oz", "");
+        }
+        const fontSize =
+          display.length > 12 ? 16 : display.length > 9 ? 18 : 22;
+        ctx.fillStyle = "rgba(250,250,252,0.97)";
+        ctx.font = `350 ${fontSize}px "SF Mono", ui-monospace, monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(display, ad.CX, ad.CY - 8);
 
-      ctx.fillStyle = hexToRgba(accent, 0.7);
-      ctx.font = "600 8px ui-monospace, monospace";
-      ctx.fillText(
-        (ad.unitLabel || ad.pairLabel || "").toUpperCase().slice(0, 22),
-        ad.CX,
-        ad.CY + 16
-      );
+        ctx.fillStyle = hexToRgba(accent, 0.7);
+        ctx.font = "600 8px ui-monospace, monospace";
+        ctx.fillText(
+          (ad.unitLabel || ad.pairLabel || "").toUpperCase().slice(0, 22),
+          ad.CX,
+          ad.CY + 16
+        );
+      }
     }
 
     function drawOracle(o: Oracle) {
@@ -733,30 +747,49 @@ export default function OracleConstellation({
       o.x = ad.CX + Math.cos(o.angle) * rr;
       o.y = ad.CY + Math.sin(o.angle) * rr;
       o.pulse = (o.pulse || 0) + 0.05;
+      if (o.publishFlash && o.publishFlash > 0) {
+        o.publishFlash = Math.max(0, o.publishFlash - 0.018);
+      }
+
+      const flash = o.publishFlash || 0;
 
       if (o.status !== "Offline") {
+        const beamA = 0.06 + flash * 0.35;
         const g = ctx.createLinearGradient(o.x, o.y, ad.CX, ad.CY);
         g.addColorStop(
           0,
           o.status === "Slashed"
-            ? "rgba(239,68,68,0.08)"
-            : "rgba(0,212,170,0.06)"
+            ? `rgba(239,68,68,${0.08 + flash * 0.25})`
+            : `rgba(0,212,170,${beamA})`
         );
         g.addColorStop(1, "transparent");
         ctx.strokeStyle = g;
-        ctx.lineWidth = 0.5;
+        ctx.lineWidth = 0.5 + flash * 2.2;
         ctx.beginPath();
         ctx.moveTo(o.x, o.y);
         ctx.lineTo(ad.CX, ad.CY);
         ctx.stroke();
       }
 
-      if (o.status === "Active") glow(o.x, o.y, 22, "#00D4AA", 0.18);
-      else if (o.status === "Verifying") glow(o.x, o.y, 18, "#FBBF24", 0.12);
+      if (o.status === "Active") glow(o.x, o.y, 22 + flash * 28, "#00D4AA", 0.18 + flash * 0.4);
+      else if (o.status === "Verifying") glow(o.x, o.y, 18 + flash * 20, "#FBBF24", 0.12 + flash * 0.3);
       else if (o.status === "Slashed") glow(o.x, o.y, 18, "#EF4444", 0.15);
 
+      // Expanding ring when this oracle just fired a datapoint
+      if (flash > 0.05) {
+        const ringExpand = (1 - flash) * 28;
+        ctx.strokeStyle = hexToRgba(
+          o.status === "Verifying" ? "#FBBF24" : "#00D4AA",
+          flash * 0.85
+        );
+        ctx.lineWidth = 1.5 + flash * 1.5;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, o.size + 6 + ringExpand, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
       const isHov = ad.hovered === o;
-      const sz = o.size + (isHov ? 4 : 0);
+      const sz = o.size + (isHov ? 4 : 0) + flash * 3;
 
       ctx.fillStyle =
         o.status === "Offline"
@@ -767,6 +800,13 @@ export default function OracleConstellation({
       ctx.beginPath();
       ctx.arc(o.x, o.y, sz, 0, Math.PI * 2);
       ctx.fill();
+
+      if (flash > 0.2) {
+        ctx.fillStyle = `rgba(255,255,255,${flash * 0.55})`;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, sz * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       if (o.status === "Verifying") {
         ctx.strokeStyle = "#FBBF24";
@@ -790,8 +830,11 @@ export default function OracleConstellation({
         ctx.stroke();
       }
 
-      if (o.size >= 7 || isHov) {
-        ctx.fillStyle = "rgba(226,232,240,0.55)";
+      if (o.size >= 7 || isHov || flash > 0.4) {
+        ctx.fillStyle =
+          flash > 0.3
+            ? `rgba(226,232,240,${0.55 + flash * 0.4})`
+            : "rgba(226,232,240,0.55)";
         ctx.font = "10px -apple-system, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(o.name, o.x, o.y + sz + 14);
@@ -799,15 +842,16 @@ export default function OracleConstellation({
     }
 
     function spawnDatapoint(source: Oracle, isOutlier = false) {
+      source.publishFlash = 1;
       ad.datapoints.push({
         x: source.x || 0,
         y: source.y || 0,
         tx: ad.CX,
         ty: ad.CY,
         progress: 0,
-        speed: 0.008 + Math.random() * 0.006,
+        speed: 0.012 + Math.random() * 0.01,
         color: isOutlier ? "#EF4444" : "#00D4AA",
-        size: 3 + Math.random() * 2,
+        size: 4.5 + Math.random() * 2.5,
         isOutlier,
         source: source.name,
       });
@@ -817,7 +861,15 @@ export default function OracleConstellation({
       for (let i = ad.datapoints.length - 1; i >= 0; i--) {
         const p = ad.datapoints[i];
         p.progress += p.speed;
+        // Negative progress = delayed second shot (not yet visible)
+        if (p.progress < 0) continue;
         if (p.progress >= 1) {
+          // Hit the pool core — bright impact ring
+          ad.glowRings.push({
+            r: 22,
+            a: 0.9,
+            color: p.isOutlier ? "#EF4444" : p.color,
+          });
           ad.datapoints.splice(i, 1);
           continue;
         }
@@ -847,17 +899,19 @@ export default function OracleConstellation({
 
         const x = p.x + (p.tx - p.x) * p.progress + ex;
         const y = p.y + (p.ty - p.y) * p.progress + ey;
-        const a = 1 - Math.abs(p.progress - 0.5) * 1.5;
-        drawDiamond(x, y, p.size * 2, p.color, Math.max(0, a));
+        const a = 1 - Math.abs(p.progress - 0.5) * 1.2;
+        const alpha = Math.max(0, Math.min(1, a));
+        // Brighter trail + larger diamond so publishes read clearly
+        glow(x, y, 12 + p.size * 2, p.color, alpha * 0.35);
+        drawDiamond(x, y, p.size * 2.4, p.color, alpha);
 
-        ctx.strokeStyle =
-          p.color +
-          Math.floor(Math.max(0, a) * 40)
-            .toString(16)
-            .padStart(2, "0");
-        ctx.lineWidth = 1;
+        const trailA = Math.floor(alpha * 90)
+          .toString(16)
+          .padStart(2, "0");
+        ctx.strokeStyle = p.color + trailA;
+        ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.moveTo(x - (p.tx - p.x) * 0.04, y - (p.ty - p.y) * 0.04);
+        ctx.moveTo(x - (p.tx - p.x) * 0.08, y - (p.ty - p.y) * 0.08);
         ctx.lineTo(x, y);
         ctx.stroke();
       }
@@ -973,6 +1027,18 @@ export default function OracleConstellation({
               src.y = ad.CY + Math.sin(src.angle) * rr;
             }
             spawnDatapoint(src, false);
+            // Second diamond slightly delayed in progress for a clear “shot” trail
+            if (Math.random() < 0.4) {
+              spawnDatapoint(src, false);
+              const last = ad.datapoints[ad.datapoints.length - 1];
+              if (last) last.progress = -0.12;
+            }
+            setLivePhase("datapoints");
+          } else if (ad.oracles.length > 0) {
+            // Fallback: still show a shot if address mapping missed
+            const any =
+              ad.oracles.find((o) => o.status === "Active") || ad.oracles[0];
+            spawnDatapoint(any, false);
             setLivePhase("datapoints");
           }
         } else if (ev.kind === "pool_refresh" || ev.kind === "rate_change") {

@@ -26,32 +26,84 @@ function themeFor(feed: OracleFeedData): Theme {
     return {
       accent: "#C9A84C",
       accentDim: "rgba(201, 168, 76, 0.14)",
-      border: "rgba(201, 168, 76, 0.22)",
-      surface: "rgba(201, 168, 76, 0.04)",
+      border: "rgba(201, 168, 76, 0.2)",
+      surface: "rgba(201, 168, 76, 0.035)",
       label: "#E8D5A3",
     };
   }
   return {
     accent: "#2DD4BF",
     accentDim: "rgba(45, 212, 191, 0.12)",
-    border: "rgba(45, 212, 191, 0.2)",
+    border: "rgba(45, 212, 191, 0.18)",
     surface: "rgba(45, 212, 191, 0.03)",
     label: "#A7F3E8",
   };
 }
 
-function statusTone(status: string) {
-  if (status === "live") return { color: "#34D399", label: "LIVE" };
-  if (status === "stale") return { color: "#D4A574", label: "STALE" };
-  return { color: "#F87171", label: "OFFLINE" };
+/** Human status copy — plain language, not debug */
+function statusExplain(
+  feed: OracleFeedData
+): { color: string; label: string; blurb: string } {
+  const lag = feed.ageBlocks;
+  if (feed.status === "live") {
+    return {
+      color: "#34D399",
+      label: "LIVE",
+      blurb:
+        lag != null
+          ? `The shared price is up to date — last pool update about ${lag} block${lag === 1 ? "" : "s"} ago.`
+          : "The shared price is up to date — the pool was refreshed recently.",
+    };
+  }
+  if (feed.status === "stale") {
+    return {
+      color: "#D4A574",
+      label: "STALE",
+      blurb:
+        lag != null
+          ? `A price is still on-chain, but it is getting old (~${lag} blocks). Operators may still be posting while the pool waits for enough agreement.`
+          : "A price is still on-chain, but the pool has not refreshed for a while.",
+    };
+  }
+  return {
+    color: "#F87171",
+    label: "OFFLINE",
+    blurb:
+      "This feed cannot be trusted right now — the pool box is missing or the data is extremely old.",
+  };
+}
+
+function healthExplain(poolHealthy: boolean | null | undefined): {
+  label: string;
+  color: string;
+  blurb: string;
+} {
+  if (poolHealthy === true) {
+    return {
+      label: "HEALTHY",
+      color: "#34D399",
+      blurb: "Local oracle software says the pool protocol looks fine.",
+    };
+  }
+  if (poolHealthy === false) {
+    return {
+      label: "DOWN",
+      color: "#D4A574",
+      blurb:
+        "Local oracle software sees protocol trouble (not enough agreement or refresh issues). This is separate from how old the on-chain price is.",
+    };
+  }
+  return {
+    label: "—",
+    color: "#8B8B9A",
+    blurb: "Pool health from local metrics is not available.",
+  };
 }
 
 /**
- * Premium epoch indicator.
- * Progress = pool lag / live window (0 = fresh, 1 = at LIVE threshold).
- * Ring sits wide of the digits so the mark breathes.
+ * Compact epoch control: ring + human text to the RIGHT (not stacked under).
  */
-function EpochRing({
+function EpochAside({
   epoch,
   progress,
   color,
@@ -64,35 +116,29 @@ function EpochRing({
   ageBlocks?: number | null;
   liveMax?: number | null;
 }) {
-  // Larger canvas, thinner stroke, bigger inner void → air between ring & number
-  const size = 88;
+  const size = 56;
   const cx = size / 2;
-  const r = 34; // ring radius — leaves ~28px diameter free in the center
-  const stroke = 2.25;
-  const c = 2 * Math.PI * r;
+  const r = 22;
+  const stroke = 2;
+  const circ = 2 * Math.PI * r;
   const p = Math.min(1, Math.max(0, progress));
-  const gradId = `epoch-grad-${color.replace("#", "")}`;
-  const softId = `epoch-soft-${color.replace("#", "")}`;
+  const gradId = `eg-${color.replace("#", "")}-${epoch ?? 0}`;
+  const softId = `es-${color.replace("#", "")}`;
 
   const freshness =
-    p < 0.35 ? "Fresh" : p < 0.75 ? "Aging" : "Near limit";
-
-  const aria =
-    epoch != null
-      ? `Pool epoch ${epoch.toLocaleString()}. ${freshness}. ${
-          ageBlocks != null && liveMax != null
-            ? `${ageBlocks} of ${liveMax} blocks into the live window.`
-            : "Based on pool lag versus live threshold."
-        }`
-      : "Pool epoch unavailable";
+    p < 0.35 ? "Fresh update window" : p < 0.75 ? "Getting older" : "Near stale";
 
   return (
     <div
-      className="flex flex-col items-center shrink-0 select-none"
+      className="flex items-center gap-3.5 shrink-0"
       role="img"
-      aria-label={aria}
+      aria-label={
+        epoch != null
+          ? `Pool epoch ${epoch}. ${freshness}.`
+          : "Pool epoch unavailable"
+      }
     >
-      <div className="relative" style={{ width: size, height: size }}>
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
         <svg
           width={size}
           height={size}
@@ -101,29 +147,24 @@ function EpochRing({
           style={{ overflow: "visible" }}
         >
           <defs>
-            {/* Soft multi-stop gradient for a continuous, non-pixel edge */}
             <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
               <stop offset="0%" stopColor={color} stopOpacity="1" />
-              <stop offset="45%" stopColor={color} stopOpacity="0.92" />
-              <stop offset="100%" stopColor="#F5F0E6" stopOpacity="0.85" />
+              <stop offset="55%" stopColor={color} stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#F3EDE0" stopOpacity="0.8" />
             </linearGradient>
-            {/* Wide soft glow — no hard drop-shadow pixels */}
             <filter
               id={softId}
-              x="-40%"
-              y="-40%"
-              width="180%"
-              height="180%"
+              x="-50%"
+              y="-50%"
+              width="200%"
+              height="200%"
               colorInterpolationFilters="sRGB"
             >
-              <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="b" />
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.8" result="b" />
               <feColorMatrix
                 in="b"
                 type="matrix"
-                values="1 0 0 0 0
-                        0 1 0 0 0
-                        0 0 1 0 0
-                        0 0 0 0.55 0"
+                values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 0.5 0"
                 result="g"
               />
               <feMerge>
@@ -132,19 +173,15 @@ function EpochRing({
               </feMerge>
             </filter>
           </defs>
-
-          {/* Track — hairline, low contrast */}
           <circle
             cx={cx}
             cy={cx}
             r={r}
             fill="none"
-            stroke="rgba(255,255,255,0.06)"
+            stroke="rgba(255,255,255,0.07)"
             strokeWidth={stroke}
             style={{ transform: "rotate(-90deg)", transformOrigin: "center" }}
           />
-
-          {/* Progress — rounded ends, gradient, soft blur filter */}
           <circle
             cx={cx}
             cy={cx}
@@ -153,34 +190,22 @@ function EpochRing({
             stroke={`url(#${gradId})`}
             strokeWidth={stroke}
             strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray={c}
-            strokeDashoffset={c * (1 - p)}
+            strokeDasharray={circ}
+            strokeDashoffset={circ * (1 - p)}
             filter={`url(#${softId})`}
             style={{
               transform: "rotate(-90deg)",
               transformOrigin: "center",
-              transition: "stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1)",
+              transition:
+                "stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1)",
             }}
           />
-
-          {/* Inner micro-track for depth (does not compete with digits) */}
-          <circle
-            cx={cx}
-            cy={cx}
-            r={r - 7}
-            fill="none"
-            stroke="rgba(255,255,255,0.03)"
-            strokeWidth="1"
-          />
         </svg>
-
-        {/* Number only — no second line inside the ring */}
         <div className="absolute inset-0 flex items-center justify-center">
           <span
-            className="font-mono tabular-nums text-white leading-none tracking-[-0.03em]"
+            className="font-mono tabular-nums text-white tracking-tight"
             style={{
-              fontSize: epoch != null && epoch >= 10000 ? 12 : 15,
+              fontSize: epoch != null && epoch >= 10000 ? 10 : 12,
               fontWeight: 500,
             }}
           >
@@ -189,15 +214,19 @@ function EpochRing({
         </div>
       </div>
 
-      {/* Human label outside the ring — air + no debug tone */}
-      <div className="mt-2 text-center">
-        <div className="text-[10px] font-medium tracking-[0.04em] text-[#C8C8D0]">
+      {/* Text to the right of the ring — keeps header short */}
+      <div className="min-w-0 max-w-[9.5rem] sm:max-w-[11rem]">
+        <div className="text-[11px] font-medium text-[#D8D8E0] tracking-tight leading-snug">
           Pool epoch
         </div>
-        <div className="mt-0.5 text-[9px] font-mono tracking-wide text-[#6B6B7A]">
+        <div className="mt-0.5 text-[10px] text-[#8B8B9A] leading-snug">
           {freshness}
-          {ageBlocks != null ? ` · ${ageBlocks} blk lag` : ""}
         </div>
+        {ageBlocks != null && liveMax != null && (
+          <div className="mt-1 text-[10px] font-mono text-[#6B6B78] tabular-nums">
+            {ageBlocks} / {liveMax} blocks
+          </div>
+        )}
       </div>
     </div>
   );
@@ -218,33 +247,84 @@ function CornerChip({
 }) {
   const pos =
     corner === "tl"
-      ? "top-3 left-3 sm:top-4 sm:left-4"
+      ? "top-3 left-3 sm:top-3.5 sm:left-3.5"
       : corner === "tr"
-        ? "top-3 right-3 sm:top-4 sm:right-4 text-right"
+        ? "top-3 right-3 sm:top-3.5 sm:right-3.5 text-right"
         : corner === "bl"
-          ? "bottom-3 left-3 sm:bottom-4 sm:left-4"
-          : "bottom-3 right-3 sm:bottom-4 sm:right-4 text-right";
+          ? "bottom-3 left-3 sm:bottom-3.5 sm:left-3.5"
+          : "bottom-3 right-3 sm:bottom-3.5 sm:right-3.5 text-right";
 
   return (
-    <div
-      className={`absolute z-20 pointer-events-none ${pos}`}
-      style={{ maxWidth: "42%" }}
-    >
-      <div className="rounded-2xl border border-white/[0.09] bg-[#07070C]/78 backdrop-blur-xl px-3 py-2.5 shadow-[0_12px_32px_rgba(0,0,0,0.5)]">
-        <div className="text-[8px] sm:text-[9px] font-mono tracking-[0.16em] text-[#8B8B9A] uppercase whitespace-nowrap">
+    <div className={`absolute z-20 pointer-events-none ${pos}`}>
+      <div className="rounded-xl border border-white/[0.08] bg-[#06060A]/82 backdrop-blur-xl px-2.5 py-2 shadow-[0_10px_28px_rgba(0,0,0,0.5)]">
+        <div className="text-[8px] font-mono tracking-[0.14em] text-[#7A7A88] uppercase">
           {label}
         </div>
         <div
-          className="mt-1 font-mono text-[13px] sm:text-[15px] tabular-nums tracking-tight leading-none whitespace-nowrap"
-          style={{ color: accent || "#F2F2F7" }}
+          className="mt-0.5 font-mono text-[13px] sm:text-sm tabular-nums tracking-tight leading-none"
+          style={{ color: accent || "#F0F0F5" }}
         >
           {value}
         </div>
         {sub ? (
-          <div className="mt-1 text-[8px] sm:text-[9px] font-mono text-[#6B6B7A] tracking-wide whitespace-nowrap overflow-hidden text-ellipsis">
+          <div className="mt-0.5 text-[8px] font-mono text-[#5C5C6A] tracking-wide">
             {sub}
           </div>
         ) : null}
+      </div>
+    </div>
+  );
+}
+
+function LegendItem({
+  color,
+  shape,
+  label,
+  hint,
+}: {
+  color: string;
+  shape: "dot" | "hex" | "diamond" | "star";
+  label: string;
+  hint: string;
+}) {
+  return (
+    <div className="flex items-start gap-2.5 min-w-0">
+      <div className="mt-0.5 shrink-0 flex items-center justify-center w-4 h-4">
+        {shape === "dot" && (
+          <span
+            className="block w-2.5 h-2.5 rounded-full"
+            style={{ background: color, boxShadow: `0 0 8px ${color}66` }}
+          />
+        )}
+        {shape === "hex" && (
+          <span
+            className="block w-3 h-3"
+            style={{
+              background: color,
+              clipPath:
+                "polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%)",
+            }}
+          />
+        )}
+        {shape === "diamond" && (
+          <span
+            className="block w-2.5 h-2.5 rotate-45"
+            style={{ background: color }}
+          />
+        )}
+        {shape === "star" && (
+          <span className="text-[11px] leading-none" style={{ color }}>
+            ★
+          </span>
+        )}
+      </div>
+      <div className="min-w-0">
+        <div className="text-[11px] font-medium text-[#D0D0D8] leading-tight">
+          {label}
+        </div>
+        <div className="text-[10px] text-[#6B6B78] leading-snug mt-0.5">
+          {hint}
+        </div>
       </div>
     </div>
   );
@@ -260,9 +340,11 @@ function OracleBlock({
   const [activity, setActivity] = useState<
     { id: string; t: number; kind: string; message: string }[]
   >([]);
+  const [publishPulse, setPublishPulse] = useState(0);
 
   const theme = themeFor(feed);
-  const st = statusTone(feed.status);
+  const st = statusExplain(feed);
+  const health = healthExplain(feed.poolHealthy);
   const live =
     feed.activeOracles ??
     feed.nodes.filter((n) => n.status === "live").length;
@@ -275,47 +357,43 @@ function OracleBlock({
 
   return (
     <section
-      className="rounded-[1.25rem] sm:rounded-[1.5rem] border overflow-hidden"
+      className="rounded-2xl sm:rounded-[1.35rem] border overflow-hidden"
       style={{
         borderColor: theme.border,
-        background: `linear-gradient(180deg, ${theme.surface} 0%, rgba(10,10,15,0.95) 40%)`,
-        boxShadow: "0 24px 64px rgba(0,0,0,0.45)",
+        background: `linear-gradient(180deg, ${theme.surface} 0%, rgba(9,9,12,0.98) 45%)`,
+        boxShadow: "0 20px 56px rgba(0,0,0,0.42)",
       }}
     >
-      {/* Header */}
-      <header className="flex items-center justify-between gap-4 px-5 sm:px-7 py-4 sm:py-5 border-b border-white/[0.06]">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <span
-              className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
-              style={{
-                background: st.color,
-                boxShadow:
-                  feed.status === "live" ? `0 0 10px ${st.color}` : "none",
-              }}
-            />
-            <h2
-              className="text-xl sm:text-2xl font-semibold tracking-[-0.03em] leading-none"
-              style={{ color: theme.label }}
-            >
-              {feed.pair}
-            </h2>
-            <span
-              className="text-[10px] font-mono tracking-[0.18em] uppercase px-2 py-0.5 rounded-full border"
-              style={{
-                color: st.color,
-                borderColor: `${st.color}44`,
-                background: `${st.color}12`,
-              }}
-            >
-              {st.label}
-            </span>
-          </div>
-          <p className="mt-2 text-[11px] sm:text-xs font-mono text-[#7A7A8A] tracking-wide">
-            {feed.subtitle || "Oracle Pool"} · on-chain pool box
-          </p>
+      {/* Compact header: title left · epoch ring+copy right */}
+      <header className="flex items-center justify-between gap-3 sm:gap-5 px-4 sm:px-6 py-3 sm:py-3.5 border-b border-white/[0.06]">
+        <div className="min-w-0 flex items-center gap-2.5">
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{
+              background: st.color,
+              boxShadow:
+                feed.status === "live" ? `0 0 10px ${st.color}` : "none",
+            }}
+          />
+          <h2
+            className="text-lg sm:text-xl font-semibold tracking-[-0.03em] leading-none truncate"
+            style={{ color: theme.label }}
+          >
+            {feed.pair}
+          </h2>
+          <span
+            className="shrink-0 text-[9px] sm:text-[10px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full border"
+            style={{
+              color: st.color,
+              borderColor: `${st.color}40`,
+              background: `${st.color}14`,
+            }}
+          >
+            {st.label}
+          </span>
         </div>
-        <EpochRing
+
+        <EpochAside
           epoch={feed.epoch}
           progress={epochProgress}
           color={theme.accent}
@@ -324,8 +402,30 @@ function OracleBlock({
         />
       </header>
 
-      {/* Visualization stage */}
-      <div className="px-4 sm:px-6 pt-4 sm:pt-5">
+      {/* Human status strip */}
+      <div className="px-4 sm:px-6 py-2.5 border-b border-white/[0.04] bg-black/20">
+        <p className="text-[12px] sm:text-[13px] text-[#B0B0BC] leading-snug max-w-3xl">
+          <span className="font-medium" style={{ color: st.color }}>
+            {st.label}
+          </span>
+          <span className="text-[#5C5C6A]"> · </span>
+          {st.blurb}
+          {feed.poolHealthy === false && (
+            <>
+              <span className="text-[#5C5C6A]"> · </span>
+              <span style={{ color: health.color }}>{health.label}</span>
+              <span className="text-[#8B8B9A]">
+                {" "}
+                means the local oracle agent sees protocol trouble, even if a
+                price still exists on-chain.
+              </span>
+            </>
+          )}
+        </p>
+      </div>
+
+      {/* Map stage */}
+      <div className="px-3 sm:px-5 pt-3 sm:pt-4">
         <div
           className="relative rounded-2xl overflow-hidden border border-white/[0.06]"
           style={{
@@ -333,25 +433,52 @@ function OracleBlock({
             boxShadow: `inset 0 0 80px ${theme.accentDim}`,
           }}
         >
+          {/* Brief “publishing” flash over the map when datapoints fire */}
+          {publishPulse > 0 && (
+            <div
+              className="absolute top-3 left-1/2 z-30 -translate-x-1/2 pointer-events-none"
+              key={publishPulse}
+              onAnimationEnd={() => setPublishPulse(0)}
+            >
+              <div
+                className="px-3.5 py-1 rounded-full text-[10px] font-mono tracking-[0.22em] uppercase border"
+                style={{
+                  color: theme.accent,
+                  borderColor: `${theme.accent}55`,
+                  background: "rgba(0,0,0,0.72)",
+                  boxShadow: `0 0 28px ${theme.accent}55`,
+                  animation: "oracle-publish-flash 1.35s ease-out forwards",
+                }}
+              >
+                ◆ Publishing
+              </div>
+            </div>
+          )}
+
           <div className="lumen-oracle-panel relative w-full">
             <OracleConstellation
               feed={feed}
               compact
               chrome={false}
               accentOverride={theme.accent}
-              onActivity={setActivity}
+              hideCenterPrice
+              onActivity={(rows) => {
+                setActivity(rows);
+                if (rows.some((r) => r.kind === "datapoint" || r.kind === "pool_refresh")) {
+                  setPublishPulse((n) => n + 1);
+                }
+              }}
             />
           </div>
 
-          {/* Corner metrics — integrated into stage */}
           <CornerChip
             corner="tl"
             label="Consensus"
-            value={`${live} / ${total}`}
+            value={`${live}/${total}`}
             sub={
               feed.requiredOracles != null
-                ? `quorum ${feed.requiredOracles}`
-                : "live operators"
+                ? `need ${feed.requiredOracles}`
+                : "operators"
             }
             accent={st.color}
           />
@@ -359,7 +486,7 @@ function OracleBlock({
             corner="tr"
             label="Lag"
             value={feed.ageBlocks != null ? String(feed.ageBlocks) : "—"}
-            sub="blocks behind tip"
+            sub="blocks"
             accent={
               feed.status === "live"
                 ? "#E8E8F0"
@@ -371,25 +498,9 @@ function OracleBlock({
           <CornerChip
             corner="bl"
             label="Health"
-            value={
-              feed.poolHealthy == null
-                ? "—"
-                : feed.poolHealthy
-                  ? "OK"
-                  : "DOWN"
-            }
-            sub={
-              tipHeight != null
-                ? `chain ${tipHeight.toLocaleString()}`
-                : "from metrics"
-            }
-            accent={
-              feed.poolHealthy == null
-                ? undefined
-                : feed.poolHealthy
-                  ? "#34D399"
-                  : "#D4A574"
-            }
+            value={health.label === "—" ? "—" : health.label}
+            sub={tipHeight != null ? `tip ${tipHeight.toLocaleString()}` : undefined}
+            accent={health.color}
           />
           <CornerChip
             corner="br"
@@ -399,24 +510,60 @@ function OracleBlock({
                 ? feed.settlementHeight.toLocaleString()
                 : "—"
             }
-            sub="pool box height"
+            sub="height"
           />
         </div>
       </div>
 
-      {/* Bottom panels — equal, clean */}
-      <div className="grid sm:grid-cols-2 gap-3 sm:gap-4 px-4 sm:px-6 py-4 sm:py-5">
-        <div className="rounded-2xl border border-white/[0.07] bg-black/35 px-4 py-3.5 min-h-[120px] flex flex-col">
-          <div className="text-[9px] font-mono tracking-[0.2em] text-[#7A7A8A] uppercase mb-3">
-            Live activity
+      {/* Single price + activity + legend */}
+      <div className="px-4 sm:px-5 py-4 sm:py-5 grid lg:grid-cols-12 gap-3 sm:gap-4">
+        {/* Price — the only price surface */}
+        <div className="lg:col-span-4 rounded-2xl border border-white/[0.07] bg-black/40 px-4 py-4 flex flex-col justify-center min-h-[120px]">
+          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2">
+            On-chain price
+          </div>
+          <div
+            className="font-mono text-[1.65rem] sm:text-[1.85rem] font-semibold tabular-nums tracking-tight leading-none"
+            style={{ color: theme.label }}
+          >
+            {feed.priceLabel || "—"}
+          </div>
+          <div className="mt-1.5 text-[11px] text-[#8B8B9A] font-mono">
+            {feed.unitLabel}
+          </div>
+          {feed.priceAlt && (
+            <div
+              className="mt-2 text-[12px] font-mono"
+              style={{ color: `${theme.accent}dd` }}
+            >
+              {feed.priceAlt}
+            </div>
+          )}
+        </div>
+
+        {/* Live publish feed */}
+        <div className="lg:col-span-4 rounded-2xl border border-white/[0.07] bg-black/40 px-4 py-4 min-h-[120px] flex flex-col">
+          <div className="flex items-center justify-between mb-2.5">
+            <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase">
+              Publish activity
+            </div>
+            {activity.some((a) => a.kind === "datapoint") && (
+              <span
+                className="text-[9px] font-mono tracking-wider uppercase"
+                style={{ color: theme.accent }}
+              >
+                ● firing
+              </span>
+            )}
           </div>
           <div className="flex-1 min-h-0">
             {activity.length === 0 ? (
-              <p className="text-[12px] font-mono text-[#5C5C6A] leading-relaxed">
-                Waiting for real posts / pool refresh…
+              <p className="text-[12px] text-[#5C5C6A] leading-relaxed">
+                When an operator posts a datapoint, you will see a diamond fly
+                from their node into the pool core.
               </p>
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-1.5 max-h-[100px] overflow-hidden">
                 {activity.slice(0, 5).map((row) => (
                   <li
                     key={row.id}
@@ -429,19 +576,17 @@ function OracleBlock({
                             ? theme.accent
                             : row.kind === "pool_refresh"
                               ? theme.accent
-                              : "#9A9AAA",
+                              : "#8B8B9A",
                     }}
                   >
-                    <span className="opacity-70 mr-1">
-                      {row.kind === "datapoint"
-                        ? "◆"
-                        : row.kind === "reward"
-                          ? "★"
-                          : row.kind === "pool_refresh"
-                            ? "⬡"
-                            : "·"}
-                    </span>
-                    {row.message}
+                    {row.kind === "datapoint"
+                      ? "◆ publish "
+                      : row.kind === "reward"
+                        ? "★ reward "
+                        : row.kind === "pool_refresh"
+                          ? "⬡ pool "
+                          : "· "}
+                    {row.message.replace(/^(POST|REWARD|POOL REFRESH|RATE)\s*/i, "")}
                   </li>
                 ))}
               </ul>
@@ -449,30 +594,36 @@ function OracleBlock({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/[0.07] bg-black/35 px-4 py-3.5 min-h-[120px] flex flex-col">
-          <div className="text-[9px] font-mono tracking-[0.2em] text-[#7A7A8A] uppercase mb-3">
-            Price
+        {/* Legend */}
+        <div className="lg:col-span-4 rounded-2xl border border-white/[0.07] bg-black/40 px-4 py-4 min-h-[120px]">
+          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-3">
+            Map legend
           </div>
-          <div
-            className="font-mono text-2xl sm:text-[1.75rem] font-medium tabular-nums tracking-tight leading-none"
-            style={{ color: theme.label }}
-          >
-            {feed.priceLabel || "—"}
-          </div>
-          <div className="mt-1.5 text-[11px] font-mono text-[#8B8B9A] tracking-wide">
-            {feed.unitLabel}
-          </div>
-          {feed.priceAlt && (
-            <div
-              className="mt-2 text-[12px] font-mono tracking-wide"
-              style={{ color: `${theme.accent}cc` }}
-            >
-              {feed.priceAlt}
-            </div>
-          )}
-          <div className="mt-auto pt-3 flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-[#6B6B7A]">
-            <span>live ≤ {feed.statusThresholds?.liveMax ?? "—"} blk</span>
-            <span>stale ≤ {feed.statusThresholds?.staleMax ?? "—"} blk</span>
+          <div className="grid grid-cols-1 gap-2.5">
+            <LegendItem
+              shape="hex"
+              color={theme.accent}
+              label="Pool core"
+              hint="Shared on-chain price box"
+            />
+            <LegendItem
+              shape="dot"
+              color="#2DD4BF"
+              label="Oracle node"
+              hint="Operator posting to the pool"
+            />
+            <LegendItem
+              shape="diamond"
+              color="#2DD4BF"
+              label="Datapoint"
+              hint="A live publish shot into the core"
+            />
+            <LegendItem
+              shape="star"
+              color={theme.accent}
+              label="Reward"
+              hint="Claimable reward credit to an operator"
+            />
           </div>
         </div>
       </div>
@@ -497,7 +648,7 @@ export default function OraclesDualView({
         {[0, 1].map((i) => (
           <div
             key={i}
-            className="rounded-[1.5rem] border border-white/[0.06] bg-[#0C0C12] h-[480px] animate-pulse"
+            className="rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] h-[520px] animate-pulse"
           />
         ))}
       </div>
@@ -506,14 +657,14 @@ export default function OraclesDualView({
 
   if (isError && !data) {
     return (
-      <div className="rounded-[1.5rem] border border-[#EF4444]/25 bg-[#EF4444]/[0.04] py-20 flex flex-col items-center gap-4">
+      <div className="rounded-[1.35rem] border border-[#EF4444]/25 bg-[#EF4444]/[0.04] py-20 flex flex-col items-center gap-4">
         <p className="font-mono text-xs tracking-[0.2em] text-[#F87171]">
           ORACLE API UNAVAILABLE
         </p>
         <button
           type="button"
           onClick={onRetry}
-          className="px-5 py-2.5 rounded-xl border border-white/10 text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/5 transition-colors"
+          className="px-5 py-2.5 rounded-xl border border-white/10 text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/5"
         >
           RETRY
         </button>
@@ -523,6 +674,49 @@ export default function OraclesDualView({
 
   return (
     <div className="flex flex-col gap-6 sm:gap-8">
+      {/* Status dictionary — once for the page */}
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 sm:px-5 py-3.5 sm:py-4">
+        <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-3">
+          What the statuses mean
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          {[
+            {
+              t: "LIVE",
+              c: "#34D399",
+              d: "Fresh. The shared pool price was updated recently — safe to treat as current.",
+            },
+            {
+              t: "STALE",
+              c: "#D4A574",
+              d: "Getting old. A price is still on-chain, but the pool has not refreshed for a while.",
+            },
+            {
+              t: "DOWN",
+              c: "#D4A574",
+              d: "Local software sees protocol trouble (not enough operators agreeing). Separate from price age.",
+            },
+            {
+              t: "OFFLINE",
+              c: "#F87171",
+              d: "Unusable right now — missing pool box or the data is extremely old.",
+            },
+          ].map((s) => (
+            <div key={s.t} className="min-w-0">
+              <div
+                className="text-[11px] font-mono tracking-[0.14em] font-medium"
+                style={{ color: s.c }}
+              >
+                {s.t}
+              </div>
+              <p className="mt-1 text-[11px] sm:text-[12px] text-[#8B8B9A] leading-snug">
+                {s.d}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {panes.map((feed) => (
         <OracleBlock
           key={feed.id}
@@ -530,9 +724,6 @@ export default function OraclesDualView({
           tipHeight={data?.tipHeight ?? null}
         />
       ))}
-      <p className="text-center text-[10px] sm:text-[11px] font-mono tracking-wide text-[#5C5C6A] max-w-xl mx-auto leading-relaxed">
-        On-chain pool boxes · operator metrics · live event stream
-      </p>
     </div>
   );
 }
