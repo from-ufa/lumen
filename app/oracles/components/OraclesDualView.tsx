@@ -998,8 +998,8 @@ function OracleBlock({
             <LegendItem
               shape="dot"
               color="#00E5FF"
-              label="Network"
-              hint="Lumen host public pool"
+              label="lumen"
+              hint="Host agent on network pane"
             />
           </div>
         </div>
