@@ -807,7 +807,7 @@ export default function LumenDashboard() {
           <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest">
             {viewMode === 'map'
               ? 'PEERS BY GEOIP · CITY-LEVEL ACCURACY'
-              : 'NETWORK GRAPH · DETERMINISTIC 3D LAYOUT'}
+              : 'NETWORK ORBIT · EARTH CORE · ORBITAL PEERS'}
           </span>
         </div>
 
