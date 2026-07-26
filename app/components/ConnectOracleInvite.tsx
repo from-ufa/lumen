@@ -1,22 +1,21 @@
 "use client";
 
 /**
- * My Node invite — thin wrapper over TypewriterInvite.
+ * My Oracle invite — typewriter CTA (same UX as My Node invite).
  */
 
 import TypewriterInvite, { wakeInvite } from "./TypewriterInvite";
 
-const WAKE_EVENT = "lumen-invite-wake";
+const WAKE_EVENT = "lumen-oracle-invite-wake";
 
 const FULL_TEXT =
-  "Connect your Ergo node to lumen.\nOpen Settings → My Node.";
+  "Connect your Ergo oracle to lumen.\nOpen Settings → My Oracle.";
 
-/** Call from menus / map / orbit so a closed invite reappears (if still lumen mode). */
-export function wakeConnectInvite() {
+export function wakeOracleInvite() {
   wakeInvite(WAKE_EVENT);
 }
 
-export default function ConnectNodeInvite({
+export default function ConnectOracleInvite({
   enabled,
   onOpenSettings,
   delayMs = 5000,
@@ -32,7 +31,7 @@ export default function ConnectNodeInvite({
       fullText={FULL_TEXT}
       wakeEvent={WAKE_EVENT}
       delayMs={delayMs}
-      ariaLabel="Open settings to connect your Ergo node"
+      ariaLabel="Open settings to connect your Ergo oracle"
     />
   );
 }

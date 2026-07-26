@@ -14,6 +14,9 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import LumenWordmark from "../components/LumenWordmark";
 import ConnectionSettings from "../components/ConnectionSettings";
+import ConnectOracleInvite, {
+  wakeOracleInvite,
+} from "../components/ConnectOracleInvite";
 import {
   HeaderActions,
   HeaderIconButton,
@@ -148,6 +151,8 @@ export default function OraclesPage() {
   const feeds = data?.feeds ?? [];
   const nodeMode = viewToNodeMode(viewMode);
   const bridgeOnline = !!bridgeStatus?.connected;
+  /** Hide invite when My Oracle is already connected via bridge */
+  const oracleInviteEnabled = !(viewMode === "my" && bridgeOnline);
 
   return (
     <div className="min-h-screen min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
@@ -176,7 +181,10 @@ export default function OraclesPage() {
             >
               <div className="relative">
                 <HeaderIconButton
-                  onClick={() => setMobileMenuOpen((v) => !v)}
+                  onClick={() => {
+                    setMobileMenuOpen((v) => !v);
+                    wakeOracleInvite();
+                  }}
                   title="Open menu"
                   active={mobileMenuOpen}
                   className="!h-9 !w-9"
@@ -197,7 +205,10 @@ export default function OraclesPage() {
                       <Link
                         href="/"
                         role="menuitem"
-                        onClick={() => setMobileMenuOpen(false)}
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          wakeOracleInvite();
+                        }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
                         <Home className="w-3.5 h-3.5 text-[#A0A0B0] shrink-0" />
@@ -210,6 +221,7 @@ export default function OraclesPage() {
                         onClick={() => {
                           setMobileMenuOpen(false);
                           setSettingsOpenKey((k) => k + 1);
+                          wakeOracleInvite();
                         }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
@@ -223,6 +235,7 @@ export default function OraclesPage() {
                         onClick={() => {
                           setMobileMenuOpen(false);
                           void refetch();
+                          wakeOracleInvite();
                         }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
@@ -239,7 +252,11 @@ export default function OraclesPage() {
           {/* Desktop — mirror dashboard header actions */}
           <div className="hidden sm:flex sm:items-center sm:justify-between sm:gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <Link href="/" className="flex items-center gap-3 min-w-0 group">
+              <Link
+                href="/"
+                className="flex items-center gap-3 min-w-0 group"
+                onClick={() => wakeOracleInvite()}
+              >
                 <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
                   <Zap className="w-5 h-5 text-black" />
                 </div>
@@ -260,6 +277,7 @@ export default function OraclesPage() {
                 href="/"
                 tone="gold"
                 title="Node dashboard"
+                onClick={() => wakeOracleInvite()}
               >
                 <Home className="w-3.5 h-3.5 shrink-0 opacity-90" />
                 DASHBOARD
@@ -269,8 +287,14 @@ export default function OraclesPage() {
                 <ConnectionSettings
                   variant="oracle"
                   isOnline={isOnline}
-                  onReconnect={() => void refetch()}
-                  onOpenChange={setSettingsModalOpen}
+                  onReconnect={() => {
+                    void refetch();
+                    wakeOracleInvite();
+                  }}
+                  onOpenChange={(open) => {
+                    setSettingsModalOpen(open);
+                    if (open) wakeOracleInvite();
+                  }}
                   nodeMode={nodeMode}
                   setNodeMode={setNodeMode}
                   bridgeToken={bridgeToken}
@@ -278,11 +302,15 @@ export default function OraclesPage() {
                   bridgeStatus={bridgeStatus}
                   bridgeStatusLoading={bridgeStatusLoading}
                   onRefreshBridgeStatus={onRefreshBridgeStatus}
+                  openKey={settingsOpenKey}
                 />
               </div>
 
               <HeaderIconButton
-                onClick={() => void refetch()}
+                onClick={() => {
+                  void refetch();
+                  wakeOracleInvite();
+                }}
                 title="Refresh oracle data"
               >
                 <RefreshCw
@@ -315,98 +343,72 @@ export default function OraclesPage() {
 
       {/* === PAGE BODY === */}
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
-        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-y-4 mb-6 sm:mb-8">
-          <div className="min-w-0">
-            <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#E8C547] mb-1">
-              ERGO ORACLE POOLS
-            </div>
-            <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05]">
-              Consensus, visualized.
-            </h1>
-            <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1">
-              {viewMode === "my"
-                ? "Your oracle agent via the same lumen bridge as My Node."
-                : "Live USD and XAU from on-chain pool boxes."}
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
-              <span
-                title={
-                  isOnline
-                    ? viewMode === "my"
-                      ? "Live — bridge oracle"
-                      : "Live — lumen network oracles"
-                    : "Oracle source offline"
-                }
-                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
-                  isOnline
-                    ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                    : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
-                }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
-                  }`}
-                  aria-hidden
+        {/*
+          Hero matches node dashboard: document flow is label+title+badges only.
+          Oracle invite floats absolute top-right (same row as ERGO ORACLE POOLS)
+          so expanding typewriter never pushes layout down.
+          Removed dual LIVE pair chips (USD/XAU status menus).
+        */}
+        <div className="relative mb-6 sm:mb-8 min-w-0">
+          {oracleInviteEnabled && (
+            <div className="absolute top-0 right-0 z-20 w-[min(100%,22rem)] max-w-[22rem] pointer-events-none">
+              <div className="pointer-events-auto w-full flex justify-end">
+                <ConnectOracleInvite
+                  enabled
+                  delayMs={5000}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
                 />
-                {viewMode === "my"
-                  ? "SOURCE · BRIDGE"
-                  : "SOURCE · lumen"}
-                {isOnline && (
-                  <span className="text-[9px] tracking-[0.14em] opacity-80">
-                    LIVE
-                  </span>
-                )}
-              </span>
-              {data?.tipHeight != null && (
-                <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
-                  TIP · {data.tipHeight.toLocaleString()}
+              </div>
+            </div>
+          )}
+
+          <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#E8C547] mb-1">
+            ERGO ORACLE POOLS
+          </div>
+          <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05] sm:pr-[min(23rem,42%)]">
+            Consensus, visualized.
+          </h1>
+          <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1 sm:pr-[min(23rem,42%)]">
+            {viewMode === "my"
+              ? "Your oracle agent via the same lumen bridge as My Node."
+              : "Live USD and XAU from on-chain pool boxes."}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider sm:pr-[min(23rem,42%)]">
+            <span
+              title={
+                isOnline
+                  ? viewMode === "my"
+                    ? "Live — bridge oracle"
+                    : "Live — lumen network oracles"
+                  : "Oracle source offline"
+              }
+              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
+                isOnline
+                  ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                  : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                  isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                }`}
+                aria-hidden
+              />
+              {viewMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
+              {isOnline && (
+                <span className="text-[9px] tracking-[0.14em] opacity-80">
+                  LIVE
                 </span>
               )}
-              <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#A0A0B0] bg-white/5">
-                AUTO · 5s
+            </span>
+            {data?.tipHeight != null && (
+              <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
+                TIP · {data.tipHeight.toLocaleString()}
               </span>
-            </div>
-          </div>
-
-          <div className="flex items-end gap-2 sm:gap-3 text-sm flex-wrap">
-            {feeds.map((f) => {
-              const tone =
-                f.status === "live"
-                  ? {
-                      c: "#34D399",
-                      bg: "rgba(52,211,153,0.1)",
-                      b: "rgba(52,211,153,0.28)",
-                    }
-                  : f.status === "stale"
-                    ? {
-                        c: "#D4A574",
-                        bg: "rgba(212,165,116,0.1)",
-                        b: "rgba(212,165,116,0.28)",
-                      }
-                    : {
-                        c: "#F87171",
-                        bg: "rgba(248,113,113,0.1)",
-                        b: "rgba(248,113,113,0.28)",
-                      };
-              return (
-                <div
-                  key={f.id}
-                  className="rounded-xl border px-3 py-2 min-w-[7.5rem]"
-                  style={{ borderColor: tone.b, background: tone.bg }}
-                >
-                  <div className="text-[10px] font-mono tracking-[0.14em] text-[#8B8B9A] uppercase">
-                    {f.pair}
-                  </div>
-                  <div
-                    className="mt-1 text-[11px] font-mono tracking-[0.16em] font-medium uppercase"
-                    style={{ color: tone.c }}
-                  >
-                    {f.status}
-                  </div>
-                </div>
-              );
-            })}
+            )}
+            <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#A0A0B0] bg-white/5">
+              AUTO · 5s
+            </span>
           </div>
         </div>
 
