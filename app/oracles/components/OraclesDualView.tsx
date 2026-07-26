@@ -406,17 +406,6 @@ function OracleBlock({
         />
       </header>
 
-      {/* Status strip: price age only (LIVE/STALE/OFFLINE). DOWN lives in Health chip. */}
-      <div className="shrink-0 px-3.5 sm:px-4 lg:px-5 py-2 border-b border-white/[0.04] bg-black/20 h-[3.25rem] flex items-center overflow-hidden">
-        <p className="text-[11px] sm:text-[12px] text-[#B0B0BC] leading-snug line-clamp-2">
-          <span className="font-medium" style={{ color: st.color }}>
-            {st.label}
-          </span>
-          <span className="text-[#5C5C6A]"> · </span>
-          {st.blurb}
-        </p>
-      </div>
-
       {/* Map stage — fixed dual height, identical box on both panes */}
       <div className="shrink-0 px-3 sm:px-4 pt-3 sm:pt-3.5">
         <div
