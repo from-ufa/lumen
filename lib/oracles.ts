@@ -606,12 +606,12 @@ function displayForFeed(
     };
   }
   const oz = priceXauPerErg(rateNano);
+  // Human-first: ERG per troy oz is immediately intuitive; μoz as secondary
   return {
     price: oz,
-    // Primary: μoz gold per ERG (human scale); alt: ERG needed for 1 troy oz
-    priceLabel: formatXauOz(oz),
-    priceAlt: formatXauErgPerOz(rateNano),
-    unitLabel: "μoz gold / ERG",
+    priceLabel: formatXauErgPerOz(rateNano),
+    priceAlt: `${formatXauOz(oz)} gold per ERG`,
+    unitLabel: "per troy oz XAU",
   };
 }
 

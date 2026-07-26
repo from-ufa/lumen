@@ -488,9 +488,10 @@ export default function OracleConstellation({
     }
 
     function baseRings(): number[] {
+      // Leave margin so rings sit inside corner metric chips
       const m = Math.min(ad.W, ad.H);
-      const s = Math.max(0.45, Math.min(1.05, m / (ad.compact ? 520 : 640)));
-      return [90 * s, 145 * s, 200 * s];
+      const s = Math.max(0.42, Math.min(0.95, m / (ad.compact ? 560 : 680)));
+      return [78 * s, 128 * s, 176 * s];
     }
 
     function resize() {
@@ -700,28 +701,29 @@ export default function OracleConstellation({
       ctx.fill();
       glow(ad.CX, ad.CY, 18, accent, 0.4);
 
-      // Real price — human label (μoz for gold, $ for USD)
+      // Clean center readout — keep short so corner chips never collide
       const label = ad.priceLabel || "—";
-      const fontSize =
-        label.length > 14 ? 15 : label.length > 10 ? 17 : 21;
-      ctx.fillStyle = "rgba(245,245,250,0.96)";
-      ctx.font = `300 ${fontSize}px "SF Mono", ui-monospace, monospace`;
-      ctx.textAlign = "center";
-      ctx.fillText(label, ad.CX, ad.CY - 54);
-
-      ctx.fillStyle = "rgba(226,232,240,0.45)";
-      ctx.font = "500 9px -apple-system, sans-serif";
-      ctx.fillText(ad.unitLabel || `${ad.pairLabel}`, ad.CX, ad.CY - 36);
-
-      if (ad.priceAlt) {
-        ctx.fillStyle = hexToRgba(accent, 0.75);
-        ctx.font = "10px monospace";
-        ctx.fillText(ad.priceAlt, ad.CX, ad.CY + 48);
-      } else {
-        ctx.fillStyle = hexToRgba(accent, 0.65);
-        ctx.font = "10px monospace";
-        ctx.fillText(`EPOCH #${ad.epoch}`, ad.CX, ad.CY + 48);
+      // Prefer primary number only on canvas; long secondary lives in shell Price panel
+      let display = label;
+      if (display.length > 16) {
+        // e.g. "609,080 ERG/oz" → keep as-is if fits, else trim unit
+        display = display.replace(" ERG/oz", "");
       }
+      const fontSize =
+        display.length > 12 ? 16 : display.length > 9 ? 18 : 22;
+      ctx.fillStyle = "rgba(250,250,252,0.97)";
+      ctx.font = `350 ${fontSize}px "SF Mono", ui-monospace, monospace`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(display, ad.CX, ad.CY - 8);
+
+      ctx.fillStyle = hexToRgba(accent, 0.7);
+      ctx.font = "600 8px ui-monospace, monospace";
+      ctx.fillText(
+        (ad.unitLabel || ad.pairLabel || "").toUpperCase().slice(0, 22),
+        ad.CX,
+        ad.CY + 16
+      );
     }
 
     function drawOracle(o: Oracle) {
