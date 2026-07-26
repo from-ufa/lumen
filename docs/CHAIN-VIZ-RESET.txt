@@ -1,22 +1,17 @@
-CHAIN VISUALIZATION — CRYSTALLOGENESIS (live)
-=============================================
+CHAIN VISUALIZATION — CLEAN SLATE (again)
+========================================
 
-STATUS: Ergo Crystallogenesis is the chain visualizer.
+STATUS: blank. No chain graphic UI.
 
-COMPONENT
+REMOVED:
 - app/components/Crystallogenesis.tsx
-- Dashboard tab: CRYSTALLOGENESIS (viewMode: "chain")
+- Dashboard tab CRYSTALLOGENESIS / CHAIN PULSE / Genesis / all prior looks
 
-DATA PLANE (unchanged)
+KEPT (data plane only):
 - lib/chain.ts
-- /api/chain/*  (status, feed, blocks, block, mempool, address, token)
+- app/api/chain/*  (status, feed, blocks, block, mempool, address, token)
 
-LOOK (master language)
-- Void black · frosted crystal · cool cyan threads
-- Ergo orange (#FF6B00) only on seal / high-energy moments
-- Sequence: mempool → formation → selection → merkle → Autolykos → seal → dock
-- Live feed poll ~4s; genesis pulse on new tip
+DASHBOARD: NETWORK ORBIT | WORLD MAP only
 
-STACK
-- Next.js + R3F + drei MeshTransmissionMaterial + postprocessing bloom
-- Local node via existing thin explorer (not Vite/FastAPI rewrite)
+RULE: do not revive Crystallogenesis / Genesis / Chain Pulse look
+unless the user explicitly designs a NEW direction from zero.

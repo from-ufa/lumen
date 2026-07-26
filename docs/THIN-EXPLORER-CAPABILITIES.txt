@@ -1,18 +1,16 @@
 ================================================================================
-THIN EXPLORER + CRYSTALLOGENESIS
+THIN EXPLORER — DATA PLANE ONLY
 Project: lumen | path: /home/lumen | live: https://ergolumen.net
-Tab: CRYSTALLOGENESIS | API: /api/chain/*
+Chain visualization UI: NONE (clean slate)
 ================================================================================
 
 ONE-LINER
 ---------
-Thin local Ergo explorer API (/api/chain/*) + Ergo Crystallogenesis 3D viz:
-mempool crystals → tx formation → Autolykos resonance → seal → chain dock.
-Primary source = local node (extraIndex + boxByTokenId).
+Thin local Ergo explorer API (/api/chain/*) over mainnet node
+(extraIndex + boxByTokenId). No chain visualization UI.
 
-
-HTTP API (STABLE)
------------------
+HTTP API
+--------
 GET /api/chain/status
 GET /api/chain/feed?blocks=6&mempool=40&address=<optional>
 GET /api/chain/blocks?limit=8
@@ -21,21 +19,10 @@ GET /api/chain/mempool?limit=40
 GET /api/chain/address/<ergoAddress>
 GET /api/chain/token/<tokenId>
 
-
-VISUAL (app/components/Crystallogenesis.tsx)
--------------------------------------------
-- Liquid Glass / Apple cinematic · void black · cyan threads
-- Ergo orange only on seal / high-energy
-- Stages driven by feed + genesis pulse on new tip
-- Address focus · TX / block selection · soft chime optional
-
-
-FILE MAP
---------
+FILES
+-----
 lib/chain.ts
 app/api/chain/*
-app/components/Crystallogenesis.tsx
-app/page.tsx  (viewMode: "chain")
 
-
+Dashboard viz tabs: NETWORK ORBIT | WORLD MAP only.
 ================================================================================
