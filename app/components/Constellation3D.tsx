@@ -242,19 +242,68 @@ function heartbeat(t: number, freq: number, phase: number): number {
 
 const GEO_EARTH = new THREE.SphereGeometry(1, 96, 96);
 const GEO_CLOUDS = new THREE.SphereGeometry(1, 64, 64);
-const GEO_PEER = new THREE.SphereGeometry(1, 10, 10);
-const GEO_HALO = new THREE.SphereGeometry(1, 8, 8);
+/** Soft camera-facing sprite (never hard mesh sphere — those look square) */
+const GEO_SPRITE = new THREE.PlaneGeometry(1, 1);
+/** Invisible raycast target only */
+const GEO_HIT = new THREE.SphereGeometry(1, 8, 8);
 
 /**
- * Compact orbital points (world units).
- * Earth radius ≈ 3.2 — peers must stay tiny pinpricks.
+ * Compact soft sprite sizes (plane full-width, gaussian falloff).
+ * Earth radius ≈ 3.2 — keep pin-scale so Earth stays hero.
  */
-const SIZE_LIVE = 0.038;
-const SIZE_SEEN = 0.032;
-const SIZE_GHOST = 0.026;
-const SIZE_MY = 0.055;
-/** Soft halo relative to core — never soap-bubble large */
-const GLOW_MUL = 1.55;
+const SIZE_LIVE = 0.085;
+const SIZE_SEEN = 0.07;
+const SIZE_GHOST = 0.055;
+const SIZE_MY = 0.11;
+/** Outer soft bloom relative to core */
+const GLOW_MUL = 2.35;
+
+/* ─── Soft circular glow textures (procedural gaussian) ─────────────────── */
+
+type SoftTexKind = "core" | "halo";
+const softTexCache: Partial<Record<SoftTexKind, THREE.CanvasTexture>> = {};
+
+/**
+ * Radial soft disc — perfect circle, zero hard edges.
+ * core: tight bright center · halo: wide cinematic bloom
+ */
+function getSoftCircleTexture(kind: SoftTexKind): THREE.CanvasTexture | null {
+  if (typeof document === "undefined") return null;
+  const hit = softTexCache[kind];
+  if (hit) return hit;
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = size / 2;
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  if (kind === "core") {
+    // Hot center, still soft limb
+    g.addColorStop(0.0, "rgba(255,255,255,1.0)");
+    g.addColorStop(0.12, "rgba(255,255,255,0.95)");
+    g.addColorStop(0.35, "rgba(255,255,255,0.45)");
+    g.addColorStop(0.62, "rgba(255,255,255,0.12)");
+    g.addColorStop(1.0, "rgba(255,255,255,0.0)");
+  } else {
+    // Wide soft bloom — cinematic particle light
+    g.addColorStop(0.0, "rgba(255,255,255,0.55)");
+    g.addColorStop(0.18, "rgba(255,255,255,0.28)");
+    g.addColorStop(0.42, "rgba(255,255,255,0.10)");
+    g.addColorStop(0.7, "rgba(255,255,255,0.03)");
+    g.addColorStop(1.0, "rgba(255,255,255,0.0)");
+  }
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  tex.premultiplyAlpha = false;
+  softTexCache[kind] = tex;
+  return tex;
+}
 
 /* Day + night blend Earth shader (sun-lit day, city lights on night side) */
 /* Limb haze baked into earth shader rim — no separate sphere (that = ring) */
@@ -509,7 +558,7 @@ function shortNodeLabel(raw: string): string {
   return s.length > 10 ? s.slice(0, 9) + "…" : s.toLowerCase();
 }
 
-/* ─── My Node — compact orbital pin (slightly larger peer) ──────────────── */
+/* ─── My Node — soft circular sprite (slightly larger peer) ─────────────── */
 
 function MyNodeDot({
   label,
@@ -525,12 +574,14 @@ function MyNodeDot({
   const glowRef = useRef<THREE.Mesh>(null!);
   const [labelVisible, setLabelVisible] = useState(true);
   const posScratch = useMemo(() => new THREE.Vector3(), []);
+  const coreMap = useMemo(() => getSoftCircleTexture("core"), []);
+  const haloMap = useMemo(() => getSoftCircleTexture("halo"), []);
 
   const radius = (SHELL_R.live[0] + SHELL_R.live[1]) / 2 + 0.1;
   const phi = 0.12;
   const drift = 0.055;
   const phase = 1.15;
-  const accent = isOnline ? "#E8C48A" : "#8a7a60";
+  const accent = isOnline ? "#F0D4A0" : "#8a7a60";
   const shortLabel = useMemo(() => shortNodeLabel(label), [label]);
 
   useFrame((state) => {
@@ -545,14 +596,18 @@ function MyNodeDot({
       r * Math.sin(phi) + bob,
       r * Math.sin(ang) * cosP
     );
-    if (groupRef.current) groupRef.current.position.copy(posScratch);
+    if (groupRef.current) {
+      groupRef.current.position.copy(posScratch);
+      // Billboard — always face camera (perfect circle)
+      groupRef.current.quaternion.copy(state.camera.quaternion);
+    }
 
     const hb = heartbeat(t, 1.7, phase);
     if (coreRef.current) coreRef.current.scale.setScalar(SIZE_MY * hb);
     if (glowRef.current) {
       glowRef.current.scale.setScalar(SIZE_MY * GLOW_MUL * hb);
       (glowRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.2 + (hb - 1) * 0.8;
+        0.55 + (hb - 1) * 1.2;
     }
 
     // Hide label when node is behind Earth (HTML would otherwise float over the globe)
@@ -566,26 +621,38 @@ function MyNodeDot({
 
   return (
     <group ref={groupRef}>
-      <mesh ref={glowRef} geometry={GEO_HALO}>
+      <mesh ref={glowRef} geometry={GEO_SPRITE} renderOrder={2}>
         <meshBasicMaterial
+          map={haloMap}
           color={accent}
           transparent
-          opacity={0.2}
+          opacity={0.55}
           depthWrite={false}
+          depthTest
           blending={THREE.AdditiveBlending}
           toneMapped={false}
+          side={THREE.DoubleSide}
         />
       </mesh>
-      <mesh ref={coreRef} geometry={GEO_PEER}>
-        <meshBasicMaterial color={accent} toneMapped={false} />
+      <mesh ref={coreRef} geometry={GEO_SPRITE} renderOrder={3}>
+        <meshBasicMaterial
+          map={coreMap}
+          color={accent}
+          transparent
+          opacity={0.95}
+          depthWrite={false}
+          depthTest
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+          side={THREE.DoubleSide}
+        />
       </mesh>
       {labelVisible && (
         <Html
           center
           sprite
-          // No distanceFactor: fixed screen size (distanceFactor *increases* size)
           style={{ pointerEvents: "none", userSelect: "none" }}
-          position={[0, 0.07, 0]}
+          position={[0, 0.08, 0]}
           zIndexRange={[10, 0]}
         >
           <div
@@ -730,6 +797,9 @@ function PeerInstances({
   const color = useMemo(() => new THREE.Color(), []);
   const tmp = useMemo(() => new THREE.Color(), []);
   const count = slots.length;
+  const coreMap = useMemo(() => getSoftCircleTexture("core"), []);
+  const haloMap = useMemo(() => getSoftCircleTexture("halo"), []);
+  const { camera } = useThree();
 
   const trailMeta = useMemo(() => {
     const n = Math.min(count, MAX_TRAIL_PEERS);
@@ -767,31 +837,6 @@ function PeerInstances({
     slotsRef.current = slots;
   }, [slots, slotsRef]);
 
-  useEffect(() => {
-    const paint = (mesh: THREE.InstancedMesh | null, mul: number) => {
-      if (!mesh || count === 0) return;
-      for (let i = 0; i < count; i++) {
-        const s = slots[i];
-        const base =
-          s.shell === "live"
-            ? SIZE_LIVE
-            : s.shell === "seen"
-              ? SIZE_SEEN
-              : SIZE_GHOST;
-        color.copy(s.color);
-        mesh.setColorAt(i, color);
-        dummy.position.copy(s.position);
-        dummy.scale.setScalar(base * mul);
-        dummy.updateMatrix();
-        mesh.setMatrixAt(i, dummy.matrix);
-      }
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    };
-    paint(coreRef.current, 1);
-    paint(glowRef.current, GLOW_MUL);
-  }, [count, slots, color, dummy]);
-
   // Register hit mesh for PeerHoverDriver raycasts
   useFrame(() => {
     motionRef.current.hitMesh = hitRef.current;
@@ -805,6 +850,8 @@ function PeerInstances({
     // Paused sim time freezes orbital drift under cursor
     const t = motionRef.current.simTime;
     const boom = boomEnvelope(propagationStart);
+    // Billboard: soft discs always face camera → perfect circles
+    const camQ = camera.quaternion;
 
     for (let i = 0; i < count; i++) {
       const slot = slots[i];
@@ -818,13 +865,14 @@ function PeerInstances({
           : slot.shell === "seen"
             ? SIZE_SEEN
             : SIZE_GHOST;
-      // Scale breath only 1.0–1.12; focus slightly larger but still a pin
+      // Soft breath 1.0–1.12; brightness does the cinema, not size
       const hb = heartbeat(t, slot.pulseFreq, slot.phase);
-      const focusMul = isFocus ? 1.25 : 1;
-      const boomMul = 1 + boom * 0.08;
+      const focusMul = isFocus ? 1.2 : 1;
+      const boomMul = 1 + boom * 0.06;
       const coreScale = base * hb * focusMul * boomMul;
 
       dummy.position.copy(slot.position);
+      dummy.quaternion.copy(camQ);
       dummy.scale.setScalar(coreScale);
       dummy.updateMatrix();
       core.setMatrixAt(i, dummy.matrix);
@@ -834,21 +882,23 @@ function PeerInstances({
         dummy.updateMatrix();
         glow.setMatrixAt(i, dummy.matrix);
       }
-      // Fat hit target (still moves with frozen sim when paused)
+      // Fat hit target (sphere — raycast only)
       if (hit) {
-        dummy.scale.setScalar(Math.max(base * HIT_MUL, 0.32));
+        dummy.quaternion.identity();
+        dummy.scale.setScalar(Math.max(base * HIT_MUL * 0.55, 0.28));
         dummy.updateMatrix();
         hit.setMatrixAt(i, dummy.matrix);
       }
 
       color.copy(slot.color);
-      if (isFocus) color.set("#E8C48A");
-      // Brightness breath (not size explosion)
-      const bright = 0.92 + (hb - 1) * 2.5 + boom * 0.25;
+      if (isFocus) color.set("#F0D4A0");
+      // Gentle brightness flicker (additive sprites read as light)
+      const bright = 0.88 + (hb - 1) * 2.8 + boom * 0.2;
       color.multiplyScalar(bright);
       core.setColorAt(i, color);
       if (glow) {
-        tmp.copy(color);
+        // Halo slightly cooler/softer
+        tmp.copy(color).multiplyScalar(0.85);
         glow.setColorAt(i, tmp);
       }
 
@@ -867,7 +917,7 @@ function PeerInstances({
           trailPos[o] = slot.position.x + dx * f * trailAmp;
           trailPos[o + 1] = slot.position.y + dy * f * trailAmp;
           trailPos[o + 2] = slot.position.z + dz * f * trailAmp;
-          const fade = (1 - f) * 0.22;
+          const fade = (1 - f) * 0.18;
           trailCol[o] = slot.color.r * fade;
           trailCol[o + 1] = slot.color.g * fade;
           trailCol[o + 2] = slot.color.b * fade;
@@ -888,7 +938,6 @@ function PeerInstances({
     }
   });
 
-  const { camera } = useThree();
   const handleClick = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
@@ -908,52 +957,71 @@ function PeerInstances({
       {trailMeta.total > 0 && (
         <points geometry={trailGeom} frustumCulled={false}>
           <pointsMaterial
-            size={0.022}
+            map={haloMap ?? undefined}
+            size={0.05}
             vertexColors
             transparent
-            opacity={0.55}
+            opacity={0.65}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             sizeAttenuation
             toneMapped={false}
+            alphaTest={0.01}
           />
         </points>
       )}
 
+      {/* Soft outer bloom — circular gaussian sprite, additive */}
       <instancedMesh
         ref={glowRef}
-        args={[GEO_HALO, undefined, count]}
+        args={[GEO_SPRITE, undefined, count]}
         frustumCulled={false}
+        renderOrder={2}
       >
         <meshBasicMaterial
+          map={haloMap}
           color="#ffffff"
           transparent
-          opacity={0.18}
+          opacity={0.7}
           depthWrite={false}
+          depthTest
           blending={THREE.AdditiveBlending}
           toneMapped={false}
+          side={THREE.DoubleSide}
         />
       </instancedMesh>
 
+      {/* Soft bright core — circular, not hard mesh ball */}
       <instancedMesh
         ref={coreRef}
-        args={[GEO_PEER, undefined, count]}
+        args={[GEO_SPRITE, undefined, count]}
         frustumCulled={false}
+        renderOrder={3}
       >
-        <meshBasicMaterial color="#ffffff" toneMapped={false} depthWrite />
+        <meshBasicMaterial
+          map={coreMap}
+          color="#ffffff"
+          transparent
+          opacity={0.95}
+          depthWrite={false}
+          depthTest
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+          side={THREE.DoubleSide}
+        />
       </instancedMesh>
 
       {/* Hit targets for manual raycast (PeerHoverDriver) + click */}
       <instancedMesh
         ref={hitRef}
-        args={[GEO_PEER, undefined, count]}
+        args={[GEO_HIT, undefined, count]}
         onClick={handleClick}
         frustumCulled={false}
       >
         <meshBasicMaterial
           color="#ffffff"
           transparent
-          opacity={0.001}
+          opacity={0}
           depthWrite={false}
           depthTest
           toneMapped={false}
