@@ -17,7 +17,9 @@ import MetricsCards from './components/MetricsCards';
 import BlocksTimeline from './components/BlocksTimeline';
 import MempoolFlow from './components/MempoolFlow';
 import ConnectionSettings from './components/ConnectionSettings';
-import ConnectNodeInvite from './components/ConnectNodeInvite';
+import ConnectNodeInvite, {
+  wakeConnectInvite,
+} from './components/ConnectNodeInvite';
 import CrystalIcon from './components/CrystalIcon';
 import LumenWordmark from './components/LumenWordmark';
 import {
@@ -400,6 +402,7 @@ export default function LumenDashboard() {
 
   /** Open block preview; backfill honest miner from Explorer if missing */
   const openBlockDetail = (block: RecentBlock) => {
+    wakeConnectInvite();
     setSelectedBlock(block);
     if (block.minerAddress && block.minerLabel) return;
     void (async () => {
@@ -459,7 +462,10 @@ export default function LumenDashboard() {
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setMobileMenuOpen((v) => !v)}
+                  onClick={() => {
+                    setMobileMenuOpen((v) => !v);
+                    wakeConnectInvite();
+                  }}
                   aria-expanded={mobileMenuOpen}
                   aria-haspopup="menu"
                   aria-label="Open menu"
@@ -485,11 +491,15 @@ export default function LumenDashboard() {
                       <Link
                         href="/oracles"
                         role="menuitem"
-                        onClick={() => setMobileMenuOpen(false)}
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          wakeConnectInvite();
+                        }}
                         onMouseEnter={() => {
                           void fetch("/api/oracles", { cache: "default" }).catch(
                             () => {}
                           );
+                          wakeConnectInvite();
                         }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
@@ -503,6 +513,7 @@ export default function LumenDashboard() {
                         onClick={() => {
                           setMobileMenuOpen(false);
                           setSettingsOpenKey((k) => k + 1);
+                          wakeConnectInvite();
                         }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
@@ -516,6 +527,7 @@ export default function LumenDashboard() {
                         onClick={() => {
                           setMobileMenuOpen(false);
                           handleReconnect();
+                          wakeConnectInvite();
                         }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
@@ -533,7 +545,10 @@ export default function LumenDashboard() {
               <ConnectionSettings
                 isOnline={isOnline}
                 onReconnect={handleReconnect}
-                onOpenChange={setSettingsModalOpen}
+                onOpenChange={(open) => {
+                  setSettingsModalOpen(open);
+                  if (open) wakeConnectInvite();
+                }}
                 nodeMode={nodeMode}
                 setNodeMode={setNodeMode}
                 bridgeToken={bridgeToken}
@@ -573,7 +588,9 @@ export default function LumenDashboard() {
                   void fetch("/api/oracles", { cache: "default" }).catch(
                     () => {}
                   );
+                  wakeConnectInvite();
                 }}
+                onClick={() => wakeConnectInvite()}
               >
                 <CrystalIcon className="w-3.5 h-3.5 shrink-0 opacity-95" />
                 ORACLES
@@ -581,8 +598,14 @@ export default function LumenDashboard() {
 
               <ConnectionSettings
                 isOnline={isOnline}
-                onReconnect={handleReconnect}
-                onOpenChange={setSettingsModalOpen}
+                onReconnect={() => {
+                  handleReconnect();
+                  wakeConnectInvite();
+                }}
+                onOpenChange={(open) => {
+                  setSettingsModalOpen(open);
+                  if (open) wakeConnectInvite();
+                }}
                 nodeMode={nodeMode}
                 setNodeMode={setNodeMode}
                 bridgeToken={bridgeToken}
@@ -594,7 +617,10 @@ export default function LumenDashboard() {
               />
 
               <HeaderIconButton
-                onClick={handleReconnect}
+                onClick={() => {
+                  handleReconnect();
+                  wakeConnectInvite();
+                }}
                 title="Refresh data"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -694,7 +720,10 @@ export default function LumenDashboard() {
           <div className="hidden md:flex items-center gap-2 min-w-0">
             <div className="inline-flex p-1 rounded-2xl glass border border-white/10">
               <button
-                onClick={() => setViewMode('constellation')}
+                onClick={() => {
+                  setViewMode('constellation');
+                  wakeConnectInvite();
+                }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
                   viewMode === 'constellation'
                     ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
@@ -704,7 +733,10 @@ export default function LumenDashboard() {
                 <Orbit className="w-3.5 h-3.5" /> NETWORK ORBIT
               </button>
               <button
-                onClick={() => setViewMode('map')}
+                onClick={() => {
+                  setViewMode('map');
+                  wakeConnectInvite();
+                }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
                   viewMode === 'map'
                     ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'
@@ -785,7 +817,10 @@ export default function LumenDashboard() {
         <div className="md:hidden mb-8 space-y-2">
           <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl glass border border-white/10">
             <button
-              onClick={() => setViewMode('constellation')}
+              onClick={() => {
+                setViewMode('constellation');
+                wakeConnectInvite();
+              }}
               className={`flex items-center justify-center gap-1.5 px-2 py-3 rounded-xl text-[11px] font-mono tracking-wider transition-all ${
                 viewMode === 'constellation'
                   ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
@@ -795,7 +830,10 @@ export default function LumenDashboard() {
               <Orbit className="w-3.5 h-3.5" /> ORBIT
             </button>
             <button
-              onClick={() => setViewMode('map')}
+              onClick={() => {
+                setViewMode('map');
+                wakeConnectInvite();
+              }}
               className={`flex items-center justify-center gap-1.5 px-2 py-3 rounded-xl text-[11px] font-mono tracking-wider transition-all ${
                 viewMode === 'map'
                   ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'

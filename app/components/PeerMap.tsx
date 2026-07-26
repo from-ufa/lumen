@@ -1679,6 +1679,12 @@ export default function PeerMap({
         }) || m;
       ensureFilterForState(canonical.state);
       setSelected(canonical);
+      try {
+        // Re-open connect-node invite if user dismissed it
+        window.dispatchEvent(new Event("lumen-invite-wake"));
+      } catch {
+        /* */
+      }
       if (opts?.fly) {
         // Search pick: premium FOUND highlight + fly
         setSearchFocus(canonical);

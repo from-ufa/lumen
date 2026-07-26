@@ -104,6 +104,7 @@ export function HeaderPill({
         className={base}
         title={title}
         onMouseEnter={onMouseEnter}
+        onClick={onClick}
         prefetch
       >
         {inner}

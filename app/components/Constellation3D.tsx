@@ -946,6 +946,11 @@ function PeerInstances({
       // Ignore clicks on peers hidden behind Earth
       if (!isPeerVisibleFromCamera(camera.position, slots[id].position)) return;
       onHover(slots[id].peer, slots[id].position.clone());
+      try {
+        window.dispatchEvent(new Event("lumen-invite-wake"));
+      } catch {
+        /* */
+      }
     },
     [slots, onHover, camera]
   );
@@ -1417,6 +1422,11 @@ function Scene({
         setInfoPeer(peer);
         setPointerOver(true);
         onPeerHover?.(peer);
+      }
+      try {
+        window.dispatchEvent(new Event("lumen-invite-wake"));
+      } catch {
+        /* */
       }
     },
     [peers, onPeerHover]
