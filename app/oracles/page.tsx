@@ -27,8 +27,9 @@ export default function OraclesPage() {
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["oracles-constellation"],
     queryFn: fetchOracles,
-    refetchInterval: 20_000,
-    staleTime: 8_000,
+    // Fast poll so datapoint/reward animations track real network activity
+    refetchInterval: 5_000,
+    staleTime: 2_000,
   });
 
   useEffect(() => {

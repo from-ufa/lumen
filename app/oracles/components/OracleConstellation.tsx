@@ -6,7 +6,11 @@
  */
 
 import React, { useRef, useEffect, useState, useMemo } from "react";
-import type { OracleFeedData, FeedStatus } from "./types";
+import type {
+  OracleFeedData,
+  FeedStatus,
+  OracleLiveEvent,
+} from "./types";
 
 interface Oracle {
   name: string;
@@ -23,6 +27,8 @@ interface Oracle {
   size: number;
   slashing: number;
   height: number | null;
+  collectedHeight?: number | null;
+  rewardTokens?: number | null;
   x?: number;
   y?: number;
   pulse?: number;
@@ -111,6 +117,8 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
     : Array.from({ length: 8 }).map((_, i) => ({
         address: `unknown-${feed.id}-${i}`,
         height: null as number | null,
+        collectedHeight: null as number | null,
+        rewardTokens: null as number | null,
         status: feed.status as FeedStatus,
       }));
 
@@ -152,10 +160,12 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
             : Math.min(200, 8 + age * 2),
       accuracy: Math.round(accuracy * 10) / 10,
       stake: 0,
-      reward: 0,
+      reward: node.rewardTokens ?? 0,
       size,
       slashing: 0,
       height: node.height,
+      collectedHeight: node.collectedHeight ?? null,
+      rewardTokens: node.rewardTokens ?? null,
       pulse: Math.random() * Math.PI * 2,
     };
   });
@@ -224,8 +234,19 @@ export default function OracleConstellation({
   const [epochHistory, setEpochHistory] = useState<EpochData[]>(() =>
     historyToEpochBars(feed)
   );
+  const [activityLog, setActivityLog] = useState<
+    { id: string; t: number; kind: string; message: string }[]
+  >([]);
+  const [livePhase, setLivePhase] = useState<
+    "idle" | "datapoints" | "refresh" | "rewards"
+  >("idle");
 
-  const feedKey = `${feed.id}:${feed.settlementHeight}:${feed.priceLabel}:${feed.nodes?.length}`;
+  const feedKey = `${feed.id}:${feed.settlementHeight}:${feed.rateNano ?? ""}:${feed.priceLabel}:${(feed.liveEvents || []).map((e) => e.id).join("|")}:${feed.nodes?.map((n) => `${n.address}:${n.height}:${n.rewardTokens ?? ""}`).join(";")}`;
+  const clientPrevRef = useRef<{
+    settlement: number | null;
+    rate: number | null;
+    nodes: Record<string, { h: number | null; r: number | null }>;
+  } | null>(null);
 
   const animDataRef = useRef({
     time: 0,
@@ -243,6 +264,7 @@ export default function OracleConstellation({
     poolStatus: feed.status as FeedStatus,
     ageBlocks: feed.ageBlocks as number | null,
     tipHeight: feed.tipHeight as number | null,
+    liveMax: feed.statusThresholds?.liveMax ?? 24,
     stars: [] as {
       x: number;
       y: number;
@@ -266,13 +288,15 @@ export default function OracleConstellation({
     epochHistory: [] as EpochData[],
     compact: compact,
     lastSettlement: feed.settlementHeight as number | null,
+    /** Real network events to animate (datapoints / rewards / refresh) */
+    eventQueue: [] as OracleLiveEvent[],
+    seenEventIds: new Set<string>(),
   });
 
-  // Sync live feed → React state + animation ref (without restarting canvas loop)
+  // Sync live feed → React state + queue REAL events for animation
   useEffect(() => {
     const ad = animDataRef.current;
     const nextOracles = buildOraclesFromFeed(feed);
-    // Preserve angles if same addresses
     const prevByAddr = new Map(ad.oracles.map((o) => [o.address, o]));
     ad.oracles = nextOracles.map((o) => {
       const prev = prevByAddr.get(o.address);
@@ -285,10 +309,6 @@ export default function OracleConstellation({
       return o;
     });
 
-    const priceChanged =
-      ad.priceLabel !== (feed.priceLabel ?? "—") ||
-      ad.lastSettlement !== feed.settlementHeight;
-
     ad.epoch = feed.epoch ?? ad.epoch;
     ad.currentPrice = feed.price ?? ad.currentPrice;
     ad.priceLabel = feed.priceLabel ?? "—";
@@ -300,8 +320,8 @@ export default function OracleConstellation({
     ad.poolStatus = feed.status;
     ad.ageBlocks = feed.ageBlocks;
     ad.tipHeight = feed.tipHeight;
+    ad.liveMax = feed.statusThresholds?.liveMax ?? 24;
     ad.epochHistory = historyToEpochBars(feed);
-    ad.lastSettlement = feed.settlementHeight;
 
     setEpoch(ad.epoch);
     setPriceLabel(ad.priceLabel);
@@ -312,12 +332,110 @@ export default function OracleConstellation({
     setAgeBlocks(feed.ageBlocks);
     setEpochHistory(ad.epochHistory);
 
-    if (priceChanged) {
-      ad.glowRings.push({ r: 25, a: 1, color: "#00E5FF" });
-      ad.glowRings.push({ r: 40, a: 0.7, color: "#00D4AA" });
-      ad.phase = "distribute";
-      ad.phaseTimer = 0;
+    // ── Real events from API (server-side diff) ──
+    const incoming: OracleLiveEvent[] = [...(feed.liveEvents || [])];
+
+    // ── Client-side fallback diff (if server had no prev snapshot yet) ──
+    const prev = clientPrevRef.current;
+    if (prev && (!feed.liveEvents || feed.liveEvents.length === 0)) {
+      let seq = 0;
+      const now = Date.now();
+      for (const n of feed.nodes || []) {
+        const p = prev.nodes[n.address];
+        if (p && n.height != null && p.h != null && n.height > p.h) {
+          incoming.push({
+            id: `cli-dp-${n.address}-${n.height}-${now}-${seq++}`,
+            t: now,
+            kind: "datapoint",
+            address: n.address,
+            height: n.height,
+            message: `POST ${shortAddr(n.address)} @ ${n.height}`,
+          });
+        }
+        if (
+          p &&
+          n.rewardTokens != null &&
+          p.r != null &&
+          n.rewardTokens > p.r
+        ) {
+          const delta = n.rewardTokens - p.r;
+          incoming.push({
+            id: `cli-rw-${n.address}-${now}-${seq++}`,
+            t: now,
+            kind: "reward",
+            address: n.address,
+            rewardDelta: delta,
+            message: `REWARD +${delta} → ${shortAddr(n.address)}`,
+          });
+        }
+      }
+      if (
+        feed.settlementHeight != null &&
+        prev.settlement != null &&
+        feed.settlementHeight > prev.settlement
+      ) {
+        incoming.push({
+          id: `cli-pool-${feed.settlementHeight}-${now}`,
+          t: now,
+          kind: "pool_refresh",
+          height: feed.settlementHeight,
+          message: `POOL REFRESH h=${feed.settlementHeight}`,
+        });
+      }
+      if (
+        feed.rateNano != null &&
+        prev.rate != null &&
+        feed.rateNano !== prev.rate
+      ) {
+        incoming.push({
+          id: `cli-rate-${now}`,
+          t: now,
+          kind: "rate_change",
+          message: `RATE UPDATE → ${feed.priceLabel ?? feed.rateNano}`,
+        });
+      }
     }
+
+    // Enqueue unseen events for the animation loop
+    for (const ev of incoming) {
+      if (ad.seenEventIds.has(ev.id)) continue;
+      ad.seenEventIds.add(ev.id);
+      // cap memory
+      if (ad.seenEventIds.size > 400) {
+        ad.seenEventIds = new Set(Array.from(ad.seenEventIds).slice(-200));
+      }
+      ad.eventQueue.push(ev);
+    }
+
+    if (incoming.length > 0) {
+      setActivityLog((log) => {
+        const next = [
+          ...incoming.map((e) => ({
+            id: e.id,
+            t: e.t,
+            kind: e.kind,
+            message: e.message,
+          })),
+          ...log,
+        ].slice(0, 24);
+        return next;
+      });
+    }
+
+    // Remember for next client diff
+    const nodeMap: Record<string, { h: number | null; r: number | null }> = {};
+    for (const n of feed.nodes || []) {
+      nodeMap[n.address] = {
+        h: n.height,
+        r: n.rewardTokens ?? null,
+      };
+    }
+    clientPrevRef.current = {
+      settlement: feed.settlementHeight,
+      rate: feed.rateNano ?? null,
+      nodes: nodeMap,
+    };
+    ad.lastSettlement = feed.settlementHeight;
   }, [feedKey, feed]);
 
   useEffect(() => {
@@ -352,8 +470,6 @@ export default function OracleConstellation({
     if (ad.oracles.length === 0) {
       ad.oracles = buildOraclesFromFeed(feed);
     }
-
-    const EPOCH_DURATION = 900;
 
     function baseRings(): number[] {
       const m = Math.min(ad.W, ad.H);
@@ -758,24 +874,15 @@ export default function OracleConstellation({
     }
 
     function drawBallots() {
-      if (ad.time % 180 === 0 && ad.ballots.length < 8) {
-        const active = ad.oracles.filter((o) => o.status === "Active");
-        const src = active[Math.floor(Math.random() * active.length)];
-        if (src) {
-          ad.ballots.push({
-            x: (src.x || 0) + (Math.random() - 0.5) * 30,
-            y: (src.y || 0) + (Math.random() - 0.5) * 30,
-            angle: Math.random() * Math.PI * 2,
-            dist: 20 + Math.random() * 15,
-            speed: 0.01 + Math.random() * 0.01,
-            alpha: 0.6,
-          });
-        }
-      }
+      // Ballots only while a real pool_refresh is settling (short-lived markers)
       for (let i = ad.ballots.length - 1; i >= 0; i--) {
         const b = ad.ballots[i];
         b.angle += b.speed;
-        b.alpha += Math.sin(ad.time * 0.05) * 0.01;
+        b.alpha -= 0.004;
+        if (b.alpha <= 0) {
+          ad.ballots.splice(i, 1);
+          continue;
+        }
         const x = ad.CX + Math.cos(b.angle) * b.dist;
         const y = ad.CY + Math.sin(b.angle) * b.dist;
         drawTriangle(
@@ -783,7 +890,7 @@ export default function OracleConstellation({
           y,
           5,
           "#A855F7",
-          Math.max(0.2, Math.min(0.8, b.alpha))
+          Math.max(0.15, Math.min(0.8, b.alpha))
         );
       }
     }
@@ -809,71 +916,94 @@ export default function OracleConstellation({
       }
     }
 
-    /** Visual epoch cycle — price always from live feed, not random */
-    function updateEpoch() {
-      ad.epochProgress += 1 / EPOCH_DURATION;
+    function findOracle(address?: string): Oracle | undefined {
+      if (!address) return undefined;
+      return ad.oracles.find((o) => o.address === address);
+    }
 
-      if (ad.phase === "idle") {
-        if (ad.epochProgress > 0.7) {
-          ad.phase = "submit";
-          ad.phaseTimer = 0;
-        }
-      } else if (ad.phase === "submit") {
-        ad.phaseTimer++;
-        if (ad.phaseTimer % 20 === 0 && ad.phaseTimer < 200) {
-          const active = ad.oracles.filter(
-            (o) => o.status === "Active" || o.status === "Verifying"
-          );
-          const src = active[Math.floor(Math.random() * active.length)];
+    /** Drain real network events → datapoints / rewards / pool glow */
+    function processLiveEvents() {
+      // Process a few events per frame for visual clarity
+      let budget = 3;
+      while (budget-- > 0 && ad.eventQueue.length > 0) {
+        const ev = ad.eventQueue.shift()!;
+        if (ev.kind === "datapoint") {
+          const src = findOracle(ev.address);
           if (src) {
-            const isOutlier = src.status === "Offline" && Math.random() < 0.5;
-            spawnDatapoint(src, isOutlier);
+            // Ensure positions exist (may be mid-orbit)
+            if (src.x == null) {
+              const ringR = baseRings();
+              const rr = ringR[src.ring - 1] || ringR[0];
+              src.x = ad.CX + Math.cos(src.angle) * rr;
+              src.y = ad.CY + Math.sin(src.angle) * rr;
+            }
+            spawnDatapoint(src, false);
+            setLivePhase("datapoints");
           }
-        }
-        if (ad.phaseTimer > 250) {
-          ad.phase = "collect";
-          ad.phaseTimer = 0;
-        }
-      } else if (ad.phase === "collect") {
-        ad.phaseTimer++;
-        if (ad.phaseTimer === 30) {
-          ad.glowRings.push({ r: 30, a: 0.8, color: "#00E5FF" });
-          ad.glowRings.push({ r: 30, a: 0.6, color: "#FFD700" });
-        }
-        if (ad.phaseTimer > 60) {
-          ad.phase = "aggregate";
-          ad.phaseTimer = 0;
-        }
-      } else if (ad.phase === "aggregate") {
-        ad.phaseTimer++;
-        if (ad.phaseTimer === 1) {
-          // Keep real values — only pulse UI
+        } else if (ev.kind === "pool_refresh" || ev.kind === "rate_change") {
+          ad.glowRings.push({ r: 28, a: 1, color: "#00E5FF" });
+          ad.glowRings.push({ r: 42, a: 0.75, color: "#00D4AA" });
+          ad.glowRings.push({ r: 55, a: 0.45, color: "#FFD700" });
           setPriceLabel(ad.priceLabel);
           setCurrentPrice(ad.currentPrice);
+          setEpoch(ad.epoch);
           setConfidence(ad.confidence);
           setActiveSources(ad.activeSources);
-          setEpoch(ad.epoch);
-          ad.glowRings.push({ r: 25, a: 1, color: "#00E5FF" });
-          ad.glowRings.push({ r: 40, a: 0.7, color: "#00D4AA" });
-        }
-        if (ad.phaseTimer > 40) {
-          ad.phase = "distribute";
-          ad.phaseTimer = 0;
-        }
-      } else if (ad.phase === "distribute") {
-        ad.phaseTimer++;
-        if (ad.phaseTimer % 8 === 0 && ad.phaseTimer < 120) {
-          const active = ad.oracles.filter((o) => o.status === "Active");
-          const tgt = active[Math.floor(Math.random() * active.length)];
-          if (tgt) spawnReward(tgt);
-        }
-        if (ad.phaseTimer > 150) {
-          ad.phase = "idle";
-          ad.epochProgress = 0;
-          setEpochProgress(0);
+          setLivePhase("refresh");
+          // On pool refresh: reward tokens flow to live oracles that recently posted
+          if (ev.kind === "pool_refresh") {
+            const live = ad.oracles.filter((o) => o.status === "Active");
+            for (const tgt of live) {
+              spawnReward(tgt);
+              // brief ballot markers around core on real refresh
+              if (ad.ballots.length < 12) {
+                ad.ballots.push({
+                  x: ad.CX,
+                  y: ad.CY,
+                  angle: Math.random() * Math.PI * 2,
+                  dist: 18 + Math.random() * 22,
+                  speed: 0.012 + Math.random() * 0.01,
+                  alpha: 0.75,
+                });
+              }
+            }
+            setLivePhase("rewards");
+          }
+        } else if (ev.kind === "reward") {
+          const tgt = findOracle(ev.address);
+          if (tgt) {
+            if (tgt.x == null) {
+              const ringR = baseRings();
+              const rr = ringR[tgt.ring - 1] || ringR[0];
+              tgt.x = ad.CX + Math.cos(tgt.angle) * rr;
+              tgt.y = ad.CY + Math.sin(tgt.angle) * rr;
+            }
+            // Multiple stars for larger reward deltas
+            const n = Math.min(
+              6,
+              1 + Math.floor((ev.rewardDelta || 1) / 50)
+            );
+            for (let i = 0; i < n; i++) spawnReward(tgt);
+            setLivePhase("rewards");
+          }
         }
       }
-      setEpochProgress(ad.epochProgress);
+
+      // Soft return to idle when queues empty
+      if (
+        ad.eventQueue.length === 0 &&
+        ad.datapoints.length === 0 &&
+        ad.rewards.length === 0 &&
+        ad.time % 90 === 0
+      ) {
+        setLivePhase("idle");
+      }
+
+      // Epoch progress bar: how much of the LIVE window is consumed
+      const thr = ad.liveMax || 24;
+      const age = ad.ageBlocks ?? 0;
+      ad.epochProgress = thr > 0 ? Math.min(1, age / thr) : 0;
+      if (ad.time % 15 === 0) setEpochProgress(ad.epochProgress);
     }
 
     function animate() {
@@ -888,7 +1018,7 @@ export default function OracleConstellation({
       drawDatapoints();
       drawRewards();
       drawSlashParts();
-      updateEpoch();
+      processLiveEvents();
       animFrame = requestAnimationFrame(animate);
     }
 
@@ -990,8 +1120,89 @@ export default function OracleConstellation({
         </div>
         <div style={hudSubStyle}>
           conf {confidence}% · src {activeSources}
+          {feed.requiredOracles != null
+            ? ` · need ${feed.requiredOracles}`
+            : ""}
           {feed.unitLabel ? ` · ${feed.unitLabel}` : ""}
         </div>
+        <div
+          style={{
+            ...hudSubStyle,
+            marginTop: 6,
+            color:
+              livePhase === "idle"
+                ? "rgba(226,232,240,0.35)"
+                : livePhase === "datapoints"
+                  ? "#00D4AA"
+                  : livePhase === "rewards"
+                    ? "#FFD700"
+                    : "#00E5FF",
+          }}
+        >
+          FLOW · {livePhase.toUpperCase()}
+          {feed.poolHealthy != null
+            ? feed.poolHealthy
+              ? " · POOL OK"
+              : " · POOL DOWN"
+            : ""}
+        </div>
+      </div>
+
+      {/* Live activity log — real posts / rewards / refreshes */}
+      <div
+        style={{
+          position: "absolute",
+          left: 14,
+          bottom: compact ? 78 : 88,
+          zIndex: 12,
+          width: compact ? "min(280px, 46%)" : "min(320px, 40%)",
+          maxHeight: compact ? 110 : 140,
+          overflow: "hidden",
+          background: "rgba(13,19,33,0.82)",
+          backdropFilter: "blur(16px)",
+          border: "1px solid rgba(255,255,255,0.06)",
+          borderRadius: 12,
+          padding: "10px 12px",
+          pointerEvents: "none",
+        }}
+      >
+        <div style={{ ...hudLabelStyle, marginBottom: 6 }}>Live activity</div>
+        {activityLog.length === 0 ? (
+          <div style={{ ...hudSubStyle, fontSize: 10 }}>
+            Waiting for network posts / pool refresh…
+          </div>
+        ) : (
+          activityLog.slice(0, 6).map((row) => (
+            <div
+              key={row.id}
+              style={{
+                fontSize: 10,
+                fontFamily: "ui-monospace, monospace",
+                color:
+                  row.kind === "datapoint"
+                    ? "#00D4AA"
+                    : row.kind === "reward"
+                      ? "#FFD700"
+                      : row.kind === "pool_refresh"
+                        ? "#00E5FF"
+                        : "rgba(226,232,240,0.7)",
+                marginBottom: 3,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {row.kind === "datapoint"
+                ? "◆ "
+                : row.kind === "reward"
+                  ? "★ "
+                  : row.kind === "pool_refresh"
+                    ? "⬡ "
+                    : "· "}
+              {row.message}
+            </div>
+          ))
+        )}
       </div>
 
       {/* Epoch Ring */}
@@ -1096,6 +1307,20 @@ export default function OracleConstellation({
             <span>Freshness:</span>
             <span>{hovered.accuracy}%</span>
           </div>
+          {hovered.rewardTokens != null && (
+            <div style={ttRowStyle}>
+              <span>Claimable rewards:</span>
+              <span style={{ color: "#FFD700" }}>
+                {hovered.rewardTokens.toLocaleString()}
+              </span>
+            </div>
+          )}
+          {hovered.collectedHeight != null && (
+            <div style={ttRowStyle}>
+              <span>Collected h:</span>
+              <span>{hovered.collectedHeight.toLocaleString()}</span>
+            </div>
+          )}
         </div>
       )}
 

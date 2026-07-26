@@ -96,6 +96,14 @@ export interface OracleFeedSnapshot {
   /** Individual oracle operators (from local metrics when available) */
   nodes: OracleNodeInfo[];
   history: OracleHistoryPoint[];
+  /** Live deltas since previous poll (posts, pool refresh, rewards) */
+  liveEvents?: OracleLiveEvent[];
+  /** Pool healthy flag from local oracle-core metrics (1/0), if known */
+  poolHealthy?: boolean | null;
+  /** Required datapoints for refresh (metrics) */
+  requiredOracles?: number | null;
+  /** Reward token amount in pool box (metrics) */
+  poolRewardTokens?: number | null;
   source: "explorer" | "metrics" | "none";
   error?: string;
 }
@@ -104,7 +112,28 @@ export interface OracleNodeInfo {
   address: string;
   /** Last posted box height */
   height: number | null;
+  /** Last collected (into pool refresh) height when known */
+  collectedHeight?: number | null;
+  /** Claimable reward tokens (from oracle-core metrics) */
+  rewardTokens?: number | null;
   status: OracleStatus;
+}
+
+/** Real-time delta events since previous API poll (server-side). */
+export type OracleLiveEventKind =
+  | "datapoint"
+  | "pool_refresh"
+  | "reward"
+  | "rate_change";
+
+export interface OracleLiveEvent {
+  id: string;
+  t: number;
+  kind: OracleLiveEventKind;
+  address?: string;
+  height?: number | null;
+  rewardDelta?: number | null;
+  message: string;
 }
 
 export interface OraclesResponse {
@@ -310,19 +339,31 @@ async function fetchPoolBox(poolNft: string): Promise<{
   };
 }
 
+type MetricsHealth = {
+  active: number;
+  total: number;
+  nodes: OracleNodeInfo[];
+  poolHealthy: boolean | null;
+  requiredOracles: number | null;
+  poolRewardTokens: number | null;
+};
+
+function gauge(text: string, name: string): number | null {
+  const m = text.match(new RegExp(`^${name}\\s+(\\S+)`, "m"));
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
- * Optional: parse local oracle-core Prometheus metrics for per-operator health.
- * Used by Consensus Singularity to place real gravitational nodes.
+ * Optional: parse local oracle-core Prometheus metrics for per-operator
+ * posts, rewards, and pool health — drives live constellation events.
  */
 async function fetchMetricsHealth(
   port: number | undefined,
   tipHeight: number | null,
   epochLength: number
-): Promise<{
-  active: number;
-  total: number;
-  nodes: OracleNodeInfo[];
-} | null> {
+): Promise<MetricsHealth | null> {
   if (!port) return null;
   try {
     const ctrl = new AbortController();
@@ -334,37 +375,201 @@ async function fetchMetricsHealth(
     clearTimeout(t);
     if (!res.ok) return null;
     const text = await res.text();
-    // ergo_oracle_active_oracle_box_height{box_type="posted",oracle_address="9…"} 1836992
-    const re =
-      /ergo_oracle_active_oracle_box_height\{box_type="posted",oracle_address="([^"]+)"\}\s+(\d+)/g;
+
+    const posted = new Map<string, number>();
+    const collected = new Map<string, number>();
+    const rewards = new Map<string, number>();
+
     let m: RegExpExecArray | null;
+    const rePosted =
+      /ergo_oracle_active_oracle_box_height\{box_type="posted",oracle_address="([^"]+)"\}\s+(\d+)/g;
+    while ((m = rePosted.exec(text))) {
+      posted.set(m[1], Number(m[2]));
+    }
+    const reCollected =
+      /ergo_oracle_active_oracle_box_height\{box_type="collected",oracle_address="([^"]+)"\}\s+(\d+)/g;
+    while ((m = reCollected.exec(text))) {
+      collected.set(m[1], Number(m[2]));
+    }
+    const reReward =
+      /ergo_oracle_all_oracle_claimable_rewards\{oracle_address="([^"]+)"\}\s+(\d+(?:\.\d+)?)/g;
+    while ((m = reReward.exec(text))) {
+      rewards.set(m[1], Number(m[2]));
+    }
+
+    // Union addresses seen in posted (primary) + rewards for completeness
+    const addresses = new Set<string>([
+      ...posted.keys(),
+      ...collected.keys(),
+    ]);
+    if (addresses.size === 0) return null;
+
     const nodes: OracleNodeInfo[] = [];
-    while ((m = re.exec(text))) {
-      const address = m[1];
-      const height = Number(m[2]);
+    for (const address of addresses) {
+      const height = posted.has(address) ? posted.get(address)! : null;
+      const coll = collected.has(address) ? collected.get(address)! : null;
+      const reward = rewards.has(address) ? rewards.get(address)! : null;
       const age =
-        tipHeight != null && Number.isFinite(height)
+        tipHeight != null && height != null && Number.isFinite(height)
           ? Math.max(0, tipHeight - height)
           : null;
-      // Per-operator freshness uses the same honest thresholds as the pool
       const status: OracleStatus =
-        age == null
-          ? "live"
-          : statusFromAge(age, epochLength, true);
+        height == null
+          ? "offline"
+          : age == null
+            ? "live"
+            : statusFromAge(age, epochLength, true);
       nodes.push({
         address,
-        height: Number.isFinite(height) ? height : null,
+        height: height != null && Number.isFinite(height) ? height : null,
+        collectedHeight: coll != null && Number.isFinite(coll) ? coll : null,
+        rewardTokens: reward != null && Number.isFinite(reward) ? reward : null,
         status,
       });
     }
-    if (nodes.length === 0) return null;
-    // Stable order for deterministic 3D placement
     nodes.sort((a, b) => a.address.localeCompare(b.address));
     const active = nodes.filter((n) => n.status === "live").length;
-    return { active, total: nodes.length, nodes };
+
+    const poolHealthyN = gauge(text, "ergo_oracle_pool_is_healthy");
+    const requiredOracles = gauge(text, "ergo_oracle_required_oracle_count");
+    const poolRewardTokens = gauge(
+      text,
+      "ergo_oracle_pool_box_reward_token_amount"
+    );
+
+    return {
+      active,
+      total: nodes.length,
+      nodes,
+      poolHealthy:
+        poolHealthyN == null ? null : poolHealthyN >= 1 ? true : false,
+      requiredOracles,
+      poolRewardTokens,
+    };
   } catch {
     return null;
   }
+}
+
+/** Previous poll snapshot for live event diffs (in-process). */
+type PrevFeedSnap = {
+  settlementHeight: number | null;
+  rateNano: number | null;
+  epoch: number | null;
+  nodes: Record<
+    string,
+    { height: number | null; reward: number | null }
+  >;
+};
+const prevFeedSnaps = new Map<OracleFeedId, PrevFeedSnap>();
+
+function computeLiveEvents(
+  id: OracleFeedId,
+  snap: {
+    settlementHeight: number | null;
+    rateNano: number | null;
+    epoch: number | null;
+    nodes: OracleNodeInfo[];
+  },
+  now: number
+): OracleLiveEvent[] {
+  const prev = prevFeedSnaps.get(id);
+  const events: OracleLiveEvent[] = [];
+  let seq = 0;
+  const push = (
+    kind: OracleLiveEventKind,
+    message: string,
+    extra?: Partial<OracleLiveEvent>
+  ) => {
+    events.push({
+      id: `${id}-${now}-${seq++}`,
+      t: now,
+      kind,
+      message,
+      ...extra,
+    });
+  };
+
+  if (prev) {
+    for (const n of snap.nodes) {
+      const p = prev.nodes[n.address];
+      if (
+        p &&
+        n.height != null &&
+        p.height != null &&
+        n.height > p.height
+      ) {
+        push(
+          "datapoint",
+          `POST ${n.address.slice(0, 6)}…${n.address.slice(-4)} @ ${n.height}`,
+          { address: n.address, height: n.height }
+        );
+      } else if (!p && n.height != null) {
+        // First time we see this operator — soft announce as post if live
+        if (n.status === "live") {
+          push(
+            "datapoint",
+            `SEEN ${n.address.slice(0, 6)}…${n.address.slice(-4)} @ ${n.height}`,
+            { address: n.address, height: n.height }
+          );
+        }
+      }
+      if (
+        p &&
+        n.rewardTokens != null &&
+        p.reward != null &&
+        n.rewardTokens > p.reward
+      ) {
+        const delta = n.rewardTokens - p.reward;
+        push(
+          "reward",
+          `REWARD +${delta} → ${n.address.slice(0, 6)}…${n.address.slice(-4)}`,
+          { address: n.address, rewardDelta: delta, height: n.height }
+        );
+      }
+    }
+
+    if (
+      snap.settlementHeight != null &&
+      prev.settlementHeight != null &&
+      snap.settlementHeight > prev.settlementHeight
+    ) {
+      push(
+        "pool_refresh",
+        `POOL REFRESH h=${snap.settlementHeight}` +
+          (snap.epoch != null ? ` epoch=${snap.epoch}` : ""),
+        { height: snap.settlementHeight }
+      );
+    }
+    if (
+      snap.rateNano != null &&
+      prev.rateNano != null &&
+      snap.rateNano !== prev.rateNano
+    ) {
+      push(
+        "rate_change",
+        `RATE ${prev.rateNano} → ${snap.rateNano}`,
+        { height: snap.settlementHeight }
+      );
+    }
+  }
+
+  // Store snapshot for next poll
+  const nodeMap: PrevFeedSnap["nodes"] = {};
+  for (const n of snap.nodes) {
+    nodeMap[n.address] = {
+      height: n.height,
+      reward: n.rewardTokens ?? null,
+    };
+  }
+  prevFeedSnaps.set(id, {
+    settlementHeight: snap.settlementHeight,
+    rateNano: snap.rateNano,
+    epoch: snap.epoch,
+    nodes: nodeMap,
+  });
+
+  return events;
 }
 
 function displayForFeed(
@@ -464,6 +669,18 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
           cfg.epochLength
         );
 
+        const nodes = health?.nodes ?? [];
+        const liveEvents = computeLiveEvents(
+          cfg.id,
+          {
+            settlementHeight: box.settlementHeight,
+            rateNano: box.rateNano,
+            epoch: box.epoch,
+            nodes,
+          },
+          generatedAt
+        );
+
         return {
           ...base,
           status: statusFromAge(ageBlocks, cfg.epochLength, true),
@@ -484,7 +701,11 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
             : base.explorerUrl,
           activeOracles: health?.active ?? null,
           totalOracles: health?.total ?? null,
-          nodes: health?.nodes ?? [],
+          nodes,
+          liveEvents,
+          poolHealthy: health?.poolHealthy ?? null,
+          requiredOracles: health?.requiredOracles ?? null,
+          poolRewardTokens: health?.poolRewardTokens ?? null,
           history: hist,
           source: "explorer" as const,
         };

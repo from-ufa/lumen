@@ -124,6 +124,24 @@ export default function OraclesDualView({
                   /
                   {feed!.totalOracles ?? feed!.nodes?.length ?? "—"}{" "}
                   oracles
+                  {feed!.requiredOracles != null
+                    ? ` · quorum ${feed!.requiredOracles}`
+                    : ""}
+                </span>
+              )}
+              {feed!.poolHealthy != null && (
+                <span
+                  style={{
+                    color: feed!.poolHealthy ? "#10B981" : "#F59E0B",
+                  }}
+                >
+                  pool {feed!.poolHealthy ? "OK" : "DOWN"}
+                </span>
+              )}
+              {(feed!.liveEvents?.length ?? 0) > 0 && (
+                <span style={{ color: "#00E5FF" }}>
+                  +{feed!.liveEvents!.length} event
+                  {feed!.liveEvents!.length === 1 ? "" : "s"}
                 </span>
               )}
             </div>

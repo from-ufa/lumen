@@ -115,6 +115,8 @@ Does **not** control `ergonode` / `oracle-core` units. Only **allowlisted GET** 
 Examples (≈2 min/block): USD epoch 6 → live ≤24 blk (~48m), stale ≤120 blk (~4h). XAU epoch 30 → live ≤90 blk (~3h), stale ≤600 blk (~20h).  
 **Note:** STALE is not a Lumen bug — USD pool often fails on-chain refresh (needs ≥8 datapoints within 5% deviation). Price can still be shown while lagging.
 
+**Live constellation events** (poll ~5s): API diffs consecutive snapshots → `liveEvents` (`datapoint` = operator post height↑, `pool_refresh` = settlement↑, `reward` = claimable rewards↑, `rate_change`). UI animates only real events — no decorative datapoint spam.
+
 ---
 
 ## 2. Stack and layout
@@ -558,6 +560,7 @@ Do not:
 | 2026-07-26 | **Oracle Constellation:** replace R3F singularity with Canvas 2D constellation from operator prompt |
 | 2026-07-26 | **Oracles dual live:** Constellation×2 wired to real pool data (nodes, epoch, price, status) |
 | 2026-07-26 | **Oracle status thresholds:** fix short-epoch OFFLINE false positive; document LIVE/STALE/OFFLINE in LUMEN.md |
+| 2026-07-26 | **Oracle live events:** real-time datapoints/rewards from metrics+pool diffs; 5s poll |
 
 ### Block miner attribution (honest)
 
