@@ -544,23 +544,22 @@ function MyNodeDot({
       {labelVisible && (
         <Html
           center
-          // Higher distanceFactor → smaller on-screen size when close
-          distanceFactor={48}
+          sprite
+          // No distanceFactor: fixed screen size (distanceFactor *increases* size)
           style={{ pointerEvents: "none", userSelect: "none" }}
-          position={[0, 0.09, 0]}
+          position={[0, 0.07, 0]}
           zIndexRange={[10, 0]}
         >
           <div
             className="whitespace-nowrap font-mono uppercase"
             style={{
               color: accent,
-              fontSize: "9px",
-              letterSpacing: "0.14em",
-              opacity: 0.72,
+              fontSize: "8px",
+              letterSpacing: "0.12em",
+              opacity: 0.7,
               lineHeight: 1,
-              textShadow: "0 0 4px rgba(0,0,0,0.85)",
-              transform: "scale(0.85)",
-              transformOrigin: "center center",
+              padding: "1px 4px",
+              textShadow: "0 1px 3px rgba(0,0,0,0.9)",
             }}
           >
             {shortLabel}
@@ -572,6 +571,9 @@ function MyNodeDot({
 }
 
 /* ─── Compact peers: tiny core + minimal glow + optional micro-trail ────── */
+
+/** Invisible hit radius multiplier — cores are tiny, need fat raycast targets */
+const HIT_MUL = 6;
 
 function PeerInstances({
   slots,
@@ -588,6 +590,7 @@ function PeerInstances({
 }) {
   const coreRef = useRef<THREE.InstancedMesh>(null!);
   const glowRef = useRef<THREE.InstancedMesh>(null!);
+  const hitRef = useRef<THREE.InstancedMesh>(null!);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
   const tmp = useMemo(() => new THREE.Color(), []);
@@ -657,6 +660,7 @@ function PeerInstances({
   useFrame((state) => {
     const core = coreRef.current;
     const glow = glowRef.current;
+    const hit = hitRef.current;
     if (!core || count === 0) return;
     const t = state.clock.elapsedTime;
     const boom = boomEnvelope(propagationStart);
@@ -688,6 +692,12 @@ function PeerInstances({
         dummy.scale.setScalar(coreScale * GLOW_MUL);
         dummy.updateMatrix();
         glow.setMatrixAt(i, dummy.matrix);
+      }
+      // Fat invisible hit target for reliable hover
+      if (hit) {
+        dummy.scale.setScalar(Math.max(coreScale * HIT_MUL, 0.22));
+        dummy.updateMatrix();
+        hit.setMatrixAt(i, dummy.matrix);
       }
 
       color.copy(slot.color);
@@ -730,6 +740,7 @@ function PeerInstances({
       glow.instanceMatrix.needsUpdate = true;
       if (glow.instanceColor) glow.instanceColor.needsUpdate = true;
     }
+    if (hit) hit.instanceMatrix.needsUpdate = true;
     if (trailMeta.total > 0) {
       trailGeom.attributes.position.needsUpdate = true;
       trailGeom.attributes.color.needsUpdate = true;
@@ -746,14 +757,20 @@ function PeerInstances({
     [slots, onHover]
   );
 
-  const handleLeave = useCallback(() => onHover(null), [onHover]);
+  const handleLeave = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      onHover(null);
+    },
+    [onHover]
+  );
 
   if (count === 0) return null;
 
   return (
     <group>
       {trailMeta.total > 0 && (
-        <points geometry={trailGeom} frustumCulled={false}>
+        <points geometry={trailGeom} frustumCulled={false} raycast={() => null}>
           <pointsMaterial
             size={0.022}
             vertexColors
@@ -767,11 +784,12 @@ function PeerInstances({
         </points>
       )}
 
-      {/* Minimal soft halo — not soap bubbles */}
+      {/* Soft halo — not pickable (was eating raycasts) */}
       <instancedMesh
         ref={glowRef}
         args={[GEO_HALO, undefined, count]}
         frustumCulled={false}
+        raycast={() => null}
       >
         <meshBasicMaterial
           color="#ffffff"
@@ -786,12 +804,29 @@ function PeerInstances({
       <instancedMesh
         ref={coreRef}
         args={[GEO_PEER, undefined, count]}
+        frustumCulled={false}
+        raycast={() => null}
+      >
+        <meshBasicMaterial color="#ffffff" toneMapped={false} depthWrite />
+      </instancedMesh>
+
+      {/* Large invisible hit targets — reliable hover / orbit pause */}
+      <instancedMesh
+        ref={hitRef}
+        args={[GEO_PEER, undefined, count]}
         onPointerOver={handlePointer}
+        onPointerMove={handlePointer}
         onClick={handlePointer}
         onPointerOut={handleLeave}
         frustumCulled={false}
       >
-        <meshBasicMaterial color="#ffffff" toneMapped={false} depthWrite />
+        <meshBasicMaterial
+          transparent
+          opacity={0}
+          depthWrite={false}
+          depthTest={false}
+          toneMapped={false}
+        />
       </instancedMesh>
     </group>
   );
@@ -876,6 +911,8 @@ function CameraRig({
 
   /** 1 = full auto-orbit, 0 = stopped. Smooth ease on hover in/out. */
   const orbitMulRef = useRef(1);
+  const peerHoveredRef = useRef(peerHovered);
+  peerHoveredRef.current = peerHovered;
 
   useFrame((_, dt) => {
     const fly = flyRef.current;
@@ -892,16 +929,19 @@ function CameraRig({
     }
     if (controlsRef.current) {
       // Hover → gently coast to stop; leave → gently resume
+      const hovering = peerHoveredRef.current;
       const want =
-        autoOrbit && !peerHovered && !fly?.active ? 1 : 0;
+        autoOrbit && !hovering && !fly?.active ? 1 : 0;
+      // Faster settle when stopping so hover feels responsive
+      const lambda = hovering ? 4.5 : 2.4;
       orbitMulRef.current = THREE.MathUtils.damp(
         orbitMulRef.current,
         want,
-        2.2, // slow ease (~1s coast)
+        lambda,
         dt
       );
       const mul = orbitMulRef.current;
-      controlsRef.current.autoRotate = autoOrbit && mul > 0.02;
+      controlsRef.current.autoRotate = autoOrbit && mul > 0.015;
       controlsRef.current.autoRotateSpeed = 0.35 * orbitSpeed * mul;
     }
   });
