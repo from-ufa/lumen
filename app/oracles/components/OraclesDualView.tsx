@@ -393,8 +393,12 @@ function OracleBlock({
       }}
     >
       {/* Compact header: title left · epoch ring+copy right */}
-      <header className="shrink-0 flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 lg:px-5 py-3 border-b border-white/[0.06] min-h-[4.75rem]">
-        <div className="min-w-0 flex flex-col gap-1.5">
+      <header
+        className={`shrink-0 flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 lg:px-5 py-3 border-b border-white/[0.06] ${
+          isMineScope || isNetworkScope ? "h-[5.5rem]" : "h-[4.75rem]"
+        }`}
+      >
+        <div className="min-w-0 flex flex-col gap-1.5 justify-center">
           <div className="flex items-center gap-2 overflow-hidden">
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -421,15 +425,15 @@ function OracleBlock({
               {st.label}
             </span>
           </div>
-          {/* Clear source: my bridge vs lumen network */}
+          {/* Always same second line height in hybrid so headers align */}
           {(isMineScope || isNetworkScope) && (
-            <div className="flex flex-wrap items-center gap-1.5 pl-3.5">
+            <div className="flex items-center gap-1.5 pl-3.5 h-[1.25rem] overflow-hidden">
               {isMineScope ? (
-                <span className="inline-flex items-center gap-1 text-[9px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full border border-[#FF7A3D]/40 bg-[#FF7A3D]/12 text-[#FF7A3D]">
+                <span className="inline-flex items-center gap-1 text-[9px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full border border-[#FF7A3D]/40 bg-[#FF7A3D]/12 text-[#FF7A3D] shrink-0">
                   ● my bridge
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 text-[9px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full border border-[#00E5FF]/35 bg-[#00E5FF]/10 text-[#00E5FF]">
+                <span className="inline-flex items-center gap-1 text-[9px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full border border-[#00E5FF]/35 bg-[#00E5FF]/10 text-[#00E5FF] shrink-0">
                   ● lumen network
                 </span>
               )}
@@ -553,149 +557,167 @@ function OracleBlock({
         </div>
       </div>
 
-      {/* Footer slots — fixed heights so USD/XAU stay pixel-symmetric */}
+      {/*
+        Footer slots — identical stack + fixed heights so dual panes align
+        row-for-row (identity / price / activity / legend).
+      */}
       <div className="shrink-0 px-3 sm:px-4 py-3 sm:py-3.5 grid grid-cols-1 gap-2.5 sm:gap-3">
-        {/* Your operator — only for bridge-attached (mine) pools */}
-        {isMineScope && mine && (mine.address || mine.postHeight != null) && (
+        {/* Row 1: identity — always same height when either scope is set */}
+        {(isMineScope || isNetworkScope) && (
           <div
-            className="lumen-oracle-tile rounded-xl border px-3.5 py-3 overflow-hidden"
-            style={{
-              borderColor: "rgba(255,122,61,0.35)",
-              background:
-                "linear-gradient(135deg, rgba(255,122,61,0.1) 0%, rgba(0,0,0,0.45) 55%)",
-              boxShadow: "0 0 28px rgba(255,122,61,0.12)",
-            }}
+            className="lumen-oracle-tile h-[9.5rem] rounded-xl border px-3.5 py-3 overflow-hidden flex flex-col"
+            style={
+              isMineScope
+                ? {
+                    borderColor: "rgba(255,122,61,0.35)",
+                    background:
+                      "linear-gradient(135deg, rgba(255,122,61,0.1) 0%, rgba(0,0,0,0.45) 55%)",
+                    boxShadow: "0 0 28px rgba(255,122,61,0.12)",
+                  }
+                : {
+                    borderColor: "rgba(0,229,255,0.28)",
+                    background:
+                      "linear-gradient(135deg, rgba(0,229,255,0.08) 0%, rgba(0,0,0,0.45) 55%)",
+                  }
+            }
           >
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <div className="text-[9px] font-mono tracking-[0.18em] text-[#FF7A3D] uppercase">
-                Your oracle · bridge
+            <div className="flex items-center justify-between gap-2 shrink-0">
+              <div
+                className="text-[9px] font-mono tracking-[0.18em] uppercase"
+                style={{ color: isMineScope ? "#FF7A3D" : "#00E5FF" }}
+              >
+                {isMineScope
+                  ? "Your oracle · bridge"
+                  : "Network · lumen host"}
               </div>
               <span
-                className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border"
-                style={{
-                  color:
-                    mine.isHealthy === true
-                      ? "#34D399"
-                      : mine.isHealthy === false
-                        ? "#F87171"
-                        : "#8B8B9A",
-                  borderColor:
-                    mine.isHealthy === true
-                      ? "rgba(52,211,153,0.35)"
-                      : mine.isHealthy === false
-                        ? "rgba(248,113,113,0.35)"
-                        : "rgba(255,255,255,0.1)",
-                }}
+                className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border shrink-0"
+                style={
+                  isMineScope
+                    ? {
+                        color:
+                          mine?.isHealthy === true
+                            ? "#34D399"
+                            : mine?.isHealthy === false
+                              ? "#F87171"
+                              : "#8B8B9A",
+                        borderColor:
+                          mine?.isHealthy === true
+                            ? "rgba(52,211,153,0.35)"
+                            : mine?.isHealthy === false
+                              ? "rgba(248,113,113,0.35)"
+                              : "rgba(255,255,255,0.1)",
+                      }
+                    : {
+                        color: "#00E5FF",
+                        borderColor: "rgba(0,229,255,0.3)",
+                      }
+                }
               >
-                {mine.isHealthy === true
-                  ? "HEALTHY"
-                  : mine.isHealthy === false
-                    ? "DOWN"
-                    : "—"}
+                {isMineScope
+                  ? mine?.isHealthy === true
+                    ? "HEALTHY"
+                    : mine?.isHealthy === false
+                      ? "DOWN"
+                      : "—"
+                  : "NOT YOURS"}
               </span>
             </div>
-            <div className="font-mono text-[12px] text-[#F0F0F5] truncate">
-              {shortMine || "identity matching…"}
+
+            <div
+              className="mt-1.5 font-mono text-[12px] truncate shrink-0"
+              style={{ color: isMineScope ? "#F0F0F5" : "#B0B0BC" }}
+            >
+              {isMineScope
+                ? shortMine || "identity matching…"
+                : "Public pool · host metrics"}
             </div>
-            <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+
+            {/* Same 3-metric grid on both panes */}
+            <div className="mt-2 grid grid-cols-3 gap-2 text-center shrink-0">
               <div>
                 <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  Last post
+                  {isMineScope ? "Last post" : "Lag"}
                 </div>
-                <div className="mt-0.5 font-mono text-[13px] tabular-nums text-[#FF7A3D]">
-                  {mine.postAgeBlocks != null
-                    ? `${mine.postAgeBlocks} blk`
-                    : "—"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  Height
-                </div>
-                <div className="mt-0.5 font-mono text-[12px] tabular-nums text-[#E8E8F0]">
-                  {mine.postHeight != null
-                    ? mine.postHeight.toLocaleString()
-                    : "—"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  Rewards
-                </div>
-                <div className="mt-0.5 font-mono text-[13px] tabular-nums text-[#E8C547]">
-                  {mine.claimableRewards != null
-                    ? mine.claimableRewards.toLocaleString()
-                    : mineNode?.rewardTokens != null
-                      ? mineNode.rewardTokens.toLocaleString()
+                <div
+                  className="mt-0.5 font-mono text-[13px] tabular-nums"
+                  style={{ color: isMineScope ? "#FF7A3D" : "#00E5FF" }}
+                >
+                  {isMineScope
+                    ? mine?.postAgeBlocks != null
+                      ? `${mine.postAgeBlocks} blk`
+                      : "—"
+                    : feed.ageBlocks != null
+                      ? `${feed.ageBlocks} blk`
                       : "—"}
                 </div>
               </div>
-            </div>
-            {myActivity.length > 0 && (
-              <ul className="mt-2 space-y-1 border-t border-white/[0.06] pt-2 max-h-[52px] overflow-hidden">
-                {myActivity.slice(0, 3).map((row) => (
-                  <li
-                    key={row.id}
-                    className="text-[10px] font-mono truncate text-[#FF7A3D]/90"
-                  >
-                    ◆ {row.message}
-                  </li>
-                ))}
-              </ul>
-            )}
-            {myActivity.length === 0 && (
-              <p className="mt-2 text-[10px] text-[#6B6B78] leading-snug">
-                Orange node on the map is you. Posts flash when you publish.
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Network pane note — pool not on your bridge, data from lumen host */}
-        {isNetworkScope && (
-          <div
-            className="lumen-oracle-tile rounded-xl border px-3.5 py-3 overflow-hidden"
-            style={{
-              borderColor: "rgba(0,229,255,0.28)",
-              background:
-                "linear-gradient(135deg, rgba(0,229,255,0.08) 0%, rgba(0,0,0,0.45) 55%)",
-            }}
-          >
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <div className="text-[9px] font-mono tracking-[0.18em] text-[#00E5FF] uppercase">
-                Network · lumen host
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  {isMineScope ? "Height" : "Consensus"}
+                </div>
+                <div className="mt-0.5 font-mono text-[12px] tabular-nums text-[#E8E8F0]">
+                  {isMineScope
+                    ? mine?.postHeight != null
+                      ? mine.postHeight.toLocaleString()
+                      : "—"
+                    : `${feed.activeOracles ?? "—"}/${feed.requiredOracles ?? "—"}`}
+                </div>
               </div>
-              <span className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border border-[#00E5FF]/30 text-[#00E5FF]/90">
-                not yours
-              </span>
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  {isMineScope ? "Rewards" : "Health"}
+                </div>
+                <div
+                  className="mt-0.5 font-mono text-[13px] tabular-nums"
+                  style={{
+                    color: isMineScope ? "#E8C547" : health.color,
+                  }}
+                >
+                  {isMineScope
+                    ? mine?.claimableRewards != null
+                      ? mine.claimableRewards.toLocaleString()
+                      : mineNode?.rewardTokens != null
+                        ? mineNode.rewardTokens.toLocaleString()
+                        : "—"
+                    : health.label === "—"
+                      ? "—"
+                      : health.label}
+                </div>
+              </div>
             </div>
-            <p className="text-[11px] text-[#A0A0B0] leading-snug">
-              This pool is <span className="text-[#E8E8F0]">not</span> on your
-              bridge agent. Showing full public data from the lumen server
-              (explorer + host metrics). Attach it in ORACLE SETTINGS if you
-              run this pool too.
-            </p>
-            <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-mono text-[#6B6B78]">
-              <span>
-                consensus{" "}
-                <span className="text-[#E8E8F0]">
-                  {feed.activeOracles ?? "—"}/
-                  {feed.requiredOracles ?? "—"}
-                </span>
-              </span>
-              <span>·</span>
-              <span>
-                lag{" "}
-                <span className="text-[#E8E8F0]">
-                  {feed.ageBlocks != null ? `${feed.ageBlocks} blk` : "—"}
-                </span>
-              </span>
+
+            {/* Bottom strip — fixed height so both panes stay level */}
+            <div className="mt-auto pt-2 border-t border-white/[0.06] h-[2.75rem] overflow-hidden">
+              {isMineScope ? (
+                myActivity.length > 0 ? (
+                  <ul className="space-y-0.5">
+                    {myActivity.slice(0, 2).map((row) => (
+                      <li
+                        key={row.id}
+                        className="text-[10px] font-mono truncate text-[#FF7A3D]/90"
+                      >
+                        ◆ {row.message}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[10px] text-[#6B6B78] leading-snug line-clamp-2">
+                    Orange node on the map is you. Posts flash when you publish.
+                  </p>
+                )
+              ) : (
+                <p className="text-[10px] text-[#6B6B78] leading-snug line-clamp-2">
+                  Not on your bridge — public data from lumen (explorer + host
+                  metrics). Attach in ORACLE SETTINGS if you run this pool.
+                </p>
+              )}
             </div>
           </div>
         )}
 
-        {/* Price — always same box; alt line reserved even when empty */}
-        <div className="lumen-oracle-tile h-[6.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center overflow-hidden">
+        {/* Row 2: price — fixed */}
+        <div className="lumen-oracle-tile h-[6.5rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center overflow-hidden">
           <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-1.5">
             On-chain price
           </div>
@@ -705,20 +727,22 @@ function OracleBlock({
           >
             {feed.priceLabel || "—"}
           </div>
-          <div className="mt-1 text-[10px] text-[#8B8B9A] font-mono truncate">
-            {feed.unitLabel}
+          <div className="mt-1 text-[10px] text-[#8B8B9A] font-mono truncate h-[1rem]">
+            {feed.unitLabel || "\u00a0"}
           </div>
           <div
-            className="mt-1.5 text-[11px] font-mono truncate min-h-[1rem]"
-            style={{ color: feed.priceAlt ? `${theme.accent}dd` : "transparent" }}
+            className="mt-1.5 text-[11px] font-mono truncate h-[1rem]"
+            style={{
+              color: feed.priceAlt ? `${theme.accent}dd` : "transparent",
+            }}
           >
             {feed.priceAlt || "\u00a0"}
           </div>
         </div>
 
-        {/* Publish activity — fixed height; list or empty state never resizes the pane */}
+        {/* Row 3: publish activity — fixed */}
         <div className="lumen-oracle-tile h-[6.5rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between mb-2 shrink-0">
+          <div className="flex items-center justify-between mb-2 shrink-0 h-[1.1rem]">
             <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase">
               Publish activity
             </div>
@@ -740,11 +764,11 @@ function OracleBlock({
                 node into the pool core.
               </p>
             ) : (
-              <ul className="space-y-1 h-full overflow-hidden">
+              <ul className="space-y-1 overflow-hidden">
                 {activity.slice(0, 3).map((row) => (
                   <li
                     key={row.id}
-                    className="text-[10px] sm:text-[11px] font-mono truncate leading-snug"
+                    className="text-[10px] sm:text-[11px] font-mono truncate leading-snug h-[1.15rem]"
                     style={{
                       color:
                         row.kind === "datapoint"
@@ -774,12 +798,12 @@ function OracleBlock({
           </div>
         </div>
 
-        {/* Legend — fixed height, 2×2 grid */}
-        <div className="lumen-oracle-tile min-h-[7.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 overflow-hidden">
-          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2">
+        {/* Row 4: legend — fixed 2×3 grid incl. You */}
+        <div className="lumen-oracle-tile h-[8rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 overflow-hidden flex flex-col">
+          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2 shrink-0">
             Map legend
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 flex-1 content-start">
             <LegendItem
               shape="hex"
               color={theme.accent}
@@ -809,6 +833,12 @@ function OracleBlock({
               color="#FF7A3D"
               label="You"
               hint="Your connected oracle (orange)"
+            />
+            <LegendItem
+              shape="dot"
+              color="#00E5FF"
+              label="Network"
+              hint="Lumen host public pool"
             />
           </div>
         </div>
