@@ -1,4 +1,7 @@
-/** Brand wordmark — equal letter height (capital L matched to the rest). */
+/**
+ * Brand wordmark — capital L optically matched to the x-height of “umen”.
+ * Single-line; parent keeps two-line header (title + subtitle) structure.
+ */
 export default function LumenWordmark({
   className = "",
 }: {
@@ -6,21 +9,15 @@ export default function LumenWordmark({
 }) {
   return (
     <span
-      className={`inline-flex items-center leading-none ${className}`}
+      className={`lumen-wordmark ${className}`.trim()}
       aria-label="Lumen"
     >
-      {/* Scale L to x-height of “umen” so the word reads as one optical height */}
-      <span
-        className="inline-block font-[inherit] font-semibold leading-none"
-        style={{
-          fontSize: "0.76em",
-          lineHeight: 1,
-          transform: "translateY(0.05em)",
-        }}
-      >
+      <span className="lumen-wordmark__l" aria-hidden="true">
         L
       </span>
-      <span className="font-[inherit] font-semibold leading-none">umen</span>
+      <span className="lumen-wordmark__rest" aria-hidden="true">
+        umen
+      </span>
     </span>
   );
 }

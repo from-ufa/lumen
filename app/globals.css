@@ -75,6 +75,34 @@ body {
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 }
 
+/* Lumen wordmark — cap L balanced to lowercase x-height (premium, even) */
+.lumen-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  line-height: 1;
+  letter-spacing: -0.035em;
+  font-weight: 600;
+  color: inherit;
+  white-space: nowrap;
+}
+.lumen-wordmark__l {
+  display: inline-block;
+  /* Cap height ≈ x-height of “umen” in Geist / geometric sans */
+  font-size: 0.62em;
+  font-weight: 550;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  /* Optical: sit on the shared baseline without floating above umen */
+  transform: translateY(0.02em);
+}
+.lumen-wordmark__rest {
+  display: inline-block;
+  font-size: 1em;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
 /* Oracle panels/tiles — same highlight language as dashboard .card */
 .lumen-oracle-block {
   transition:
