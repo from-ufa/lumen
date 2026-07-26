@@ -444,6 +444,36 @@ function Earth() {
   );
 }
 
+/** Ray vs sphere at origin — true if Earth blocks camera → point */
+function occludedByEarth(
+  cam: THREE.Vector3,
+  point: THREE.Vector3,
+  earthR: number
+): boolean {
+  const dir = point.clone().sub(cam);
+  const dist = dir.length();
+  if (dist < 1e-4) return false;
+  dir.multiplyScalar(1 / dist);
+  // |cam + t*dir|^2 = R^2
+  const b = cam.dot(dir);
+  const c = cam.lengthSq() - earthR * earthR;
+  const disc = b * b - c;
+  if (disc < 0) return false;
+  const tHit = -b - Math.sqrt(disc);
+  // hit between camera and node (not beyond node, not behind camera)
+  return tHit > 0.02 && tHit < dist - 0.04;
+}
+
+/** Compact label for my node */
+function shortNodeLabel(raw: string): string {
+  const s = (raw || "").trim();
+  if (!s) return "you";
+  const low = s.toLowerCase();
+  if (low.includes("my node") || low === "you") return "you";
+  if (low.includes("lumen")) return "lumen";
+  return s.length > 10 ? s.slice(0, 9) + "…" : s.toLowerCase();
+}
+
 /* ─── My Node — compact orbital pin (slightly larger peer) ──────────────── */
 
 function MyNodeDot({
@@ -456,12 +486,15 @@ function MyNodeDot({
   const groupRef = useRef<THREE.Group>(null!);
   const coreRef = useRef<THREE.Mesh>(null!);
   const glowRef = useRef<THREE.Mesh>(null!);
+  const [labelVisible, setLabelVisible] = useState(true);
+  const posScratch = useMemo(() => new THREE.Vector3(), []);
 
   const radius = (SHELL_R.live[0] + SHELL_R.live[1]) / 2 + 0.1;
   const phi = 0.12;
   const drift = 0.055;
   const phase = 1.15;
   const accent = isOnline ? "#E8C48A" : "#8a7a60";
+  const shortLabel = useMemo(() => shortNodeLabel(label), [label]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -469,13 +502,13 @@ function MyNodeDot({
     const bob = Math.sin(t * 0.35 + phase) * 0.06;
     const r = radius + Math.sin(t * 0.22 + phase) * 0.03;
     const cosP = Math.cos(phi);
-    if (groupRef.current) {
-      groupRef.current.position.set(
-        r * Math.cos(ang) * cosP,
-        r * Math.sin(phi) + bob,
-        r * Math.sin(ang) * cosP
-      );
-    }
+    posScratch.set(
+      r * Math.cos(ang) * cosP,
+      r * Math.sin(phi) + bob,
+      r * Math.sin(ang) * cosP
+    );
+    if (groupRef.current) groupRef.current.position.copy(posScratch);
+
     const hb = heartbeat(t, 1.7, phase);
     if (coreRef.current) coreRef.current.scale.setScalar(SIZE_MY * hb);
     if (glowRef.current) {
@@ -483,6 +516,14 @@ function MyNodeDot({
       (glowRef.current.material as THREE.MeshBasicMaterial).opacity =
         0.2 + (hb - 1) * 0.8;
     }
+
+    // Hide label when node is behind Earth (HTML would otherwise float over the globe)
+    const show = !occludedByEarth(
+      state.camera.position,
+      posScratch,
+      EARTH_R * 0.98
+    );
+    setLabelVisible((v) => (v === show ? v : show));
   });
 
   return (
@@ -500,23 +541,32 @@ function MyNodeDot({
       <mesh ref={coreRef} geometry={GEO_PEER}>
         <meshBasicMaterial color={accent} toneMapped={false} />
       </mesh>
-      <Html
-        center
-        distanceFactor={20}
-        style={{ pointerEvents: "none", userSelect: "none" }}
-        position={[0, 0.14, 0]}
-      >
-        <div
-          className="whitespace-nowrap text-[7px] sm:text-[8px] font-mono tracking-[0.2em] uppercase"
-          style={{
-            color: accent,
-            opacity: 0.75,
-            textShadow: "0 0 6px rgba(232,196,138,0.3)",
-          }}
+      {labelVisible && (
+        <Html
+          center
+          // Higher distanceFactor → smaller on-screen size when close
+          distanceFactor={48}
+          style={{ pointerEvents: "none", userSelect: "none" }}
+          position={[0, 0.09, 0]}
+          zIndexRange={[10, 0]}
         >
-          {label}
-        </div>
-      </Html>
+          <div
+            className="whitespace-nowrap font-mono uppercase"
+            style={{
+              color: accent,
+              fontSize: "9px",
+              letterSpacing: "0.14em",
+              opacity: 0.72,
+              lineHeight: 1,
+              textShadow: "0 0 4px rgba(0,0,0,0.85)",
+              transform: "scale(0.85)",
+              transformOrigin: "center center",
+            }}
+          >
+            {shortLabel}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }
@@ -824,7 +874,10 @@ function CameraRig({
     };
   }, [camera, controlsApiRef, defaultPos, defaultTarget, onFocusAddressChange, slotsRef]);
 
-  useFrame(() => {
+  /** 1 = full auto-orbit, 0 = stopped. Smooth ease on hover in/out. */
+  const orbitMulRef = useRef(1);
+
+  useFrame((_, dt) => {
     const fly = flyRef.current;
     if (fly?.active) {
       const u = easeInOutCubic(
@@ -838,9 +891,18 @@ function CameraRig({
       if (u >= 1) fly.active = false;
     }
     if (controlsRef.current) {
-      controlsRef.current.autoRotate =
-        autoOrbit && !peerHovered && !fly?.active;
-      controlsRef.current.autoRotateSpeed = 0.35 * orbitSpeed;
+      // Hover → gently coast to stop; leave → gently resume
+      const want =
+        autoOrbit && !peerHovered && !fly?.active ? 1 : 0;
+      orbitMulRef.current = THREE.MathUtils.damp(
+        orbitMulRef.current,
+        want,
+        2.2, // slow ease (~1s coast)
+        dt
+      );
+      const mul = orbitMulRef.current;
+      controlsRef.current.autoRotate = autoOrbit && mul > 0.02;
+      controlsRef.current.autoRotateSpeed = 0.35 * orbitSpeed * mul;
     }
   });
 
@@ -1291,7 +1353,8 @@ function Scene({
           autoOrbit={isAutoOrbit}
           orbitSpeed={orbitSpeed}
           controlsApiRef={controlsApiRef}
-          peerHovered={pointerOver || !!infoPeer || !!focusAddress}
+          // Only live pointer hover freezes orbit (sticky card does not)
+          peerHovered={pointerOver}
           focusAddress={focusAddress}
           onFocusAddressChange={setFocusAddress}
         />
