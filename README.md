@@ -2,11 +2,12 @@
 
 **The living pulse of your Ergo node.**
 
-Lumen is an immersive **Ergo Node Dashboard** — 3D peer constellation, world map, live metrics, real block data, mempool, and a private path to **your own node** via **Lumen Bridge**.
+Lumen is an immersive **Ergo Node Dashboard** — 3D peer constellation, world map, live metrics, real block data, mempool, **live Ergo Oracle Pools**, and a private path to **your own node** via **Lumen Bridge**.
 
 | | |
 |--|--|
 | **Live** | [https://ergolumen.net](https://ergolumen.net) |
+| **Oracles** | [https://ergolumen.net/oracles](https://ergolumen.net/oracles) |
 | **Repo** | [github.com/from-ufa/lumen](https://github.com/from-ufa/lumen) |
 | **Bridge WSS** | `wss://ergolumen.net/ws/bridge` |
 | **Handoff / ops** | [LUMEN.md](./LUMEN.md) |
@@ -19,6 +20,7 @@ Lumen turns an Ergo node into a **visual, real-time control surface**:
 
 - See peers in a **3D constellation** and on a **world map** (GeoIP)
 - Live height, difficulty, peers, mempool size, **real TX counts** per block
+- Watch **ERG/USD** and **ERG/XAU** oracle pools as a dual Canvas constellation
 - Open blocks on **SigmaSpace**
 - Share a sleek status card
 - Optionally drive the whole UI from **your home / VPS node** — without exposing Ergo ports to the internet
@@ -35,6 +37,7 @@ It is built for **node runners** who want beauty and situational awareness, and 
 | **My Node** | Same UI, data via **Lumen Bridge** from *your* machine |
 | **3D / Map** | Peer graph + world map with status filters; multi-seed network catalog |
 | **Blocks & mempool** | Timeline with real `txCount`, honest miner (Explorer + pool map) |
+| **Oracles** | Side-by-side ERG/USD · ERG/XAU constellation, on-chain price, live publish activity |
 | **Bridge** | Outbound WebSocket agent; allowlisted GET only |
 | **No inbound ports** | Your node never needs a public REST port for Lumen |
 
@@ -203,7 +206,68 @@ Requires **Node.js 18+** next to Ergo.
 | **World map** | Multi-seed network (Lumen) or your connected peers (My Node); status filters |
 | **Metrics** | Height, peers, mempool, avg block time |
 | **Blocks + mempool** | Recent blocks with real TX counts; unconfirmed txs |
+| **Oracles** | `/oracles` — dual pool constellation (see below) |
 | **NODE SETTINGS** | Data source toggle + Connect my node (Docker / status / token) |
+
+---
+
+## Oracles (`/oracles`)
+
+Live view of the Ergo **network oracle pools** — **ERG/USD** and **ERG/XAU** side by side.
+
+| | |
+|--|--|
+| **URL** | [https://ergolumen.net/oracles](https://ergolumen.net/oracles) |
+| **API** | `GET /api/oracles` → [`lib/oracles.ts`](./lib/oracles.ts) |
+| **UI** | [`app/oracles/`](./app/oracles/) — Canvas 2D Constellation + dual-panel shell |
+
+### What you see
+
+| Element | Role |
+|---------|------|
+| **Dual panels** | ERG/USD (teal) and ERG/XAU (gold), equal width/height on large screens |
+| **Pool epoch ring** | Epoch number + freshness (age vs LIVE window) next to the ring |
+| **Constellation map** | Operators orbit the pool core; corner chips for consensus, lag, health, settlement |
+| **On-chain price** | Single price surface per feed (no duplicate hero prices) |
+| **Publish activity** | Live feed when operators post datapoints / rewards / pool refresh |
+| **Map legend** | Pool core · Oracle node · Datapoint · Reward |
+| **Status glossary** | Footer: plain-language LIVE / STALE / DOWN / OFFLINE |
+
+### Status meanings
+
+These are **two different signals** — do not mix them:
+
+| Status | Kind | Meaning |
+|--------|------|---------|
+| **LIVE** | Price age | Shared pool price was updated recently (within the LIVE window) |
+| **STALE** | Price age | Price still on-chain, but the pool has not refreshed for a while |
+| **OFFLINE** | Price age | No usable pool box, or data is extremely old |
+| **DOWN** | Local agent | Oracle metrics report protocol / quorum trouble (shown on **Health** chip only) |
+
+Thresholds use floor/cap rules (not raw `epoch×N`) so short epochs do not false-trip OFFLINE. Details: [LUMEN.md](./LUMEN.md) → *Oracles data & status rules*.
+
+### Data sources
+
+| Source | Provides |
+|--------|----------|
+| **Ergo Explorer** | Pool box (NFT R4/R5): rate, epoch, settlement height |
+| **Local Ergo tip** | `/info` height → lag = tip − settlement |
+| **Oracle metrics** (optional) | Operator nodes, rewards, pool healthy; ports typically `:9021` (USD), `:9011` (XAU) |
+
+The UI polls about every **5s** so datapoint / reward animations track real network activity.
+
+### Dev pointers
+
+```bash
+# API shape
+curl -sS http://127.0.0.1:3000/api/oracles | jq '.feeds[] | {id, pair, status, priceLabel, ageBlocks}'
+
+# Main components
+#   app/oracles/page.tsx
+#   app/oracles/components/OraclesDualView.tsx
+#   app/oracles/components/OracleConstellation.tsx
+#   lib/oracles.ts
+```
 
 ---
 
@@ -270,10 +334,13 @@ Full ops map: **[LUMEN.md](./LUMEN.md)**.
 
 ```text
 app/                 Next.js UI + API routes
+  oracles/           Dual Oracle Constellation page + components
 bridge/              Outbound agent (Docker, install.sh, bridge.js)
 bridge-server/       WebSocket hub + token API + proxy
-lib/                 Shared server helpers (password, peers catalog, …)
+lib/                 Shared server helpers (oracles, peers catalog, password, …)
+  oracles.ts         Pool NFTs, status thresholds, live events, metrics
 public/              Static assets
+deploy/              systemd unit (lumen.service)
 LUMEN.md             Operator handoff
 ```
 
@@ -291,6 +358,7 @@ LUMEN.md             Operator handoff
 ## Links
 
 - **Live dashboard:** [https://ergolumen.net](https://ergolumen.net)
+- **Oracles:** [https://ergolumen.net/oracles](https://ergolumen.net/oracles)
 - **GitHub:** [https://github.com/from-ufa/lumen](https://github.com/from-ufa/lumen)
 - **Bridge Docker:** [bridge/DOCKER.md](./bridge/DOCKER.md)
 - **Bridge agent:** [bridge/README.md](./bridge/README.md)
