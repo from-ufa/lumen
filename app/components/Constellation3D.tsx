@@ -444,6 +444,30 @@ function Earth() {
   );
 }
 
+/** Shared motion bridge (refs — no React lag for orbit pause) */
+type MotionBridge = {
+  /** 1 full speed → 0 frozen */
+  mul: number;
+  hovering: boolean;
+  hasPointer: boolean;
+  pointer: THREE.Vector2;
+  simTime: number;
+  hitMesh: THREE.InstancedMesh | null;
+  lastHoverId: number;
+};
+
+function createMotionBridge(): MotionBridge {
+  return {
+    mul: 1,
+    hovering: false,
+    hasPointer: false,
+    pointer: new THREE.Vector2(0, 0),
+    simTime: 0,
+    hitMesh: null,
+    lastHoverId: -1,
+  };
+}
+
 /** Ray vs sphere at origin — true if Earth blocks camera → point */
 function occludedByEarth(
   cam: THREE.Vector3,
@@ -479,9 +503,11 @@ function shortNodeLabel(raw: string): string {
 function MyNodeDot({
   label,
   isOnline,
+  motionRef,
 }: {
   label: string;
   isOnline: boolean;
+  motionRef: MutableRefObject<MotionBridge>;
 }) {
   const groupRef = useRef<THREE.Group>(null!);
   const coreRef = useRef<THREE.Mesh>(null!);
@@ -497,7 +523,8 @@ function MyNodeDot({
   const shortLabel = useMemo(() => shortNodeLabel(label), [label]);
 
   useFrame((state) => {
-    const t = state.clock.elapsedTime;
+    // Same frozen clock as peers when hovering
+    const t = motionRef.current.simTime;
     const ang = phase + t * drift;
     const bob = Math.sin(t * 0.35 + phase) * 0.06;
     const r = radius + Math.sin(t * 0.22 + phase) * 0.03;
@@ -572,8 +599,97 @@ function MyNodeDot({
 
 /* ─── Compact peers: tiny core + minimal glow + optional micro-trail ────── */
 
-/** Invisible hit radius multiplier — cores are tiny, need fat raycast targets */
-const HIT_MUL = 6;
+/** Invisible hit radius — cores are tiny pins */
+const HIT_MUL = 10;
+
+/**
+ * DOM pointer + per-frame raycast against hit InstancedMesh.
+ * R3F pointer events on opacity:0 instances are unreliable.
+ */
+function PeerHoverDriver({
+  slots,
+  motionRef,
+  onHover,
+}: {
+  slots: PeerSlot[];
+  motionRef: MutableRefObject<MotionBridge>;
+  onHover: PeerHoverFn;
+}) {
+  const { camera, gl } = useThree();
+  const raycaster = useMemo(() => new THREE.Raycaster(), []);
+  // Generous threshold for tiny instances
+  raycaster.params.Mesh = { threshold: 0.15 };
+
+  useEffect(() => {
+    const el = gl.domElement;
+    const m = motionRef.current;
+
+    const setPointer = (ev: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      const w = rect.width || 1;
+      const h = rect.height || 1;
+      m.pointer.x = ((ev.clientX - rect.left) / w) * 2 - 1;
+      m.pointer.y = -((ev.clientY - rect.top) / h) * 2 + 1;
+      m.hasPointer = true;
+    };
+    const clearPointer = () => {
+      m.hasPointer = false;
+      if (m.hovering || m.lastHoverId >= 0) {
+        m.hovering = false;
+        m.lastHoverId = -1;
+        onHover(null);
+      }
+    };
+
+    el.addEventListener("pointermove", setPointer, { passive: true });
+    el.addEventListener("pointerdown", setPointer, { passive: true });
+    el.addEventListener("pointerenter", setPointer, { passive: true });
+    el.addEventListener("pointerleave", clearPointer);
+    el.addEventListener("pointercancel", clearPointer);
+    return () => {
+      el.removeEventListener("pointermove", setPointer);
+      el.removeEventListener("pointerdown", setPointer);
+      el.removeEventListener("pointerenter", setPointer);
+      el.removeEventListener("pointerleave", clearPointer);
+      el.removeEventListener("pointercancel", clearPointer);
+    };
+  }, [gl, motionRef, onHover]);
+
+  useFrame((_, dt) => {
+    const m = motionRef.current;
+    const mesh = m.hitMesh;
+
+    let over = false;
+    let id = -1;
+    if (m.hasPointer && mesh && slots.length > 0) {
+      raycaster.setFromCamera(m.pointer, camera);
+      const hits = raycaster.intersectObject(mesh, false);
+      if (hits.length > 0 && hits[0].instanceId != null) {
+        id = hits[0].instanceId;
+        if (id >= 0 && id < slots.length) over = true;
+        else id = -1;
+      }
+    }
+
+    m.hovering = over;
+    // Smooth coast: stop faster than resume
+    const want = over ? 0 : 1;
+    m.mul = THREE.MathUtils.damp(m.mul, want, over ? 6 : 2.2, dt);
+    // Advance simulation clock only while moving
+    m.simTime += dt * m.mul;
+
+    if (over && id !== m.lastHoverId) {
+      m.lastHoverId = id;
+      const slot = slots[id];
+      onHover(slot.peer, slot.position.clone());
+    } else if (!over && m.lastHoverId >= 0) {
+      m.lastHoverId = -1;
+      onHover(null);
+    }
+  });
+
+  return null;
+}
 
 function PeerInstances({
   slots,
@@ -581,12 +697,14 @@ function PeerInstances({
   focusAddress,
   onHover,
   slotsRef,
+  motionRef,
 }: {
   slots: PeerSlot[];
   propagationStart: number;
   focusAddress: string | null;
   onHover: PeerHoverFn;
   slotsRef: MutableRefObject<PeerSlot[]>;
+  motionRef: MutableRefObject<MotionBridge>;
 }) {
   const coreRef = useRef<THREE.InstancedMesh>(null!);
   const glowRef = useRef<THREE.InstancedMesh>(null!);
@@ -657,12 +775,18 @@ function PeerInstances({
     paint(glowRef.current, GLOW_MUL);
   }, [count, slots, color, dummy]);
 
-  useFrame((state) => {
+  // Register hit mesh for PeerHoverDriver raycasts
+  useFrame(() => {
+    motionRef.current.hitMesh = hitRef.current;
+  });
+
+  useFrame(() => {
     const core = coreRef.current;
     const glow = glowRef.current;
     const hit = hitRef.current;
     if (!core || count === 0) return;
-    const t = state.clock.elapsedTime;
+    // Paused sim time freezes orbital drift under cursor
+    const t = motionRef.current.simTime;
     const boom = boomEnvelope(propagationStart);
 
     for (let i = 0; i < count; i++) {
@@ -693,9 +817,9 @@ function PeerInstances({
         dummy.updateMatrix();
         glow.setMatrixAt(i, dummy.matrix);
       }
-      // Fat invisible hit target for reliable hover
+      // Fat hit target (still moves with frozen sim when paused)
       if (hit) {
-        dummy.scale.setScalar(Math.max(coreScale * HIT_MUL, 0.22));
+        dummy.scale.setScalar(Math.max(base * HIT_MUL, 0.32));
         dummy.updateMatrix();
         hit.setMatrixAt(i, dummy.matrix);
       }
@@ -747,7 +871,7 @@ function PeerInstances({
     }
   });
 
-  const handlePointer = useCallback(
+  const handleClick = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
       const id = e.instanceId;
@@ -757,20 +881,12 @@ function PeerInstances({
     [slots, onHover]
   );
 
-  const handleLeave = useCallback(
-    (e: ThreeEvent<PointerEvent>) => {
-      e.stopPropagation();
-      onHover(null);
-    },
-    [onHover]
-  );
-
   if (count === 0) return null;
 
   return (
     <group>
       {trailMeta.total > 0 && (
-        <points geometry={trailGeom} frustumCulled={false} raycast={() => null}>
+        <points geometry={trailGeom} frustumCulled={false}>
           <pointsMaterial
             size={0.022}
             vertexColors
@@ -784,12 +900,10 @@ function PeerInstances({
         </points>
       )}
 
-      {/* Soft halo — not pickable (was eating raycasts) */}
       <instancedMesh
         ref={glowRef}
         args={[GEO_HALO, undefined, count]}
         frustumCulled={false}
-        raycast={() => null}
       >
         <meshBasicMaterial
           color="#ffffff"
@@ -805,26 +919,23 @@ function PeerInstances({
         ref={coreRef}
         args={[GEO_PEER, undefined, count]}
         frustumCulled={false}
-        raycast={() => null}
       >
         <meshBasicMaterial color="#ffffff" toneMapped={false} depthWrite />
       </instancedMesh>
 
-      {/* Large invisible hit targets — reliable hover / orbit pause */}
+      {/* Hit targets for manual raycast (PeerHoverDriver) + click */}
       <instancedMesh
         ref={hitRef}
         args={[GEO_PEER, undefined, count]}
-        onPointerOver={handlePointer}
-        onPointerMove={handlePointer}
-        onClick={handlePointer}
-        onPointerOut={handleLeave}
+        onClick={handleClick}
         frustumCulled={false}
       >
         <meshBasicMaterial
+          color="#ffffff"
           transparent
-          opacity={0}
+          opacity={0.001}
           depthWrite={false}
-          depthTest={false}
+          depthTest
           toneMapped={false}
         />
       </instancedMesh>
@@ -839,14 +950,14 @@ function CameraRig({
   orbitSpeed,
   controlsApiRef,
   slotsRef,
-  peerHovered,
+  motionRef,
   onFocusAddressChange,
 }: {
   autoOrbit: boolean;
   orbitSpeed: number;
   controlsApiRef: MutableRefObject<ControlsApi | null>;
   slotsRef: MutableRefObject<PeerSlot[]>;
-  peerHovered: boolean;
+  motionRef: MutableRefObject<MotionBridge>;
   onFocusAddressChange: (a: string | null) => void;
 }) {
   const { camera, gl } = useThree();
@@ -909,12 +1020,7 @@ function CameraRig({
     };
   }, [camera, controlsApiRef, defaultPos, defaultTarget, onFocusAddressChange, slotsRef]);
 
-  /** 1 = full auto-orbit, 0 = stopped. Smooth ease on hover in/out. */
-  const orbitMulRef = useRef(1);
-  const peerHoveredRef = useRef(peerHovered);
-  peerHoveredRef.current = peerHovered;
-
-  useFrame((_, dt) => {
+  useFrame(() => {
     const fly = flyRef.current;
     if (fly?.active) {
       const u = easeInOutCubic(
@@ -928,21 +1034,12 @@ function CameraRig({
       if (u >= 1) fly.active = false;
     }
     if (controlsRef.current) {
-      // Hover → gently coast to stop; leave → gently resume
-      const hovering = peerHoveredRef.current;
-      const want =
-        autoOrbit && !hovering && !fly?.active ? 1 : 0;
-      // Faster settle when stopping so hover feels responsive
-      const lambda = hovering ? 4.5 : 2.4;
-      orbitMulRef.current = THREE.MathUtils.damp(
-        orbitMulRef.current,
-        want,
-        lambda,
-        dt
-      );
-      const mul = orbitMulRef.current;
-      controlsRef.current.autoRotate = autoOrbit && mul > 0.015;
-      controlsRef.current.autoRotateSpeed = 0.35 * orbitSpeed * mul;
+      // Motion mul is driven by PeerHoverDriver (raycast every frame)
+      const mul = motionRef.current.mul;
+      const canSpin = autoOrbit && !fly?.active && mul > 0.02;
+      controlsRef.current.autoRotate = canSpin;
+      // drei speed is deg/s-ish; scale by mul for smooth coast
+      controlsRef.current.autoRotateSpeed = 0.4 * orbitSpeed * mul;
     }
   });
 
@@ -977,7 +1074,6 @@ function NetworkOrbitWorld({
   autoOrbit,
   orbitSpeed,
   controlsApiRef,
-  peerHovered,
   focusAddress,
   onFocusAddressChange,
 }: {
@@ -989,11 +1085,11 @@ function NetworkOrbitWorld({
   autoOrbit: boolean;
   orbitSpeed: number;
   controlsApiRef: MutableRefObject<ControlsApi | null>;
-  peerHovered: boolean;
   focusAddress: string | null;
   onFocusAddressChange: (a: string | null) => void;
 }) {
   const slotsRef = useRef<PeerSlot[]>([]);
+  const motionRef = useRef<MotionBridge>(createMotionBridge());
 
   // Rebuild slots when peer set changes (addresses)
   const peerKey = peers.map((p) => p.address).join("|");
@@ -1092,16 +1188,25 @@ function NetworkOrbitWorld({
         focusAddress={focusAddress}
         onHover={onPeerHover}
         slotsRef={slotsRef}
+        motionRef={motionRef}
       />
-      <MyNodeDot label={centerLabel} isOnline={isOnline} />
-      {/* Boom = peer brightness flash only (no ring/sphere geometry) */}
+      <MyNodeDot
+        label={centerLabel}
+        isOnline={isOnline}
+        motionRef={motionRef}
+      />
+      <PeerHoverDriver
+        slots={slots}
+        motionRef={motionRef}
+        onHover={onPeerHover}
+      />
 
       <CameraRig
         autoOrbit={autoOrbit}
         orbitSpeed={orbitSpeed}
         controlsApiRef={controlsApiRef}
         slotsRef={slotsRef}
-        peerHovered={peerHovered}
+        motionRef={motionRef}
         onFocusAddressChange={onFocusAddressChange}
       />
     </>
@@ -1393,8 +1498,6 @@ function Scene({
           autoOrbit={isAutoOrbit}
           orbitSpeed={orbitSpeed}
           controlsApiRef={controlsApiRef}
-          // Only live pointer hover freezes orbit (sticky card does not)
-          peerHovered={pointerOver}
           focusAddress={focusAddress}
           onFocusAddressChange={setFocusAddress}
         />
