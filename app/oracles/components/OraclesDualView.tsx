@@ -46,63 +46,158 @@ function statusTone(status: string) {
   return { color: "#F87171", label: "OFFLINE" };
 }
 
+/**
+ * Premium epoch indicator.
+ * Progress = pool lag / live window (0 = fresh, 1 = at LIVE threshold).
+ * Ring sits wide of the digits so the mark breathes.
+ */
 function EpochRing({
   epoch,
   progress,
   color,
+  ageBlocks,
+  liveMax,
 }: {
   epoch: number | null;
   progress: number;
   color: string;
+  ageBlocks?: number | null;
+  liveMax?: number | null;
 }) {
-  const size = 64;
-  const r = 24;
+  // Larger canvas, thinner stroke, bigger inner void → air between ring & number
+  const size = 88;
+  const cx = size / 2;
+  const r = 34; // ring radius — leaves ~28px diameter free in the center
+  const stroke = 2.25;
   const c = 2 * Math.PI * r;
   const p = Math.min(1, Math.max(0, progress));
+  const gradId = `epoch-grad-${color.replace("#", "")}`;
+  const softId = `epoch-soft-${color.replace("#", "")}`;
+
+  const freshness =
+    p < 0.35 ? "Fresh" : p < 0.75 ? "Aging" : "Near limit";
+
+  const aria =
+    epoch != null
+      ? `Pool epoch ${epoch.toLocaleString()}. ${freshness}. ${
+          ageBlocks != null && liveMax != null
+            ? `${ageBlocks} of ${liveMax} blocks into the live window.`
+            : "Based on pool lag versus live threshold."
+        }`
+      : "Pool epoch unavailable";
+
   return (
     <div
-      className="relative shrink-0"
-      style={{ width: size, height: size }}
-      title="Epoch progress = pool lag / live window"
+      className="flex flex-col items-center shrink-0 select-none"
+      role="img"
+      aria-label={aria}
     >
-      <svg
-        width={size}
-        height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        className="absolute inset-0"
-        style={{ transform: "rotate(-90deg)" }}
-      >
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke="rgba(255,255,255,0.07)"
-          strokeWidth="3.5"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={color}
-          strokeWidth="3.5"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={c * (1 - p)}
-          style={{
-            filter: `drop-shadow(0 0 8px ${color}55)`,
-            transition: "stroke-dashoffset 0.5s ease",
-          }}
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center px-1">
-        <span className="font-mono text-[11px] sm:text-xs tabular-nums text-white leading-none tracking-tight">
-          {epoch != null ? epoch.toLocaleString() : "—"}
-        </span>
-        <span className="mt-1 text-[8px] font-mono tracking-[0.12em] text-[#8B8B9A] uppercase">
-          epoch
-        </span>
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          className="absolute inset-0"
+          style={{ overflow: "visible" }}
+        >
+          <defs>
+            {/* Soft multi-stop gradient for a continuous, non-pixel edge */}
+            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor={color} stopOpacity="1" />
+              <stop offset="45%" stopColor={color} stopOpacity="0.92" />
+              <stop offset="100%" stopColor="#F5F0E6" stopOpacity="0.85" />
+            </linearGradient>
+            {/* Wide soft glow — no hard drop-shadow pixels */}
+            <filter
+              id={softId}
+              x="-40%"
+              y="-40%"
+              width="180%"
+              height="180%"
+              colorInterpolationFilters="sRGB"
+            >
+              <feGaussianBlur in="SourceGraphic" stdDeviation="2.2" result="b" />
+              <feColorMatrix
+                in="b"
+                type="matrix"
+                values="1 0 0 0 0
+                        0 1 0 0 0
+                        0 0 1 0 0
+                        0 0 0 0.55 0"
+                result="g"
+              />
+              <feMerge>
+                <feMergeNode in="g" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Track — hairline, low contrast */}
+          <circle
+            cx={cx}
+            cy={cx}
+            r={r}
+            fill="none"
+            stroke="rgba(255,255,255,0.06)"
+            strokeWidth={stroke}
+            style={{ transform: "rotate(-90deg)", transformOrigin: "center" }}
+          />
+
+          {/* Progress — rounded ends, gradient, soft blur filter */}
+          <circle
+            cx={cx}
+            cy={cx}
+            r={r}
+            fill="none"
+            stroke={`url(#${gradId})`}
+            strokeWidth={stroke}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={c}
+            strokeDashoffset={c * (1 - p)}
+            filter={`url(#${softId})`}
+            style={{
+              transform: "rotate(-90deg)",
+              transformOrigin: "center",
+              transition: "stroke-dashoffset 0.7s cubic-bezier(0.22, 1, 0.36, 1)",
+            }}
+          />
+
+          {/* Inner micro-track for depth (does not compete with digits) */}
+          <circle
+            cx={cx}
+            cy={cx}
+            r={r - 7}
+            fill="none"
+            stroke="rgba(255,255,255,0.03)"
+            strokeWidth="1"
+          />
+        </svg>
+
+        {/* Number only — no second line inside the ring */}
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span
+            className="font-mono tabular-nums text-white leading-none tracking-[-0.03em]"
+            style={{
+              fontSize: epoch != null && epoch >= 10000 ? 12 : 15,
+              fontWeight: 500,
+            }}
+          >
+            {epoch != null ? epoch.toLocaleString() : "—"}
+          </span>
+        </div>
+      </div>
+
+      {/* Human label outside the ring — air + no debug tone */}
+      <div className="mt-2 text-center">
+        <div className="text-[10px] font-medium tracking-[0.04em] text-[#C8C8D0]">
+          Pool epoch
+        </div>
+        <div className="mt-0.5 text-[9px] font-mono tracking-wide text-[#6B6B7A]">
+          {freshness}
+          {ageBlocks != null ? ` · ${ageBlocks} blk lag` : ""}
+        </div>
       </div>
     </div>
   );
@@ -224,6 +319,8 @@ function OracleBlock({
           epoch={feed.epoch}
           progress={epochProgress}
           color={theme.accent}
+          ageBlocks={feed.ageBlocks}
+          liveMax={liveMax}
         />
       </header>
 
