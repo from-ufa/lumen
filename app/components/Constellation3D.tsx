@@ -87,15 +87,15 @@ const SHELL_R: Record<PeerShell, [number, number]> = {
 
 /** Premium status palette — bright live, calm seen, muted ghost */
 const SHELL_COLOR: Record<PeerShell, string> = {
-  live: "#4DFFC4",
-  seen: "#6EB4FF",
-  ghost: "#7A8296",
+  live: "#5EFFD0",
+  seen: "#7EC0FF",
+  ghost: "#A0A8BC",
 };
 
 const SHELL_BRIGHT: Record<PeerShell, number> = {
-  live: 1.15,
-  seen: 0.78,
-  ghost: 0.42,
+  live: 1.35,
+  seen: 1.05,
+  ghost: 0.72,
 };
 
 const LIVE_MS = 120_000;
@@ -248,13 +248,12 @@ const GEO_CLOUDS = new THREE.SphereGeometry(1, 64, 64);
 const GEO_ATMOS = new THREE.SphereGeometry(1, 64, 64);
 const GEO_PEER = new THREE.SphereGeometry(1, 14, 14);
 const GEO_HALO = new THREE.SphereGeometry(1, 10, 10);
-const GEO_WAVE = new THREE.RingGeometry(0.98, 1.02, 128);
 
 /** Peer core sizes — bright & readable at distance */
-const SIZE_LIVE = 0.105;
-const SIZE_SEEN = 0.082;
-const SIZE_GHOST = 0.062;
-const SIZE_MY = 0.145;
+const SIZE_LIVE = 0.155;
+const SIZE_SEEN = 0.125;
+const SIZE_GHOST = 0.095;
+const SIZE_MY = 0.21;
 
 /* ─── Atmosphere fresnel ────────────────────────────────────────────────── */
 
@@ -419,15 +418,16 @@ function Earth() {
     });
   }, [maps]);
 
+  // Soft limb haze only — no hard blue rings
   const atmosMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         vertexShader: atmosVertex,
         fragmentShader: atmosFragment,
         uniforms: {
-          uColor: { value: new THREE.Color("#6eb6ff") },
-          uIntensity: { value: 0.72 },
-          uPower: { value: 2.8 },
+          uColor: { value: new THREE.Color("#8ec8ff") },
+          uIntensity: { value: 0.48 },
+          uPower: { value: 3.4 },
         },
         transparent: true,
         depthWrite: false,
@@ -443,9 +443,9 @@ function Earth() {
         vertexShader: atmosVertex,
         fragmentShader: atmosFragment,
         uniforms: {
-          uColor: { value: new THREE.Color("#4a90d9") },
-          uIntensity: { value: 0.28 },
-          uPower: { value: 3.6 },
+          uColor: { value: new THREE.Color("#6aa8e8") },
+          uIntensity: { value: 0.14 },
+          uPower: { value: 4.2 },
         },
         transparent: true,
         depthWrite: false,
@@ -500,10 +500,9 @@ function Earth() {
         </mesh>
       )}
 
-      {/* Atmosphere limb */}
-      <mesh geometry={GEO_ATMOS} scale={1.08} material={atmosMat} />
-      {/* Outer soft halo */}
-      <mesh geometry={GEO_ATMOS} scale={1.18} material={atmosOuterMat} />
+      {/* Soft atmosphere limb only (not ring bands) */}
+      <mesh geometry={GEO_ATMOS} scale={1.055} material={atmosMat} />
+      <mesh geometry={GEO_ATMOS} scale={1.12} material={atmosOuterMat} />
     </group>
   );
 }
@@ -711,6 +710,33 @@ function PeerInstances({
     slotsRef.current = slots;
   }, [slots, slotsRef]);
 
+  /** Init instance colors immediately — avoids black first paint */
+  useEffect(() => {
+    const paint = (mesh: THREE.InstancedMesh | null, scale = 1) => {
+      if (!mesh || count === 0) return;
+      for (let i = 0; i < count; i++) {
+        color.copy(slots[i].color);
+        if (scale !== 1) color.multiplyScalar(scale);
+        mesh.setColorAt(i, color);
+        dummy.position.copy(slots[i].position);
+        dummy.scale.setScalar(
+          slots[i].shell === "live"
+            ? SIZE_LIVE
+            : slots[i].shell === "seen"
+              ? SIZE_SEEN
+              : SIZE_GHOST
+        );
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    };
+    paint(coreRef.current, 1);
+    paint(glowRef.current, 0.9);
+    paint(auraRef.current, 0.55);
+  }, [count, slots, color, dummy]);
+
   useFrame((state) => {
     const core = coreRef.current;
     const glow = glowRef.current;
@@ -737,8 +763,12 @@ function PeerInstances({
       const focusMul = isFocus ? 1.65 : 1;
       const boomMul = 1 + boom * (slot.shell === "live" ? 0.45 : 0.18);
       const coreScale = base * hb * focusMul * boomMul;
-      const glowScale = coreScale * (slot.shell === "live" ? 2.55 : slot.shell === "seen" ? 2.2 : 1.9);
-      const auraScale = coreScale * (slot.shell === "live" ? 4.4 : slot.shell === "seen" ? 3.5 : 2.8);
+      const glowScale =
+        coreScale *
+        (slot.shell === "live" ? 2.7 : slot.shell === "seen" ? 2.35 : 2.0);
+      const auraScale =
+        coreScale *
+        (slot.shell === "live" ? 4.6 : slot.shell === "seen" ? 3.7 : 3.0);
 
       // Core
       dummy.position.copy(slot.position);
@@ -746,36 +776,37 @@ function PeerInstances({
       dummy.updateMatrix();
       core.setMatrixAt(i, dummy.matrix);
 
-      // Glow
       if (glow) {
         dummy.scale.setScalar(glowScale);
         dummy.updateMatrix();
         glow.setMatrixAt(i, dummy.matrix);
       }
-      // Aura
       if (aura) {
         dummy.scale.setScalar(auraScale);
         dummy.updateMatrix();
         aura.setMatrixAt(i, dummy.matrix);
       }
 
+      // Bright status color — never black
       color.copy(slot.color);
       if (isFocus) color.set("#F0D09A");
-      // Brightness rides heartbeat
-      const pulseLift = 0.72 + (hb - 0.9) * 1.6;
+      // Ensure minimum luminance so dots always read as light
+      const pulseLift = 1.05 + (hb - 1) * 0.55;
       color.multiplyScalar(pulseLift);
+      color.r = Math.min(1, Math.max(color.r, 0.15));
+      color.g = Math.min(1, Math.max(color.g, 0.15));
+      color.b = Math.min(1, Math.max(color.b, 0.18));
       if (boom > 0 && slot.shell === "live") {
-        color.lerp(tmp.set("#fff8e8"), boom * 0.4);
+        color.lerp(tmp.set("#fff8e8"), boom * 0.45);
       }
       core.setColorAt(i, color);
 
-      // Glow / aura tinted softer
       if (glow) {
-        tmp.copy(color).multiplyScalar(slot.shell === "live" ? 0.95 : 0.7);
+        tmp.copy(color);
         glow.setColorAt(i, tmp);
       }
       if (aura) {
-        tmp.copy(color).multiplyScalar(0.55);
+        tmp.copy(color).multiplyScalar(0.75);
         aura.setColorAt(i, tmp);
       }
 
@@ -851,10 +882,10 @@ function PeerInstances({
       {trailMeta.total > 0 && (
         <points geometry={trailGeom} frustumCulled={false}>
           <pointsMaterial
-            size={0.055}
+            size={0.08}
             vertexColors
             transparent
-            opacity={0.9}
+            opacity={0.95}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             sizeAttenuation
@@ -863,39 +894,41 @@ function PeerInstances({
         </points>
       )}
 
-      {/* Outer aura — very soft bloom-like shells */}
+      {/*
+        IMPORTANT: do NOT set vertexColors on InstancedMesh materials.
+        Instance tint uses setColorAt → instanceColor. vertexColors without
+        a geometry color attribute multiplies everything to black.
+      */}
       <instancedMesh
         ref={auraRef}
         args={[GEO_HALO, undefined, count]}
         frustumCulled={false}
       >
         <meshBasicMaterial
-          vertexColors
+          color="#ffffff"
           transparent
-          opacity={0.14}
+          opacity={0.22}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
         />
       </instancedMesh>
 
-      {/* Mid glow */}
       <instancedMesh
         ref={glowRef}
         args={[GEO_HALO, undefined, count]}
         frustumCulled={false}
       >
         <meshBasicMaterial
-          vertexColors
+          color="#ffffff"
           transparent
-          opacity={0.38}
+          opacity={0.55}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
         />
       </instancedMesh>
 
-      {/* Bright core — pickable */}
       <instancedMesh
         ref={coreRef}
         args={[GEO_PEER, undefined, count]}
@@ -905,10 +938,9 @@ function PeerInstances({
         frustumCulled={false}
       >
         <meshBasicMaterial
-          vertexColors
+          color="#ffffff"
           toneMapped={false}
-          transparent
-          opacity={1}
+          transparent={false}
           depthWrite
         />
       </instancedMesh>
@@ -916,7 +948,7 @@ function PeerInstances({
   );
 }
 
-/* ─── Block boom — soft expanding rings (optional, not connection rays) ─── */
+/* ─── Block boom — soft spherical pulse (NO ring/hoop geometry) ─────────── */
 
 function BoomWaves({ propagationStart }: { propagationStart: number }) {
   const groupRef = useRef<THREE.Group>(null!);
@@ -937,27 +969,28 @@ function BoomWaves({ propagationStart }: { propagationStart: number }) {
       const delay = i * 0.28;
       const local = Math.max(0, elapsed - delay);
       const progress = Math.min(1, local / 1.6);
-      const r = 1.2 + progress * 14;
+      const r = EARTH_R * 1.05 + progress * 12;
       child.scale.setScalar(r);
       const mat = mats.current[i];
-      if (mat) mat.opacity = (1 - progress) * 0.28 * (1 - i * 0.18);
+      if (mat) mat.opacity = (1 - progress) * 0.18 * (1 - i * 0.2);
     });
   });
 
   return (
-    <group ref={groupRef} rotation={[Math.PI / 2.2, 0, 0]} visible={false}>
+    <group ref={groupRef} visible={false}>
       {[0, 1, 2].map((i) => (
-        <mesh key={i} geometry={GEO_WAVE}>
+        <mesh key={i} geometry={GEO_ATMOS}>
           <meshBasicMaterial
             ref={(m) => {
               if (m) mats.current[i] = m;
             }}
-            color={i === 0 ? "#E8C48A" : i === 1 ? "#3DFFB5" : "#5BA8FF"}
+            color={i === 0 ? "#E8C48A" : i === 1 ? "#4DFFC4" : "#6EB4FF"}
             transparent
             opacity={0}
-            side={THREE.DoubleSide}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
+            side={THREE.BackSide}
+            toneMapped={false}
           />
         </mesh>
       ))}
