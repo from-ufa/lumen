@@ -357,10 +357,12 @@ function OracleBlock({
     feed.ageBlocks != null && liveMax > 0
       ? Math.min(1, Math.max(0, feed.ageBlocks / liveMax))
       : 0;
-  const mine = feed.myOperator;
+  const isMineScope = feed.scope === "mine";
+  const isNetworkScope = feed.scope === "network";
+  const mine = isMineScope ? feed.myOperator : null;
   const mineNode = feed.nodes.find((n) => n.isMine);
   const myActivity = activity.filter((a) => {
-    if (!mine?.address) return a.kind === "datapoint"; // no address yet — show posts
+    if (!mine?.address) return a.kind === "datapoint";
     const addr = mine.address;
     return (
       a.message.includes(addr.slice(0, 8)) ||
@@ -372,43 +374,72 @@ function OracleBlock({
     ? `${mine.address.slice(0, 6)}…${mine.address.slice(-4)}`
     : null;
 
+  const scopeBorder = isMineScope
+    ? "rgba(255,122,61,0.4)"
+    : isNetworkScope
+      ? "rgba(0,229,255,0.28)"
+      : theme.border;
+
   return (
     <section
       className="lumen-oracle-block h-full w-full min-w-0 max-w-full flex flex-col rounded-2xl sm:rounded-[1.35rem] border overflow-hidden"
       style={{
-        borderColor: theme.border,
+        borderColor: scopeBorder,
         background: `linear-gradient(180deg, ${theme.surface} 0%, rgba(9,9,12,0.98) 45%)`,
-        boxShadow: "0 20px 56px rgba(0,0,0,0.42)",
+        boxShadow: isMineScope
+          ? "0 20px 56px rgba(0,0,0,0.42), 0 0 0 1px rgba(255,122,61,0.12)"
+          : "0 20px 56px rgba(0,0,0,0.42)",
         ["--oracle-accent" as string]: theme.accent,
       }}
     >
       {/* Compact header: title left · epoch ring+copy right */}
-      <header className="shrink-0 flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 lg:px-5 py-3 border-b border-white/[0.06] h-[4.75rem]">
-        <div className="min-w-0 flex items-center gap-2 overflow-hidden">
-          <span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{
-              background: st.color,
-              boxShadow:
-                feed.status === "live" ? `0 0 10px ${st.color}` : "none",
-            }}
-          />
-          <h2
-            className="text-base sm:text-lg font-semibold tracking-[-0.03em] leading-none truncate"
-            style={{ color: theme.label }}
-          >
-            {feed.pair}
-          </h2>
-          <span
-            className="shrink-0 text-[9px] font-mono tracking-[0.14em] uppercase px-1.5 py-0.5 rounded-full border"
-            style={{
-              color: st.color,
-              borderColor: `${st.color}40`,
-              background: `${st.color}14`,
-            }}
-          >
-            {st.label}
-          </span>
+      <header className="shrink-0 flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 lg:px-5 py-3 border-b border-white/[0.06] min-h-[4.75rem]">
+        <div className="min-w-0 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{
+                background: st.color,
+                boxShadow:
+                  feed.status === "live" ? `0 0 10px ${st.color}` : "none",
+              }}
+            />
+            <h2
+              className="text-base sm:text-lg font-semibold tracking-[-0.03em] leading-none truncate"
+              style={{ color: theme.label }}
+            >
+              {feed.pair}
+            </h2>
+            <span
+              className="shrink-0 text-[9px] font-mono tracking-[0.14em] uppercase px-1.5 py-0.5 rounded-full border"
+              style={{
+                color: st.color,
+                borderColor: `${st.color}40`,
+                background: `${st.color}14`,
+              }}
+            >
+              {st.label}
+            </span>
+          </div>
+          {/* Clear source: my bridge vs lumen network */}
+          {(isMineScope || isNetworkScope) && (
+            <div className="flex flex-wrap items-center gap-1.5 pl-3.5">
+              {isMineScope ? (
+                <span className="inline-flex items-center gap-1 text-[9px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full border border-[#FF7A3D]/40 bg-[#FF7A3D]/12 text-[#FF7A3D]">
+                  ● my bridge
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[9px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full border border-[#00E5FF]/35 bg-[#00E5FF]/10 text-[#00E5FF]">
+                  ● lumen network
+                </span>
+              )}
+              <span className="text-[9px] text-[#6B6B78] font-mono truncate">
+                {isMineScope
+                  ? "your agent · YOU on map"
+                  : "host metrics · not your agent"}
+              </span>
+            </div>
+          )}
         </div>
 
         <EpochAside
@@ -524,8 +555,8 @@ function OracleBlock({
 
       {/* Footer slots — fixed heights so USD/XAU stay pixel-symmetric */}
       <div className="shrink-0 px-3 sm:px-4 py-3 sm:py-3.5 grid grid-cols-1 gap-2.5 sm:gap-3">
-        {/* Your operator — only when My Oracle identity is known */}
-        {mine && (mine.address || mine.postHeight != null) && (
+        {/* Your operator — only for bridge-attached (mine) pools */}
+        {isMineScope && mine && (mine.address || mine.postHeight != null) && (
           <div
             className="lumen-oracle-tile rounded-xl border px-3.5 py-3 overflow-hidden"
             style={{
@@ -537,7 +568,7 @@ function OracleBlock({
           >
             <div className="flex items-center justify-between gap-2 mb-2">
               <div className="text-[9px] font-mono tracking-[0.18em] text-[#FF7A3D] uppercase">
-                Your oracle
+                Your oracle · bridge
               </div>
               <span
                 className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border"
@@ -617,6 +648,49 @@ function OracleBlock({
                 Orange node on the map is you. Posts flash when you publish.
               </p>
             )}
+          </div>
+        )}
+
+        {/* Network pane note — pool not on your bridge, data from lumen host */}
+        {isNetworkScope && (
+          <div
+            className="lumen-oracle-tile rounded-xl border px-3.5 py-3 overflow-hidden"
+            style={{
+              borderColor: "rgba(0,229,255,0.28)",
+              background:
+                "linear-gradient(135deg, rgba(0,229,255,0.08) 0%, rgba(0,0,0,0.45) 55%)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <div className="text-[9px] font-mono tracking-[0.18em] text-[#00E5FF] uppercase">
+                Network · lumen host
+              </div>
+              <span className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border border-[#00E5FF]/30 text-[#00E5FF]/90">
+                not yours
+              </span>
+            </div>
+            <p className="text-[11px] text-[#A0A0B0] leading-snug">
+              This pool is <span className="text-[#E8E8F0]">not</span> on your
+              bridge agent. Showing full public data from the lumen server
+              (explorer + host metrics). Attach it in ORACLE SETTINGS if you
+              run this pool too.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-mono text-[#6B6B78]">
+              <span>
+                consensus{" "}
+                <span className="text-[#E8E8F0]">
+                  {feed.activeOracles ?? "—"}/
+                  {feed.requiredOracles ?? "—"}
+                </span>
+              </span>
+              <span>·</span>
+              <span>
+                lag{" "}
+                <span className="text-[#E8E8F0]">
+                  {feed.ageBlocks != null ? `${feed.ageBlocks} blk` : "—"}
+                </span>
+              </span>
+            </div>
           </div>
         )}
 
@@ -787,10 +861,30 @@ export default function OraclesDualView({
   }
 
   const dual = panes.length > 1;
+  const mineCount = panes.filter((p) => p.scope === "mine").length;
+  const netCount = panes.filter((p) => p.scope === "network").length;
 
   return (
     <div className="flex flex-col gap-5 sm:gap-6 w-full min-w-0">
-      {/* 1 pool = full width; 2 pools = equal dual columns */}
+      {/* Hybrid legend when My Oracle mixes bridge + lumen host */}
+      {mineCount > 0 && netCount > 0 && (
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 flex flex-wrap items-center gap-3 text-[11px]">
+          <span className="text-[9px] font-mono tracking-[0.16em] text-[#7A7A88] uppercase">
+            Hybrid view
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#FF7A3D]/35 bg-[#FF7A3D]/10 text-[#FF7A3D] font-mono text-[10px] tracking-wider">
+            ● MY BRIDGE · {mineCount}
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#00E5FF]/30 bg-[#00E5FF]/10 text-[#00E5FF] font-mono text-[10px] tracking-wider">
+            ● LUMEN NETWORK · {netCount}
+          </span>
+          <span className="text-[#6B6B78] text-[11px]">
+            Only attached pools use your agent — the rest stay public from lumen.
+          </span>
+        </div>
+      )}
+
+      {/* Always dual when both feeds present (hybrid keeps both panels) */}
       <div
         className={
           dual

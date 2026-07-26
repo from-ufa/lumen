@@ -70,6 +70,8 @@ export interface OracleFeedData {
   poolHealthy?: boolean | null;
   poolRewardTokens?: number | null;
   myOperator?: MyOracleOperator | null;
+  /** mine = your bridge agent; network = lumen host public pool */
+  scope?: "mine" | "network" | null;
   nodes: OracleNodeFeed[];
   history: OracleHistoryPoint[];
   liveEvents?: OracleLiveEvent[];

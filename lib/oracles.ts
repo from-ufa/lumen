@@ -107,6 +107,12 @@ export interface OracleFeedSnapshot {
   poolRewardTokens?: number | null;
   /** Connected operator (My Oracle / host agent) */
   myOperator?: MyOracleOperator | null;
+  /**
+   * In hybrid My Oracle view:
+   *  - mine = metrics from your bridge agent
+   *  - network = lumen host / public pool (you did not attach this pool)
+   */
+  scope?: "mine" | "network" | null;
   source: "explorer" | "metrics" | "none";
   error?: string;
 }
@@ -182,6 +188,13 @@ export type LoadOraclesOptions = {
   bridge?: OraclesResponse["bridge"];
   /** Skip local metrics ports (used for pure explorer or bridge-only enrichment) */
   skipLocalMetrics?: boolean;
+  /** Per-feed scope tags (mine vs network/lumen) */
+  scopeByFeed?: Partial<Record<OracleFeedId, "mine" | "network">>;
+  /**
+   * When true: bridge metrics for keys in metricsByFeed, host local metrics for the rest.
+   * Used by hybrid My Oracle (1 pool on bridge, other from lumen).
+   */
+  hybridMetrics?: boolean;
 };
 
 const HISTORY_PATH = path.join(
@@ -849,18 +862,38 @@ export async function loadOraclesSnapshot(
         let health: MetricsHealth | null = null;
         const preferred = opts.preferredAddressByFeed?.[cfg.id] ?? null;
         const injected = opts.metricsByFeed?.[cfg.id];
-        if (typeof injected === "string" && injected.length > 0) {
+        const hasBridgeMetrics =
+          typeof injected === "string" && injected.length > 0;
+        if (hasBridgeMetrics) {
           health = parseMetricsHealth(injected, tipHeight, cfg.epochLength, {
             preferredAddress: preferred,
           });
-        } else if (!opts.skipLocalMetrics) {
+        } else if (!opts.skipLocalMetrics || opts.hybridMetrics) {
+          // Host / lumen metrics (network pane or hybrid fallback)
           health = await fetchMetricsHealth(
             cfg.metricsPort,
             tipHeight,
             cfg.epochLength,
-            preferred
+            // Never mark host metrics as "mine" unless this is pure host network view
+            opts.hybridMetrics || opts.view === "my" ? null : preferred
           );
+          // In hybrid My Oracle, network panes must not claim YOUR ORACLE
+          if (opts.hybridMetrics && health?.nodes) {
+            health = {
+              ...health,
+              nodes: health.nodes.map((n) => ({ ...n, isMine: false })),
+              myOperator: null,
+            };
+          }
         }
+
+        const scope: "mine" | "network" | null =
+          opts.scopeByFeed?.[cfg.id] ??
+          (hasBridgeMetrics
+            ? "mine"
+            : opts.view === "my"
+              ? "network"
+              : null);
 
         const nodes = health?.nodes ?? [];
         const liveEvents = computeLiveEvents(
@@ -905,7 +938,9 @@ export async function loadOraclesSnapshot(
           poolHealthy: health?.poolHealthy ?? null,
           requiredOracles: health?.requiredOracles ?? null,
           poolRewardTokens: health?.poolRewardTokens ?? null,
-          myOperator: health?.myOperator ?? null,
+          myOperator:
+            scope === "network" ? null : health?.myOperator ?? null,
+          scope,
           history: hist,
           source: health ? ("metrics" as const) : ("explorer" as const),
         };

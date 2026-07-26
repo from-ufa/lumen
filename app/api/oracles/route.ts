@@ -50,9 +50,10 @@ async function bridgeGet(
 
 /**
  * GET /api/oracles
- *  - default / mode=network — public network view (explorer + host metrics)
- *  - mode=my&token=… — personal operator view (explorer prices + bridge metrics)
- *    Supports 1 or 2 oracles depending on agent config (USD and/or XAU).
+ *  - mode=network — both pools from explorer + lumen host metrics
+ *  - mode=my — hybrid:
+ *      • pools configured on your bridge → your agent metrics + YOU highlight
+ *      • other pools → full lumen network data (clearly labeled)
  */
 export async function GET(req: NextRequest) {
   try {
@@ -79,7 +80,6 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // Bridge status
       let bridgeStatus: {
         connected?: boolean;
         version?: string | null;
@@ -96,10 +96,14 @@ export async function GET(req: NextRequest) {
       }
 
       if (!bridgeStatus.connected) {
-        // Still return network prices so UI isn't empty — mark bridge offline
+        // Full network from lumen host so UI stays useful
         const network = await loadOraclesSnapshot({
           view: "my",
-          skipLocalMetrics: true,
+          hybridMetrics: true,
+          scopeByFeed: {
+            "erg-usd": "network",
+            "erg-xau": "network",
+          },
           bridge: {
             connected: false,
             version: bridgeStatus.version ?? null,
@@ -112,7 +116,7 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      // Discover which oracles the agent exposes
+      // Which pools the agent actually exposes
       let configured: OracleFeedId[] = [];
       try {
         const statusRes = await bridgeGet(token, "/oracle/status", 8_000);
@@ -135,7 +139,6 @@ export async function GET(req: NextRequest) {
         /* fall through */
       }
 
-      // Fallback to hello.capabilities.oracles from hub status
       if (!configured.length && Array.isArray(bridgeStatus.oracles)) {
         configured = bridgeStatus.oracles.filter(
           (id): id is OracleFeedId => id === "erg-usd" || id === "erg-xau"
@@ -148,9 +151,9 @@ export async function GET(req: NextRequest) {
         "erg-xau": "/oracle/xau/metrics",
       };
 
-      // If agent didn't announce, try both (404/error → skip)
+      // Only request pools the agent claims — never invent XAU when only USD is set
       const toFetch: OracleFeedId[] =
-        configured.length > 0 ? configured : ["erg-usd", "erg-xau"];
+        configured.length > 0 ? configured : [];
 
       await Promise.all(
         toFetch.map(async (id) => {
@@ -166,12 +169,25 @@ export async function GET(req: NextRequest) {
         })
       );
 
-      // Tip from operator's node when possible
+      // Re-derive configured from successful metrics only
+      configured = (["erg-usd", "erg-xau"] as OracleFeedId[]).filter(
+        (id) => typeof metricsByFeed[id] === "string"
+      );
+
+      const scopeByFeed: Partial<Record<OracleFeedId, "mine" | "network">> = {
+        "erg-usd": configured.includes("erg-usd") ? "mine" : "network",
+        "erg-xau": configured.includes("erg-xau") ? "mine" : "network",
+      };
+
+      // Tip: prefer operator node when available, else host tip (hybrid load uses one tip)
       let tipOverride: number | null | undefined = undefined;
       try {
         const info = await bridgeGet(token, "/info", 8_000);
         if (info.ok && info.json && typeof info.json === "object") {
-          const j = info.json as { fullHeight?: number; headersHeight?: number };
+          const j = info.json as {
+            fullHeight?: number;
+            headersHeight?: number;
+          };
           const h = j.fullHeight ?? j.headersHeight;
           if (typeof h === "number" && Number.isFinite(h)) tipOverride = h;
         }
@@ -179,28 +195,19 @@ export async function GET(req: NextRequest) {
         tipOverride = undefined;
       }
 
-      const onlyFeeds =
-        configured.length > 0
-          ? configured
-          : undefined; // no metrics → still show both network prices with empty enrichment
-
       const data = await loadOraclesSnapshot({
         view: "my",
         metricsByFeed,
-        onlyFeeds:
-          configured.length > 0
-            ? onlyFeeds
-            : undefined,
-        skipLocalMetrics: true,
+        hybridMetrics: true, // missing bridge pools → lumen host metrics
+        skipLocalMetrics: false,
+        scopeByFeed,
         tipHeightOverride: tipOverride,
         bridge: {
           connected: true,
           version: bridgeStatus.version ?? null,
           oraclesConfigured: configured,
           error:
-            configured.length === 0
-              ? "no_oracles_configured"
-              : undefined,
+            configured.length === 0 ? "no_oracles_configured" : undefined,
         },
       });
 
@@ -209,7 +216,6 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ── Network (default) ──
     const data = await loadOraclesSnapshot({ view: "network" });
     return NextResponse.json(data, {
       headers: {
