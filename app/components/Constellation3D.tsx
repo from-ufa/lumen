@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Network Orbit — cinematic Ergo peer visualization
- * Realistic Earth core · orbital peer shells · InstancedMesh · fresnel atmosphere
+ * Network Orbit — clean space viz (Orbit Veil style)
+ * Realistic Earth · orbital peer dots · InstancedMesh · fresnel atmosphere
  */
 
 import React, {
@@ -35,7 +35,7 @@ interface ConstellationProps {
   lastBlockHeight: number;
   onSimulateBlock?: () => void;
   hideControls?: boolean;
-  /** Center label under Lumen core */
+  /** Label for the My Node / Lumen Node orbital point */
   centerLabel?: string;
 }
 
@@ -201,9 +201,13 @@ const GEO_EARTH = new THREE.SphereGeometry(1, 96, 96);
 const GEO_CLOUDS = new THREE.SphereGeometry(1, 64, 64);
 const GEO_ATMOS = new THREE.SphereGeometry(1, 64, 64);
 const GEO_PEER = new THREE.SphereGeometry(1, 12, 12);
-const GEO_CORE = new THREE.SphereGeometry(1, 48, 48);
-const GEO_RING = new THREE.RingGeometry(0.92, 1.08, 96);
 const GEO_WAVE = new THREE.RingGeometry(0.98, 1.02, 128);
+
+/** Peer dot sizes (world units) — My Node slightly larger */
+const SIZE_LIVE = 0.07;
+const SIZE_SEEN = 0.055;
+const SIZE_GHOST = 0.042;
+const SIZE_MY = 0.115;
 
 /* ─── Atmosphere fresnel ────────────────────────────────────────────────── */
 
@@ -457,83 +461,78 @@ function Earth() {
   );
 }
 
-/* ─── Lumen Node core (above Earth north) ───────────────────────────────── */
+/* ─── My Node — orbital point (slightly larger peer, no sun/core) ───────── */
 
-function LumenCore({
+function MyNodeDot({
   label,
   isOnline,
 }: {
   label: string;
   isOnline: boolean;
 }) {
-  const coreRef = useRef<THREE.Mesh>(null!);
-  const ringRef = useRef<THREE.Mesh>(null!);
-  const glowRef = useRef<THREE.Mesh>(null!);
+  const groupRef = useRef<THREE.Group>(null!);
+  const dotRef = useRef<THREE.Mesh>(null!);
+  const softRef = useRef<THREE.Mesh>(null!);
+
+  // Fixed inner-orbit slot — same shell as live peers
+  const radius = (SHELL_R.live[0] + SHELL_R.live[1]) / 2;
+  const phi = 0.18;
+  const drift = 0.055;
+  const phase = 0.9;
+  const accent = isOnline ? "#E8C48A" : "#8a7a60";
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
-    const pulse = 1 + Math.sin(t * 1.8) * 0.06;
-    if (coreRef.current) coreRef.current.scale.setScalar(0.28 * pulse);
-    if (glowRef.current) {
-      glowRef.current.scale.setScalar(0.55 + Math.sin(t * 1.8) * 0.08);
-      (glowRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.22 + Math.sin(t * 1.8) * 0.08;
+    const ang = phase + t * drift;
+    const bob = Math.sin(t * 0.35 + phase) * 0.06;
+    const r = radius + Math.sin(t * 0.2 + phase) * 0.03;
+    const cosP = Math.cos(phi);
+    if (groupRef.current) {
+      groupRef.current.position.set(
+        r * Math.cos(ang) * cosP,
+        r * Math.sin(phi) + bob,
+        r * Math.sin(ang) * cosP
+      );
     }
-    if (ringRef.current) {
-      ringRef.current.rotation.z = t * 0.4;
-      ringRef.current.rotation.x = Math.PI / 2 + Math.sin(t * 0.5) * 0.08;
+    const pulse = 1 + Math.sin(t * 1.6) * 0.05;
+    if (dotRef.current) dotRef.current.scale.setScalar(SIZE_MY * pulse);
+    if (softRef.current) {
+      softRef.current.scale.setScalar(SIZE_MY * 2.2 * pulse);
+      (softRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.18 + Math.sin(t * 1.6) * 0.04;
     }
   });
 
-  const accent = isOnline ? "#E8C48A" : "#7a6a50";
-
   return (
-    <group position={[0, EARTH_R + 0.55, 0]}>
-      <mesh ref={glowRef} geometry={GEO_CORE}>
+    <group ref={groupRef}>
+      {/* Soft halo — subtle, not a sun */}
+      <mesh ref={softRef} geometry={GEO_PEER}>
         <meshBasicMaterial
           color={accent}
           transparent
-          opacity={0.25}
+          opacity={0.18}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
+          toneMapped={false}
         />
       </mesh>
-      <mesh ref={coreRef} geometry={GEO_CORE}>
-        <meshStandardMaterial
-          color={accent}
-          emissive={accent}
-          emissiveIntensity={1.4}
-          roughness={0.25}
-          metalness={0.4}
-        />
+      <mesh ref={dotRef} geometry={GEO_PEER}>
+        <meshBasicMaterial color={accent} toneMapped={false} />
       </mesh>
-      <mesh ref={ringRef} geometry={GEO_RING} scale={0.55}>
-        <meshBasicMaterial
-          color={accent}
-          transparent
-          opacity={0.65}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      <pointLight color={accent} intensity={1.8} distance={8} decay={2} />
       <Html
         center
-        distanceFactor={14}
+        distanceFactor={18}
         style={{ pointerEvents: "none", userSelect: "none" }}
-        position={[0, 0.55, 0]}
+        position={[0, 0.22, 0]}
       >
-        <div className="whitespace-nowrap text-center">
-          <div
-            className="text-[9px] sm:text-[10px] font-mono tracking-[0.28em] uppercase"
-            style={{
-              color: accent,
-              textShadow: `0 0 12px ${accent}88, 0 0 24px ${accent}44`,
-            }}
-          >
-            {label}
-          </div>
+        <div
+          className="whitespace-nowrap text-[8px] sm:text-[9px] font-mono tracking-[0.22em] uppercase opacity-80"
+          style={{
+            color: accent,
+            textShadow: "0 0 8px rgba(232,196,138,0.35)",
+          }}
+        >
+          {label}
         </div>
       </Html>
     </group>
@@ -555,7 +554,7 @@ function OrbitGuides() {
           <meshBasicMaterial
             color={SHELL_COLOR[s]}
             transparent
-            opacity={s === "live" ? 0.18 : s === "seen" ? 0.12 : 0.07}
+            opacity={s === "live" ? 0.09 : s === "seen" ? 0.06 : 0.035}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
           />
@@ -601,9 +600,16 @@ function PeerInstances({
       slotWorldPos(slot, t, slot.position);
 
       const isFocus = focusAddress === slot.address;
-      const base = slot.shell === "live" ? 0.11 : slot.shell === "seen" ? 0.085 : 0.065;
+      const base =
+        slot.shell === "live"
+          ? SIZE_LIVE
+          : slot.shell === "seen"
+            ? SIZE_SEEN
+            : SIZE_GHOST;
       const scale =
-        base * (isFocus ? 1.85 : 1) * (1 + boom * (slot.shell === "live" ? 0.55 : 0.25));
+        base *
+        (isFocus ? 1.7 : 1) *
+        (1 + boom * (slot.shell === "live" ? 0.4 : 0.15));
 
       dummy.position.copy(slot.position);
       dummy.scale.setScalar(scale);
@@ -614,7 +620,7 @@ function PeerInstances({
       color.copy(slot.color);
       if (isFocus) color.set("#E8C48A");
       if (boom > 0 && slot.shell === "live") {
-        color.lerp(new THREE.Color("#fff6e0"), boom * 0.45);
+        color.lerp(new THREE.Color("#fff6e0"), boom * 0.35);
       }
       mesh.setColorAt(i, color);
     }
@@ -660,83 +666,7 @@ function PeerInstances({
   );
 }
 
-/* ─── Connection lines (live peers only) ────────────────────────────────── */
-
-function ConnectionLines({
-  slots,
-  propagationStart,
-}: {
-  slots: PeerSlot[];
-  propagationStart: number;
-}) {
-  const lineRef = useRef<THREE.LineSegments>(null!);
-  const liveSlots = useMemo(
-    () => slots.filter((s) => s.shell === "live").slice(0, 64),
-    [slots]
-  );
-
-  const { positions, colors } = useMemo(() => {
-    const n = liveSlots.length;
-    const positions = new Float32Array(n * 2 * 3);
-    const colors = new Float32Array(n * 2 * 3);
-    return { positions, colors };
-  }, [liveSlots.length]);
-
-  const geom = useMemo(() => {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    g.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    return g;
-  }, [positions, colors]);
-
-  useEffect(() => () => geom.dispose(), [geom]);
-
-  useFrame((state) => {
-    if (liveSlots.length === 0) return;
-    const t = state.clock.elapsedTime;
-    const boom = boomEnvelope(propagationStart);
-    const pulse = 0.35 + Math.sin(t * 2.2) * 0.12 + boom * 0.35;
-    const coreY = EARTH_R + 0.55;
-
-    for (let i = 0; i < liveSlots.length; i++) {
-      const p = liveSlots[i].position;
-      const o = i * 6;
-      positions[o] = 0;
-      positions[o + 1] = coreY;
-      positions[o + 2] = 0;
-      positions[o + 3] = p.x;
-      positions[o + 4] = p.y;
-      positions[o + 5] = p.z;
-
-      const c = liveSlots[i].color;
-      const a = pulse;
-      colors[o] = c.r * a;
-      colors[o + 1] = c.g * a;
-      colors[o + 2] = c.b * a;
-      colors[o + 3] = c.r * a * 0.5;
-      colors[o + 4] = c.g * a * 0.5;
-      colors[o + 5] = c.b * a * 0.5;
-    }
-    geom.attributes.position.needsUpdate = true;
-    geom.attributes.color.needsUpdate = true;
-  });
-
-  if (liveSlots.length === 0) return null;
-
-  return (
-    <lineSegments ref={lineRef} geometry={geom} frustumCulled={false}>
-      <lineBasicMaterial
-        vertexColors
-        transparent
-        opacity={0.55}
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </lineSegments>
-  );
-}
-
-/* ─── Block boom radial waves ───────────────────────────────────────────── */
+/* ─── Block boom — soft expanding rings (optional, not connection rays) ─── */
 
 function BoomWaves({ propagationStart }: { propagationStart: number }) {
   const groupRef = useRef<THREE.Group>(null!);
@@ -760,7 +690,7 @@ function BoomWaves({ propagationStart }: { propagationStart: number }) {
       const r = 1.2 + progress * 14;
       child.scale.setScalar(r);
       const mat = mats.current[i];
-      if (mat) mat.opacity = (1 - progress) * 0.55 * (1 - i * 0.15);
+      if (mat) mat.opacity = (1 - progress) * 0.28 * (1 - i * 0.18);
     });
   });
 
@@ -1016,7 +946,6 @@ function NetworkOrbitWorld({
       </mesh>
 
       <Earth />
-      <LumenCore label={centerLabel} isOnline={isOnline} />
       <OrbitGuides />
       <PeerInstances
         slots={slots}
@@ -1025,7 +954,7 @@ function NetworkOrbitWorld({
         onHover={onPeerHover}
         slotsRef={slotsRef}
       />
-      <ConnectionLines slots={slots} propagationStart={propagationStart} />
+      <MyNodeDot label={centerLabel} isOnline={isOnline} />
       <BoomWaves propagationStart={propagationStart} />
 
       <CameraRig
@@ -1569,6 +1498,10 @@ function Scene({
             NETWORK ORBIT
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[#A0A0B0]">
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#E8C48A]" />
+              YOU
+            </div>
             <div className="flex items-center gap-1.5">
               <span
                 className="inline-block w-2 h-2 rounded-full"
