@@ -1,38 +1,14 @@
 ================================================================================
-THIN EXPLORER — DATA PLANE (copy for next product prompt)
+THIN EXPLORER + CRYSTALLOGENESIS
 Project: lumen | path: /home/lumen | live: https://ergolumen.net
-API: /api/chain/*  |  Chain visualization UI: NONE (clean slate)
+Tab: CRYSTALLOGENESIS | API: /api/chain/*
 ================================================================================
 
 ONE-LINER
 ---------
-lumen has a thin local Ergo explorer API (/api/chain/*) over mainnet node
-(extraIndex + boxByTokenId). No chain visualization UI — design from zero.
-Build product UI on this data plane; do not re-implement node access.
-
-
-WHAT IT IS
-----------
-- Thin API layer: Next.js /api/chain/* -> local Ergo REST (127.0.0.1:9053)
-- Normalized JSON for UI: blocks, txs, mempool, address balances, tokens
-- Primary source = LOCAL NODE (not public explorer)
-- Built for product UI / visualization (when we invent the look)
-
-WHAT IT IS NOT
---------------
-- Full ergolatform.com clone (all history pages, charts, full search site)
-- NFT image CDN / market prices
-- Standalone public explorer domain (unless added later)
-- Guaranteed multi-year address history without extra archival indexing
-- Any prescribed 3D / chain graphic (previous Chain Pulse / Genesis removed)
-
-
-NODE ASSUMPTIONS
-----------------
-- ERGO_NODE_URL default http://127.0.0.1:9053
-- extraIndex = true
-- boxByTokenId = true
-- indexedHeight should equal fullHeight (tip) for best address/token queries
+Thin local Ergo explorer API (/api/chain/*) + Ergo Crystallogenesis 3D viz:
+mempool crystals → tx formation → Autolykos resonance → seal → chain dock.
+Primary source = local node (extraIndex + boxByTokenId).
 
 
 HTTP API (STABLE)
@@ -45,75 +21,21 @@ GET /api/chain/mempool?limit=40
 GET /api/chain/address/<ergoAddress>
 GET /api/chain/token/<tokenId>
 
-All force-dynamic, Cache-Control: no-store.
-Error shape: 502 { "error": "chain_unavailable", "detail": "..." }
 
-
-FEED SHAPE (for any future UI)
-------------------------------
-GET /api/chain/feed returns particles + optional address focus + tip meta.
-
-Particle stages (data tags only — not a visual design):
-- mempool     = unconfirmed
-- assembling  = in tip formation (if used by feed)
-- sealed      = already in tip block
-- focus       = address-owned ERG/tokens (address focus mode)
-
-Normalization:
-- ERG = sum of output values (nanoERG)
-- tokens = aggregate assets across outputs by tokenId
-- performance caps: particles per feed, tokens per tx, names resolved per feed
-- feed may include txGroups[] for per-tx inputs/outputs/erg/tokens
-
-Token naming:
-- prefers node token name (e.g. AUGERG, ERGUSD-NFT)
-- fallback short id xxxx…yyyy
-
-
-DASHBOARD TODAY (unrelated to chain viz)
-----------------------------------------
-- Tabs: NETWORK ORBIT | WORLD MAP only
-- Sidebar: BlocksTimeline + MempoolFlow (simple lists, not chain graphic)
-- Network Orbit = peer constellation (Constellation3D) — peers, not chain
+VISUAL (app/components/Crystallogenesis.tsx)
+-------------------------------------------
+- Liquid Glass / Apple cinematic · void black · cyan threads
+- Ergo orange only on seal / high-energy
+- Stages driven by feed + genesis pulse on new tip
+- Address focus · TX / block selection · soft chime optional
 
 
 FILE MAP
 --------
 lib/chain.ts
-app/api/chain/status/route.ts
-app/api/chain/feed/route.ts
-app/api/chain/blocks/route.ts
-app/api/chain/block/[id]/route.ts
-app/api/chain/mempool/route.ts
-app/api/chain/address/[address]/route.ts
-app/api/chain/token/[id]/route.ts
-(no ChainPulse / chain 3D component)
+app/api/chain/*
+app/components/Crystallogenesis.tsx
+app/page.tsx  (viewMode: "chain")
 
 
-VISUALIZATION STATUS
---------------------
-REMOVED: Chain Pulse tab, Crystallogenesis / Block Genesis UI, all prior
-look decisions (sprites, dock, crystal core, seal animation, etc.)
-See docs/CHAIN-VIZ-RESET.txt
-
-NEXT: invent look from zero on /api/chain/* — no carry-over of old graphic.
-
-
-PROMPT STARTER (paste into next task)
--------------------------------------
-Context: lumen (/home/lumen, ergolumen.net) thin explorer data plane only:
-
-- Local Ergo node with extraIndex + boxByTokenId
-- API: /api/chain/status|feed|blocks|block|mempool|address|token
-- Feed particles + stages as data tags; token name cache; address focus
-- NO chain visualization UI — design graphics from a clean slate
-
-Do NOT reimplement node access. Do NOT revive old Chain Pulse / Genesis look
-unless explicitly requested.
-
-Task: <DESCRIBE NEW VISUAL + PRODUCT HERE>
-
-
-================================================================================
-end of capabilities dump
 ================================================================================
