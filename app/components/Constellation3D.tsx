@@ -468,24 +468,35 @@ function createMotionBridge(): MotionBridge {
   };
 }
 
+const _occDir = new THREE.Vector3();
+
 /** Ray vs sphere at origin — true if Earth blocks camera → point */
 function occludedByEarth(
   cam: THREE.Vector3,
   point: THREE.Vector3,
-  earthR: number
+  earthR: number = EARTH_R
 ): boolean {
-  const dir = point.clone().sub(cam);
-  const dist = dir.length();
+  _occDir.copy(point).sub(cam);
+  const dist = _occDir.length();
   if (dist < 1e-4) return false;
-  dir.multiplyScalar(1 / dist);
+  _occDir.multiplyScalar(1 / dist);
   // |cam + t*dir|^2 = R^2
-  const b = cam.dot(dir);
+  const b = cam.dot(_occDir);
   const c = cam.lengthSq() - earthR * earthR;
   const disc = b * b - c;
   if (disc < 0) return false;
   const tHit = -b - Math.sqrt(disc);
   // hit between camera and node (not beyond node, not behind camera)
   return tHit > 0.02 && tHit < dist - 0.04;
+}
+
+/** Peer is on the camera-facing side of Earth (interactive) */
+function isPeerVisibleFromCamera(
+  cam: THREE.Vector3,
+  peerPos: THREE.Vector3
+): boolean {
+  // Slightly smaller R so nodes near the limb still pickable if truly in front
+  return !occludedByEarth(cam, peerPos, EARTH_R * 0.97);
 }
 
 /** Compact label for my node */
@@ -658,16 +669,22 @@ function PeerHoverDriver({
   useFrame((_, dt) => {
     const m = motionRef.current;
     const mesh = m.hitMesh;
+    const cam = camera.position;
 
     let over = false;
     let id = -1;
     if (m.hasPointer && mesh && slots.length > 0) {
       raycaster.setFromCamera(m.pointer, camera);
       const hits = raycaster.intersectObject(mesh, false);
-      if (hits.length > 0 && hits[0].instanceId != null) {
-        id = hits[0].instanceId;
-        if (id >= 0 && id < slots.length) over = true;
-        else id = -1;
+      // Nearest hit that is NOT behind Earth (visible limb only)
+      for (let h = 0; h < hits.length; h++) {
+        const instId = hits[h].instanceId;
+        if (instId == null || instId < 0 || instId >= slots.length) continue;
+        const pos = slots[instId].position;
+        if (!isPeerVisibleFromCamera(cam, pos)) continue;
+        id = instId;
+        over = true;
+        break;
       }
     }
 
@@ -871,14 +888,17 @@ function PeerInstances({
     }
   });
 
+  const { camera } = useThree();
   const handleClick = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
       const id = e.instanceId;
       if (id == null || id < 0 || id >= slots.length) return;
+      // Ignore clicks on peers hidden behind Earth
+      if (!isPeerVisibleFromCamera(camera.position, slots[id].position)) return;
       onHover(slots[id].peer, slots[id].position.clone());
     },
-    [slots, onHover]
+    [slots, onHover, camera]
   );
 
   if (count === 0) return null;
