@@ -76,7 +76,7 @@ It shows:
 - **Mempool** sample + SigmaSpace links
 - **AVG BLOCK TIME** from `GET /blocks/lastHeaders/100`
 - **Share My Node** card (QR, copy link/text, PNG)
-- **Oracles** (`/oracles`) — **Oracle Constellation** (Canvas 2D) · Ergo Oracle Pools visualization
+- **Oracles** (`/oracles`) — dual **Oracle Constellation** (Canvas 2D) · live ERG/USD + ERG/XAU from `/api/oracles`
 - **Public Mode** — optional remote access with a password
 - **PWA** manifest/icons (no service worker)
 - **Lumen Bridge** — connect a *remote* user node without inbound ports
@@ -525,6 +525,7 @@ Do not:
 | 2026-07-26 | **Singularity aerospace pass:** SpaceX-inspired dark metal/glass, precise filaments, 11 machined nodes |
 | 2026-07-26 | **Singularity Andromeda pass:** NASA/GALEX photo skybox, crystalline core, spiral-arm nodes, restrained SpaceX presentation |
 | 2026-07-26 | **Oracle Constellation:** replace R3F singularity with Canvas 2D constellation from operator prompt |
+| 2026-07-26 | **Oracles dual live:** Constellation×2 wired to real pool data (nodes, epoch, price, status) |
 
 ### Block miner attribution (honest)
 

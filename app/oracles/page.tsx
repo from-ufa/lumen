@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Zap, ArrowLeft } from "lucide-react";
-import OracleConstellation from "./components/OracleConstellation";
+import OraclesDualView from "./components/OraclesDualView";
 
 export const metadata = {
   title: "Oracles · Lumen",
-  description: "Ergo Oracle Pools visualization — Oracle Constellation",
+  description:
+    "Ergo Oracle Pools — dual Constellation for ERG/USD and ERG/XAU (live on-chain data)",
 };
 
 export default function OraclesPage() {
@@ -19,7 +20,6 @@ export default function OraclesPage() {
         flexDirection: "column",
       }}
     >
-      {/* Minimal Lumen header */}
       <header
         style={{
           flexShrink: 0,
@@ -77,7 +77,7 @@ export default function OraclesPage() {
                 marginTop: 2,
               }}
             >
-              ORACLES
+              ORACLES · LIVE
             </div>
           </div>
         </Link>
@@ -104,7 +104,7 @@ export default function OraclesPage() {
       </header>
 
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
-        <OracleConstellation />
+        <OraclesDualView />
       </div>
     </main>
   );
