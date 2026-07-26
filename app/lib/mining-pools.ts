@@ -84,6 +84,17 @@ export const KNOWN_MINING_POOLS: Record<string, KnownPool> = {
     {
       name: "Pool hBMbdspA",
     },
+
+  /*
+   * watch-unknown-miners 2026-07-26 — tip window ~100–150 blocks.
+   * 8–9 / 100–150 blocks (≈6–8% share). Explorer name "BcSYoVEK".
+   * No hash match vs public 2Miners / HeroMiners / WoolyPooly / Kryptex /
+   * Nanopool / C3Pool block lists → provisional short-id label.
+   */
+  "88dhgzEuTXaSHzYbKw9DUrnRfpP1JDrQnkXpdiHfaJ7FZhcMng4239QXgNZ3FxbKoG435t9FBcSYoVEK":
+    {
+      name: "Pool BcSYoVEK",
+    },
 };
 
 /**
