@@ -386,7 +386,8 @@ function Earth() {
         uDay: { value: maps.day },
         uNight: { value: maps.night },
         uSpecular: { value: maps.specular },
-        uLightDir: { value: new THREE.Vector3(4, 1.2, 2.5).normalize() },
+        // Light from viewer side — updated each frame from camera
+        uLightDir: { value: new THREE.Vector3(0, 0.35, 1).normalize() },
         uTime: { value: 0 },
       },
     });
@@ -403,14 +404,17 @@ function Earth() {
     const t = state.clock.elapsedTime;
     if (earthRef.current) earthRef.current.rotation.y = t * 0.028;
     if (cloudsRef.current) cloudsRef.current.rotation.y = t * 0.034;
-    if (earthMat) earthMat.uniforms.uTime.value = t;
+    if (earthMat) {
+      earthMat.uniforms.uTime.value = t;
+      // Key light always from viewing side (camera → Earth)
+      earthMat.uniforms.uLightDir.value.copy(state.camera.position).normalize();
+    }
   });
 
   return (
     <group ref={groupRef} scale={EARTH_R}>
-      {/* Soft fill light on dark side */}
-      <pointLight position={[-3.5, 0.5, -2]} intensity={0.35} color="#1a3a6a" distance={12} />
-      <pointLight position={[5, 2, 3]} intensity={1.4} color="#fff5e6" distance={20} />
+      {/* Soft fill on limbs only — key light is camera-facing via shader */}
+      <pointLight position={[-2.5, 0.4, -1.5]} intensity={0.18} color="#1a3a6a" distance={10} />
 
       {earthMat ? (
         <mesh ref={earthRef} geometry={GEO_EARTH} material={earthMat} />
@@ -771,8 +775,9 @@ function CameraRig({
     toTarget: THREE.Vector3;
   } | null>(null);
 
-  const defaultPos = useMemo(() => new THREE.Vector3(0, 6.5, 16), []);
-  const defaultTarget = useMemo(() => new THREE.Vector3(0, 0.4, 0), []);
+  /** First open: ~2× closer than original [0, 6.5, 16] */
+  const defaultPos = useMemo(() => new THREE.Vector3(0, 3.2, 8), []);
+  const defaultTarget = useMemo(() => new THREE.Vector3(0, 0.2, 0), []);
 
   useEffect(() => {
     const api: ControlsApi = {
@@ -845,13 +850,13 @@ function CameraRig({
       enablePan
       enableZoom
       enableRotate
-      minDistance={6}
+      minDistance={4}
       maxDistance={42}
       enableDamping
       dampingFactor={0.06}
       rotateSpeed={0.48}
       zoomSpeed={0.7}
-      target={[0, 0.4, 0]}
+      target={[0, 0.2, 0]}
       maxPolarAngle={Math.PI * 0.92}
       minPolarAngle={0.12}
     />
@@ -931,18 +936,19 @@ function NetworkOrbitWorld({
       <color attach="background" args={["#010104"]} />
       <fog attach="fog" args={["#010104", 28, 55]} />
 
-      <ambientLight intensity={0.18} color="#6a7a9a" />
+      <ambientLight intensity={0.22} color="#6a7a9a" />
+      {/* Key light from default viewer side (matches initial camera) */}
       <directionalLight
-        position={[8, 4, 6]}
-        intensity={1.65}
-        color="#fff4e8"
+        position={[0, 3.2, 8]}
+        intensity={1.75}
+        color="#fff6ec"
       />
       <directionalLight
-        position={[-6, -2, -4]}
-        intensity={0.25}
+        position={[-4, -1.5, -3]}
+        intensity={0.18}
         color="#1a3060"
       />
-      <hemisphereLight args={["#1a2840", "#050508", 0.45]} />
+      <hemisphereLight args={["#1a2840", "#050508", 0.4]} />
 
       <Stars
         radius={90}
@@ -1260,7 +1266,7 @@ function Scene({
   return (
     <div ref={vizRef} className="absolute inset-0 w-full h-full">
       <Canvas
-        camera={{ position: [0, 6.5, 16], fov: 42 }}
+        camera={{ position: [0, 3.2, 8], fov: 42 }}
         className="!absolute !inset-0 !h-full !w-full"
         style={{ width: "100%", height: "100%", display: "block" }}
         resize={{ scroll: false, debounce: { scroll: 50, resize: 0 } }}
