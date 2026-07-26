@@ -40,7 +40,10 @@ function themeFor(feed: OracleFeedData): Theme {
   };
 }
 
-/** Human status copy — plain language, not debug */
+/**
+ * Price-age status only (LIVE / STALE / OFFLINE).
+ * DOWN is a separate signal (local agent pool health) — never mixed into this blurb.
+ */
 function statusExplain(
   feed: OracleFeedData
 ): { color: string; label: string; blurb: string } {
@@ -51,8 +54,8 @@ function statusExplain(
       label: "LIVE",
       blurb:
         lag != null
-          ? `The shared price is up to date — last pool update about ${lag} block${lag === 1 ? "" : "s"} ago.`
-          : "The shared price is up to date — the pool was refreshed recently.",
+          ? `Shared price is fresh — last pool update about ${lag} block${lag === 1 ? "" : "s"} ago.`
+          : "Shared price is fresh — the pool was refreshed recently.",
     };
   }
   if (feed.status === "stale") {
@@ -61,15 +64,15 @@ function statusExplain(
       label: "STALE",
       blurb:
         lag != null
-          ? `A price is still on-chain, but it is getting old (~${lag} blocks). Operators may still be posting while the pool waits for enough agreement.`
-          : "A price is still on-chain, but the pool has not refreshed for a while.",
+          ? `Shared price is still on-chain, but getting old (~${lag} blocks since last pool update).`
+          : "Shared price is still on-chain, but the pool has not refreshed for a while.",
     };
   }
   return {
     color: "#F87171",
     label: "OFFLINE",
     blurb:
-      "This feed cannot be trusted right now — the pool box is missing or the data is extremely old.",
+      "This feed cannot be trusted right now — missing pool box or extremely old data.",
   };
 }
 
@@ -256,7 +259,7 @@ function CornerChip({
 
   return (
     <div className={`absolute z-20 pointer-events-none ${pos}`}>
-      <div className="rounded-xl border border-white/[0.08] bg-[#06060A]/82 backdrop-blur-xl px-2.5 py-2 shadow-[0_10px_28px_rgba(0,0,0,0.5)]">
+      <div className="lumen-oracle-chip rounded-xl border border-white/[0.08] bg-[#06060A]/82 backdrop-blur-xl px-2.5 py-2 shadow-[0_10px_28px_rgba(0,0,0,0.5)]">
         <div className="text-[8px] font-mono tracking-[0.14em] text-[#7A7A88] uppercase">
           {label}
         </div>
@@ -357,11 +360,12 @@ function OracleBlock({
 
   return (
     <section
-      className="h-full w-full min-w-0 max-w-full flex flex-col rounded-2xl sm:rounded-[1.35rem] border overflow-hidden"
+      className="lumen-oracle-block h-full w-full min-w-0 max-w-full flex flex-col rounded-2xl sm:rounded-[1.35rem] border overflow-hidden"
       style={{
         borderColor: theme.border,
         background: `linear-gradient(180deg, ${theme.surface} 0%, rgba(9,9,12,0.98) 45%)`,
         boxShadow: "0 20px 56px rgba(0,0,0,0.42)",
+        ["--oracle-accent" as string]: theme.accent,
       }}
     >
       {/* Compact header: title left · epoch ring+copy right */}
@@ -402,7 +406,7 @@ function OracleBlock({
         />
       </header>
 
-      {/* Human status strip — fixed height so dual panes align */}
+      {/* Status strip: price age only (LIVE/STALE/OFFLINE). DOWN lives in Health chip. */}
       <div className="shrink-0 px-3.5 sm:px-4 lg:px-5 py-2 border-b border-white/[0.04] bg-black/20 h-[3.25rem] flex items-center overflow-hidden">
         <p className="text-[11px] sm:text-[12px] text-[#B0B0BC] leading-snug line-clamp-2">
           <span className="font-medium" style={{ color: st.color }}>
@@ -410,23 +414,13 @@ function OracleBlock({
           </span>
           <span className="text-[#5C5C6A]"> · </span>
           {st.blurb}
-          {feed.poolHealthy === false && (
-            <>
-              <span className="text-[#5C5C6A]"> · </span>
-              <span style={{ color: health.color }}>{health.label}</span>
-              <span className="text-[#8B8B9A]">
-                {" "}
-                — local agent sees protocol trouble.
-              </span>
-            </>
-          )}
         </p>
       </div>
 
       {/* Map stage — fixed dual height, identical box on both panes */}
       <div className="shrink-0 px-3 sm:px-4 pt-3 sm:pt-3.5">
         <div
-          className="relative w-full rounded-2xl overflow-hidden border border-white/[0.06]"
+          className="lumen-oracle-tile relative w-full rounded-2xl overflow-hidden border border-white/[0.06]"
           style={{
             background: "#050508",
             boxShadow: `inset 0 0 80px ${theme.accentDim}`,
@@ -524,7 +518,7 @@ function OracleBlock({
       {/* Footer slots — fixed heights so USD/XAU stay pixel-symmetric */}
       <div className="shrink-0 px-3 sm:px-4 py-3 sm:py-3.5 grid grid-cols-1 gap-2.5 sm:gap-3">
         {/* Price — always same box; alt line reserved even when empty */}
-        <div className="h-[6.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center overflow-hidden">
+        <div className="lumen-oracle-tile h-[6.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center overflow-hidden">
           <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-1.5">
             On-chain price
           </div>
@@ -546,7 +540,7 @@ function OracleBlock({
         </div>
 
         {/* Publish activity — fixed height; list or empty state never resizes the pane */}
-        <div className="h-[6.5rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col overflow-hidden">
+        <div className="lumen-oracle-tile h-[6.5rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between mb-2 shrink-0">
             <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase">
               Publish activity
@@ -604,7 +598,7 @@ function OracleBlock({
         </div>
 
         {/* Legend — fixed height, 2×2 grid */}
-        <div className="h-[7.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 overflow-hidden">
+        <div className="lumen-oracle-tile h-[7.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 overflow-hidden">
           <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2">
             Map legend
           </div>
@@ -694,8 +688,8 @@ export default function OraclesDualView({
         ))}
       </div>
 
-      {/* Status dictionary — footer, once for the page */}
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 sm:px-5 py-3.5 sm:py-4">
+      {/* Status dictionary — footer; STALE ≠ DOWN (age vs local agent health) */}
+      <div className="lumen-oracle-tile rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 sm:px-5 py-3.5 sm:py-4">
         <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-3">
           What the statuses mean
         </div>
@@ -704,25 +698,28 @@ export default function OraclesDualView({
             {
               t: "LIVE",
               c: "#34D399",
-              d: "Fresh. The shared pool price was updated recently — safe to treat as current.",
+              d: "Price age: the shared pool price was updated recently — safe to treat as current.",
             },
             {
               t: "STALE",
               c: "#D4A574",
-              d: "Getting old. A price is still on-chain, but the pool has not refreshed for a while.",
+              d: "Price age: a price is still on-chain, but the pool has not refreshed for a while.",
             },
             {
               t: "DOWN",
               c: "#D4A574",
-              d: "Local software sees protocol trouble (not enough operators agreeing). Separate from price age.",
+              d: "Local agent health (Health chip): protocol trouble. Not the same as STALE price age.",
             },
             {
               t: "OFFLINE",
               c: "#F87171",
-              d: "Unusable right now — missing pool box or the data is extremely old.",
+              d: "Price age: unusable — missing pool box or the data is extremely old.",
             },
           ].map((s) => (
-            <div key={s.t} className="min-w-0">
+            <div
+              key={s.t}
+              className="lumen-oracle-tile min-w-0 rounded-xl border border-transparent px-2.5 py-2 -mx-1"
+            >
               <div
                 className="text-[11px] font-mono tracking-[0.14em] font-medium"
                 style={{ color: s.c }}

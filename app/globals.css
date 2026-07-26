@@ -75,6 +75,47 @@ body {
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 }
 
+/* Oracle panels/tiles — same highlight language as dashboard .card */
+.lumen-oracle-block {
+  transition:
+    border-color 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.lumen-oracle-block:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--oracle-accent, #ff7a3d) 38%,
+    transparent
+  ) !important;
+  transform: translateY(-1px);
+  box-shadow:
+    0 24px 52px rgba(0, 0, 0, 0.48),
+    0 0 0 1px color-mix(in srgb, var(--oracle-accent, #ff7a3d) 18%, transparent);
+}
+.lumen-oracle-tile {
+  transition:
+    border-color 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.lumen-oracle-tile:hover {
+  border-color: rgba(255, 122, 61, 0.22);
+  transform: translateY(-1px);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.35);
+  background-color: rgba(255, 255, 255, 0.03);
+}
+.lumen-oracle-block:hover .lumen-oracle-chip {
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+.lumen-oracle-chip {
+  transition:
+    border-color 0.2s cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 /* Metric Number Animation */
 .metric-value {
   font-variant-numeric: tabular-nums;
