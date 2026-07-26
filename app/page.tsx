@@ -7,13 +7,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { 
   RefreshCw, Zap,
   ExternalLink, Orbit, Globe2, Cable,
-  MoreHorizontal, Share2, Settings, Gem, Blocks,
+  MoreHorizontal, Share2, Settings, Gem,
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 
 import Constellation3D from './components/Constellation3D';
-import ChainPulse from './components/ChainPulse';
 import MetricsCards from './components/MetricsCards';
 import BlocksTimeline from './components/BlocksTimeline';
 import MempoolFlow from './components/MempoolFlow';
@@ -78,7 +77,7 @@ export default function LumenDashboard() {
   const [lastBlockHeight, setLastBlockHeight] = useState(0);
   const [avgBlockTime, setAvgBlockTime] = useState<number | null>(null);
   const [avgBlockSamples, setAvgBlockSamples] = useState(0);
-  const [viewMode, setViewMode] = useState<'constellation' | 'map' | 'chain'>('constellation');
+  const [viewMode, setViewMode] = useState<'constellation' | 'map'>('constellation');
   const [publicMode, setPublicMode] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
@@ -794,16 +793,6 @@ export default function LumenDashboard() {
               <Orbit className="w-3.5 h-3.5" /> NETWORK ORBIT
             </button>
             <button
-              onClick={() => setViewMode('chain')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
-                viewMode === 'chain'
-                  ? 'bg-[#E8C48A]/15 text-[#E8C48A] border border-[#E8C48A]/30'
-                  : 'text-[#A0A0B0] hover:text-white'
-              }`}
-            >
-              <Blocks className="w-3.5 h-3.5" /> CHAIN PULSE
-            </button>
-            <button
               onClick={() => setViewMode('map')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
                 viewMode === 'map'
@@ -817,9 +806,7 @@ export default function LumenDashboard() {
           <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest">
             {viewMode === 'map'
               ? 'PEERS BY GEOIP · CITY-LEVEL ACCURACY'
-              : viewMode === 'chain'
-                ? 'LOCAL NODE · TOKENS → TX → BLOCK'
-                : 'NETWORK ORBIT · EARTH CORE · ORBITAL PEERS'}
+              : 'NETWORK ORBIT · EARTH CORE · ORBITAL PEERS'}
           </span>
         </div>
 
@@ -841,8 +828,6 @@ export default function LumenDashboard() {
                 }
               }}
             />
-          ) : viewMode === 'chain' ? (
-            <ChainPulse />
           ) : (
             <PeerMap
               blockHeight={
@@ -864,10 +849,10 @@ export default function LumenDashboard() {
 
         {/* === VIEW TOGGLE (mobile: BELOW viz) === */}
         <div className="md:hidden mb-8 space-y-2">
-          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl glass border border-white/10">
+          <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl glass border border-white/10">
             <button
               onClick={() => setViewMode('constellation')}
-              className={`flex items-center justify-center gap-1 px-1.5 py-3 rounded-xl text-[10px] font-mono tracking-wider transition-all ${
+              className={`flex items-center justify-center gap-1.5 px-2 py-3 rounded-xl text-[11px] font-mono tracking-wider transition-all ${
                 viewMode === 'constellation'
                   ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
                   : 'text-[#A0A0B0]'
@@ -876,24 +861,14 @@ export default function LumenDashboard() {
               <Orbit className="w-3.5 h-3.5" /> ORBIT
             </button>
             <button
-              onClick={() => setViewMode('chain')}
-              className={`flex items-center justify-center gap-1 px-1.5 py-3 rounded-xl text-[10px] font-mono tracking-wider transition-all ${
-                viewMode === 'chain'
-                  ? 'bg-[#E8C48A]/15 text-[#E8C48A] border border-[#E8C48A]/30'
-                  : 'text-[#A0A0B0]'
-              }`}
-            >
-              <Blocks className="w-3.5 h-3.5" /> CHAIN
-            </button>
-            <button
               onClick={() => setViewMode('map')}
-              className={`flex items-center justify-center gap-1 px-1.5 py-3 rounded-xl text-[10px] font-mono tracking-wider transition-all ${
+              className={`flex items-center justify-center gap-1.5 px-2 py-3 rounded-xl text-[11px] font-mono tracking-wider transition-all ${
                 viewMode === 'map'
                   ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'
                   : 'text-[#A0A0B0]'
               }`}
             >
-              <Globe2 className="w-3.5 h-3.5" /> MAP
+              <Globe2 className="w-3.5 h-3.5" /> WORLD MAP
             </button>
           </div>
         </div>

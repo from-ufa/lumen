@@ -1,0 +1,12 @@
+CHAIN VISUALIZATION — CLEAN SLATE (2026-07-26)
+==============================================
+
+REMOVED (graphics only):
+- app/components/ChainPulse.tsx (Block Genesis / Crystallogenesis / all 3D chain UI)
+- Dashboard tab CHAIN PULSE
+
+KEPT (data plane — thin explorer):
+- lib/chain.ts
+- app/api/chain/*  (status, feed, blocks, block, mempool, address, token)
+
+Next: design new chain visualization from zero on top of existing /api/chain/feed.
