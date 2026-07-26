@@ -630,6 +630,21 @@ body {
   }
 }
 
+/* Blinking caret in empty search placeholder */
+@keyframes lumen-search-caret-blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+.lumen-search-caret {
+  animation: lumen-search-caret-blink 1.05s step-end infinite;
+}
+
 /* Premium node search results — soft scrollbar */
 .lumen-search-scroll {
   scrollbar-width: thin;

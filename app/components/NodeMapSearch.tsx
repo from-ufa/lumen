@@ -261,30 +261,45 @@ export default function NodeMapSearch({
           }`}
           aria-hidden
         />
-        <input
-          ref={inputRef}
-          type="search"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={onKeyDown}
-          placeholder="Search name, IP, country, version…"
-          autoComplete="off"
-          spellCheck={false}
-          role="combobox"
-          aria-expanded={showPanel}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={
-            showPanel && results[activeIdx]
-              ? `${listId}-opt-${activeIdx}`
-              : undefined
-          }
-          className="lumen-search-input flex-1 min-w-0 bg-transparent outline-none border-0 text-[#E8E8F0] placeholder:text-[#A0A0B0]/55 font-mono tracking-wide"
-        />
+        <div className="relative flex-1 min-w-0">
+          <input
+            ref={inputRef}
+            type="search"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={onKeyDown}
+            placeholder=""
+            autoComplete="off"
+            spellCheck={false}
+            role="combobox"
+            aria-label="search name, IP"
+            aria-expanded={showPanel}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={
+              showPanel && results[activeIdx]
+                ? `${listId}-opt-${activeIdx}`
+                : undefined
+            }
+            className="lumen-search-input w-full min-w-0 bg-transparent outline-none border-0 text-[#E8E8F0] font-mono tracking-wide"
+          />
+          {/* Custom placeholder: "search name, IP," + blinking _ */}
+          {!query && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 flex items-center font-mono tracking-wide text-[#A0A0B0]/55"
+            >
+              search name, IP,
+              <span className="lumen-search-caret ml-0.5 text-[#A0A0B0]/75">
+                _
+              </span>
+            </span>
+          )}
+        </div>
         <AnimatePresence>
           {query ? (
             <motion.button
