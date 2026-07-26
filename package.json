@@ -11,9 +11,9 @@
     "crawl:network": "node scripts/crawl-network.mjs",
     "watch:unknown-miners": "node scripts/watch-unknown-miners.mjs",
     "bridge-server": "npm --prefix bridge-server start",
-    "bridge-server:smoke": "npm --prefix bridge-server run test:smoke"
+    "bridge-server:smoke": "npm --prefix bridge-server run test:smoke",
+    "watch:unknown-miners:auto": "node scripts/watch-unknown-miners.mjs --auto"
   },
-
   "dependencies": {
     "@react-three/drei": "9.121.1",
     "@react-three/fiber": "9.6.1",
