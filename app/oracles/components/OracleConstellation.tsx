@@ -504,16 +504,16 @@ export default function OracleConstellation({
 
     const ad = animDataRef.current;
 
-    // Init stars once (kept light — dual canvas cost)
+    // Init stars once (stable baseAlpha — no cumulative jitter)
     if (ad.stars.length === 0) {
-      const nStars = ad.compact ? 48 : 72;
+      const nStars = ad.compact ? 56 : 90;
       for (let i = 0; i < nStars; i++) {
         ad.stars.push({
           x: Math.random() * 3000,
           y: Math.random() * 2000,
           size: Math.random() * 1.5 + 0.3,
-          alpha: Math.random() * 0.5 + 0.1,
-          twinkle: Math.random() * 0.02 + 0.005,
+          alpha: Math.random() * 0.35 + 0.12,
+          twinkle: Math.random() * 0.012 + 0.004,
         });
       }
     }
@@ -524,22 +524,41 @@ export default function OracleConstellation({
 
     function baseRings(): number[] {
       // Leave margin so rings sit inside corner metric chips
+      // Snap radii to whole pixels — kills subpixel ring shimmer
       const m = Math.min(ad.W, ad.H);
       const s = Math.max(0.42, Math.min(0.95, m / (ad.compact ? 560 : 680)));
-      return [78 * s, 128 * s, 176 * s];
+      return [
+        Math.round(78 * s),
+        Math.round(128 * s),
+        Math.round(176 * s),
+      ];
     }
+
+    let lastCssW = 0;
+    let lastCssH = 0;
+    let lastDpr = 0;
 
     function resize() {
       const rect = container.getBoundingClientRect();
-      ad.W = rect.width;
-      ad.H = rect.height;
-      // Cap DPR — dual 2× DPR canvases were a major jank source
-      const dpr = Math.min(window.devicePixelRatio || 1, ad.compact ? 1.25 : 1.5);
-      canvas.width = Math.max(1, Math.floor(ad.W * dpr));
-      canvas.height = Math.max(1, Math.floor(ad.H * dpr));
+      const w = Math.max(1, Math.round(rect.width));
+      const h = Math.max(1, Math.round(rect.height));
+      // Stable DPR (prefer integer) — fractional DPR + layout flicker = ring shake
+      const rawDpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(rawDpr >= 1.5 ? 2 : 1, 2);
+      if (w === lastCssW && h === lastCssH && dpr === lastDpr) return;
+      lastCssW = w;
+      lastCssH = h;
+      lastDpr = dpr;
+      ad.W = w;
+      ad.H = h;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ad.CX = ad.W / 2;
-      ad.CY = ad.H / 2 - (ad.compact ? 8 : 16);
+      // Pixel-center rings/core so arcs don't shimmer
+      ad.CX = Math.round(w / 2) + 0.5;
+      ad.CY = Math.round(h / 2 - (ad.compact ? 8 : 16)) + 0.5;
     }
     resize();
     let resizeRaf = 0;
@@ -697,8 +716,12 @@ export default function OracleConstellation({
       ctx.fillStyle = "#05070A";
       ctx.fillRect(0, 0, ad.W, ad.H);
       for (const s of ad.stars) {
-        s.alpha += Math.sin(ad.time * s.twinkle) * 0.003;
-        ctx.fillStyle = `rgba(226,232,240,${Math.max(0.05, Math.min(0.6, s.alpha))})`;
+        // Non-accumulating twinkle (old += sin drifted and shimmered)
+        const a = Math.max(
+          0.06,
+          Math.min(0.55, s.alpha + Math.sin(ad.time * s.twinkle) * 0.08)
+        );
+        ctx.fillStyle = `rgba(226,232,240,${a})`;
         ctx.beginPath();
         ctx.arc(s.x % ad.W, s.y % ad.H, s.size, 0, Math.PI * 2);
         ctx.fill();
@@ -789,6 +812,7 @@ export default function OracleConstellation({
       const ringR = baseRings();
       o.angle += o.speed * (ad.poolStatus === "offline" ? 0.35 : 1);
       const rr = ringR[o.ring - 1] || ringR[0];
+      // Subpixel positions OK for motion; round only static geometry (rings/core)
       o.x = ad.CX + Math.cos(o.angle) * rr;
       o.y = ad.CY + Math.sin(o.angle) * rr;
       o.pulse = (o.pulse || 0) + 0.05;
@@ -1181,18 +1205,14 @@ export default function OracleConstellation({
     let running = true;
     function animate() {
       if (!running) return;
-      // Pause when tab hidden — free main thread
+      // Pause when tab hidden — free main thread (do not clear when paused)
       if (document.visibilityState === "hidden") {
         animFrame = requestAnimationFrame(animate);
         return;
       }
-      ctx.clearRect(0, 0, ad.W, ad.H);
       ad.time++;
-      // Dual compact: skip every other frame for CPU budget
-      if (ad.compact && ad.time % 2 === 0) {
-        animFrame = requestAnimationFrame(animate);
-        return;
-      }
+      // Always draw after clear — never skip frames (skip after clear = flicker/shake)
+      ctx.clearRect(0, 0, ad.W, ad.H);
       drawBg();
       drawOrbits();
       drawGlowRings();
