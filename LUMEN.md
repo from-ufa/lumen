@@ -76,7 +76,7 @@ It shows:
 - **Mempool** sample + SigmaSpace links
 - **AVG BLOCK TIME** from `GET /blocks/lastHeaders/100`
 - **Share My Node** card (QR, copy link/text, PNG)
-- **Oracles** (`/oracles`) — **Consensus Singularity** 3D visualizer + **ERG/USD** / **ERG/XAU** feeds (on-chain pool boxes)
+- **Oracles** (`/oracles`) — **Oracle Constellation** (Canvas 2D) · Ergo Oracle Pools visualization
 - **Public Mode** — optional remote access with a password
 - **PWA** manifest/icons (no service worker)
 - **Lumen Bridge** — connect a *remote* user node without inbound ports
@@ -107,7 +107,7 @@ Does **not** control `ergonode` / `oracle-core` units. Only **allowlisted GET** 
 /home/lumen/
 ├── app/
 │   ├── page.tsx                 # Dashboard (modes, queries, layout)
-│   ├── oracles/page.tsx         # Consensus Singularity + ERG/USD · ERG/XAU
+│   ├── oracles/page.tsx         # Oracle Constellation (Canvas 2D)
 │   ├── proxy.ts                 # → root proxy.ts (Next 16 network proxy)
 │   ├── components/              # UI: settings, map, 3D, metrics, share, oracles…
 │   ├── lib/                     # node-api, blocks, copy-text, bridge-server client
@@ -524,6 +524,7 @@ Do not:
 | 2026-07-26 | **Singularity luxury pass:** soft cyan core, 11 nodes, sparse particles, thin streams, calm fintech aesthetic |
 | 2026-07-26 | **Singularity aerospace pass:** SpaceX-inspired dark metal/glass, precise filaments, 11 machined nodes |
 | 2026-07-26 | **Singularity Andromeda pass:** NASA/GALEX photo skybox, crystalline core, spiral-arm nodes, restrained SpaceX presentation |
+| 2026-07-26 | **Oracle Constellation:** replace R3F singularity with Canvas 2D constellation from operator prompt |
 
 ### Block miner attribution (honest)
 
