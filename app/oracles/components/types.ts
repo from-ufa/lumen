@@ -24,6 +24,18 @@ export interface OracleNodeFeed {
   collectedHeight?: number | null;
   rewardTokens?: number | null;
   status: FeedStatus;
+  isMine?: boolean;
+}
+
+export interface MyOracleOperator {
+  address: string | null;
+  matchMethod: "address" | "post_height" | "unknown";
+  isHealthy: boolean | null;
+  claimableRewards: number | null;
+  walletNanoErg: number | null;
+  postHeight: number | null;
+  collectedHeight: number | null;
+  postAgeBlocks: number | null;
 }
 
 export interface OracleHistoryPoint {
@@ -57,6 +69,7 @@ export interface OracleFeedData {
   requiredOracles?: number | null;
   poolHealthy?: boolean | null;
   poolRewardTokens?: number | null;
+  myOperator?: MyOracleOperator | null;
   nodes: OracleNodeFeed[];
   history: OracleHistoryPoint[];
   liveEvents?: OracleLiveEvent[];

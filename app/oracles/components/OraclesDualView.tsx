@@ -357,6 +357,20 @@ function OracleBlock({
     feed.ageBlocks != null && liveMax > 0
       ? Math.min(1, Math.max(0, feed.ageBlocks / liveMax))
       : 0;
+  const mine = feed.myOperator;
+  const mineNode = feed.nodes.find((n) => n.isMine);
+  const myActivity = activity.filter((a) => {
+    if (!mine?.address) return a.kind === "datapoint"; // no address yet — show posts
+    const addr = mine.address;
+    return (
+      a.message.includes(addr.slice(0, 8)) ||
+      a.message.includes(addr.slice(-6)) ||
+      a.message.includes(addr)
+    );
+  });
+  const shortMine = mine?.address
+    ? `${mine.address.slice(0, 6)}…${mine.address.slice(-4)}`
+    : null;
 
   return (
     <section
@@ -510,6 +524,102 @@ function OracleBlock({
 
       {/* Footer slots — fixed heights so USD/XAU stay pixel-symmetric */}
       <div className="shrink-0 px-3 sm:px-4 py-3 sm:py-3.5 grid grid-cols-1 gap-2.5 sm:gap-3">
+        {/* Your operator — only when My Oracle identity is known */}
+        {mine && (mine.address || mine.postHeight != null) && (
+          <div
+            className="lumen-oracle-tile rounded-xl border px-3.5 py-3 overflow-hidden"
+            style={{
+              borderColor: "rgba(255,122,61,0.35)",
+              background:
+                "linear-gradient(135deg, rgba(255,122,61,0.1) 0%, rgba(0,0,0,0.45) 55%)",
+              boxShadow: "0 0 28px rgba(255,122,61,0.12)",
+            }}
+          >
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="text-[9px] font-mono tracking-[0.18em] text-[#FF7A3D] uppercase">
+                Your oracle
+              </div>
+              <span
+                className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border"
+                style={{
+                  color:
+                    mine.isHealthy === true
+                      ? "#34D399"
+                      : mine.isHealthy === false
+                        ? "#F87171"
+                        : "#8B8B9A",
+                  borderColor:
+                    mine.isHealthy === true
+                      ? "rgba(52,211,153,0.35)"
+                      : mine.isHealthy === false
+                        ? "rgba(248,113,113,0.35)"
+                        : "rgba(255,255,255,0.1)",
+                }}
+              >
+                {mine.isHealthy === true
+                  ? "HEALTHY"
+                  : mine.isHealthy === false
+                    ? "DOWN"
+                    : "—"}
+              </span>
+            </div>
+            <div className="font-mono text-[12px] text-[#F0F0F5] truncate">
+              {shortMine || "identity matching…"}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  Last post
+                </div>
+                <div className="mt-0.5 font-mono text-[13px] tabular-nums text-[#FF7A3D]">
+                  {mine.postAgeBlocks != null
+                    ? `${mine.postAgeBlocks} blk`
+                    : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  Height
+                </div>
+                <div className="mt-0.5 font-mono text-[12px] tabular-nums text-[#E8E8F0]">
+                  {mine.postHeight != null
+                    ? mine.postHeight.toLocaleString()
+                    : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  Rewards
+                </div>
+                <div className="mt-0.5 font-mono text-[13px] tabular-nums text-[#E8C547]">
+                  {mine.claimableRewards != null
+                    ? mine.claimableRewards.toLocaleString()
+                    : mineNode?.rewardTokens != null
+                      ? mineNode.rewardTokens.toLocaleString()
+                      : "—"}
+                </div>
+              </div>
+            </div>
+            {myActivity.length > 0 && (
+              <ul className="mt-2 space-y-1 border-t border-white/[0.06] pt-2 max-h-[52px] overflow-hidden">
+                {myActivity.slice(0, 3).map((row) => (
+                  <li
+                    key={row.id}
+                    className="text-[10px] font-mono truncate text-[#FF7A3D]/90"
+                  >
+                    ◆ {row.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {myActivity.length === 0 && (
+              <p className="mt-2 text-[10px] text-[#6B6B78] leading-snug">
+                Orange node on the map is you. Posts flash when you publish.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Price — always same box; alt line reserved even when empty */}
         <div className="lumen-oracle-tile h-[6.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center overflow-hidden">
           <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-1.5">
@@ -591,7 +701,7 @@ function OracleBlock({
         </div>
 
         {/* Legend — fixed height, 2×2 grid */}
-        <div className="lumen-oracle-tile h-[7.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 overflow-hidden">
+        <div className="lumen-oracle-tile min-h-[7.25rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 overflow-hidden">
           <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2">
             Map legend
           </div>
@@ -619,6 +729,12 @@ function OracleBlock({
               color={theme.accent}
               label="Reward"
               hint="Claimable credit to operator"
+            />
+            <LegendItem
+              shape="dot"
+              color="#FF7A3D"
+              label="You"
+              hint="Your connected oracle (orange)"
             />
           </div>
         </div>

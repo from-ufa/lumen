@@ -34,6 +34,8 @@ interface Oracle {
   pulse?: number;
   /** 0–1 flash when this oracle just published a datapoint */
   publishFlash?: number;
+  /** Connected operator (My Oracle) */
+  isMine?: boolean;
 }
 
 interface Datapoint {
@@ -146,13 +148,17 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
           : 98.5 + Math.min(1.4, Math.max(0, (20 - (age ?? 0)) * 0.05));
     const size = st === "Active" ? 6 + (i % 3) : st === "Verifying" ? 5.5 : 4;
 
+    const isMine = !!(node as { isMine?: boolean }).isMine;
+    // Your oracle sits on the inner ring, larger & always labeled
+    const mineRing = isMine ? 1 : ring;
+    const mineSize = isMine ? 9 : size;
     return {
-      name: shortAddr(node.address),
+      name: isMine ? "YOU" : shortAddr(node.address),
       address: node.address,
-      ring,
-      angle,
-      speed,
-      color: statusColor(st),
+      ring: mineRing,
+      angle: isMine ? angle : angle,
+      speed: isMine ? speed * 0.85 : speed,
+      color: isMine ? "#FF7A3D" : statusColor(st),
       status: st,
       latency:
         age == null
@@ -163,12 +169,13 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
       accuracy: Math.round(accuracy * 10) / 10,
       stake: 0,
       reward: node.rewardTokens ?? 0,
-      size,
+      size: mineSize,
       slashing: 0,
       height: node.height,
       collectedHeight: node.collectedHeight ?? null,
       rewardTokens: node.rewardTokens ?? null,
       pulse: Math.random() * Math.PI * 2,
+      isMine,
     };
   });
 }
@@ -333,6 +340,7 @@ export default function OracleConstellation({
         o.pulse = prev.pulse;
         o.publishFlash = prev.publishFlash;
       }
+      // Keep isMine from latest feed build
       return o;
     });
 
@@ -771,15 +779,19 @@ export default function OracleConstellation({
         ctx.stroke();
       }
 
-      if (o.status === "Active") glow(o.x, o.y, 22 + flash * 28, "#00D4AA", 0.18 + flash * 0.4);
-      else if (o.status === "Verifying") glow(o.x, o.y, 18 + flash * 20, "#FBBF24", 0.12 + flash * 0.3);
+      const mine = !!o.isMine;
+      if (mine) glow(o.x, o.y, 36 + flash * 20, "#FF7A3D", 0.35 + flash * 0.25);
+      else if (o.status === "Active")
+        glow(o.x, o.y, 22 + flash * 28, "#00D4AA", 0.18 + flash * 0.4);
+      else if (o.status === "Verifying")
+        glow(o.x, o.y, 18 + flash * 20, "#FBBF24", 0.12 + flash * 0.3);
       else if (o.status === "Slashed") glow(o.x, o.y, 18, "#EF4444", 0.15);
 
       // Expanding ring when this oracle just fired a datapoint
       if (flash > 0.05) {
         const ringExpand = (1 - flash) * 28;
         ctx.strokeStyle = hexToRgba(
-          o.status === "Verifying" ? "#FBBF24" : "#00D4AA",
+          mine ? "#FF7A3D" : o.status === "Verifying" ? "#FBBF24" : "#00D4AA",
           flash * 0.85
         );
         ctx.lineWidth = 1.5 + flash * 1.5;
@@ -788,11 +800,25 @@ export default function OracleConstellation({
         ctx.stroke();
       }
 
+      // Persistent “YOU” halo
+      if (mine) {
+        ctx.strokeStyle = hexToRgba("#FF7A3D", 0.55 + 0.25 * Math.sin(ad.time * 0.06));
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, o.size + 10, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = hexToRgba("#FF7A3D", 0.22);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, o.size + 16, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
       const isHov = ad.hovered === o;
-      const sz = o.size + (isHov ? 4 : 0) + flash * 3;
+      const sz = o.size + (isHov ? 4 : 0) + flash * 3 + (mine ? 1 : 0);
 
       ctx.fillStyle =
-        o.status === "Offline"
+        o.status === "Offline" && !mine
           ? "#333"
           : o.status === "Slashed"
             ? "#EF4444"
@@ -801,14 +827,14 @@ export default function OracleConstellation({
       ctx.arc(o.x, o.y, sz, 0, Math.PI * 2);
       ctx.fill();
 
-      if (flash > 0.2) {
-        ctx.fillStyle = `rgba(255,255,255,${flash * 0.55})`;
+      if (flash > 0.2 || mine) {
+        ctx.fillStyle = `rgba(255,255,255,${mine ? 0.45 : flash * 0.55})`;
         ctx.beginPath();
         ctx.arc(o.x, o.y, sz * 0.45, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      if (o.status === "Verifying") {
+      if (o.status === "Verifying" && !mine) {
         ctx.strokeStyle = "#FBBF24";
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -830,14 +856,22 @@ export default function OracleConstellation({
         ctx.stroke();
       }
 
-      if (o.size >= 7 || isHov || flash > 0.4) {
-        ctx.fillStyle =
-          flash > 0.3
+      if (mine || o.size >= 7 || isHov || flash > 0.4) {
+        ctx.fillStyle = mine
+          ? "#FF7A3D"
+          : flash > 0.3
             ? `rgba(226,232,240,${0.55 + flash * 0.4})`
             : "rgba(226,232,240,0.55)";
-        ctx.font = "10px -apple-system, sans-serif";
+        ctx.font = mine
+          ? '700 11px ui-monospace, monospace'
+          : "10px -apple-system, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(o.name, o.x, o.y + sz + 14);
+        if (mine) {
+          ctx.fillStyle = "rgba(255,122,61,0.75)";
+          ctx.font = "9px ui-monospace, monospace";
+          ctx.fillText(shortAddr(o.address), o.x, o.y + sz + 26);
+        }
       }
     }
 
@@ -1221,6 +1255,19 @@ export default function OracleConstellation({
           >
             {hovered.address}
           </div>
+          {hovered.isMine && (
+            <div
+              style={{
+                ...ttRowStyle,
+                color: "#FF7A3D",
+                fontWeight: 600,
+                letterSpacing: "0.12em",
+                fontSize: 10,
+              }}
+            >
+              YOUR ORACLE
+            </div>
+          )}
           <div style={ttRowStyle}>
             <span>Status:</span>
             <span

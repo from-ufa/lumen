@@ -105,6 +105,8 @@ export interface OracleFeedSnapshot {
   requiredOracles?: number | null;
   /** Reward token amount in pool box (metrics) */
   poolRewardTokens?: number | null;
+  /** Connected operator (My Oracle / host agent) */
+  myOperator?: MyOracleOperator | null;
   source: "explorer" | "metrics" | "none";
   error?: string;
 }
@@ -118,6 +120,21 @@ export interface OracleNodeInfo {
   /** Claimable reward tokens (from oracle-core metrics) */
   rewardTokens?: number | null;
   status: OracleStatus;
+  /** True when this address is the connected operator’s oracle */
+  isMine?: boolean;
+}
+
+/** Identity of the operator attached via bridge / local agent metrics */
+export interface MyOracleOperator {
+  address: string | null;
+  /** Matched by preferred address, unique post height, or env */
+  matchMethod: "address" | "post_height" | "unknown";
+  isHealthy: boolean | null;
+  claimableRewards: number | null;
+  walletNanoErg: number | null;
+  postHeight: number | null;
+  collectedHeight: number | null;
+  postAgeBlocks: number | null;
 }
 
 /** Real-time delta events since previous API poll (server-side). */
@@ -156,6 +173,8 @@ export interface OraclesResponse {
 export type LoadOraclesOptions = {
   /** When set, use this metrics text per feed instead of local ports */
   metricsByFeed?: Partial<Record<OracleFeedId, string | null>>;
+  /** Preferred operator addresses (env / bridge status) per feed */
+  preferredAddressByFeed?: Partial<Record<OracleFeedId, string | null>>;
   /** Only include these feeds (e.g. personal agent with USD only) */
   onlyFeeds?: OracleFeedId[];
   tipHeightOverride?: number | null;
@@ -384,6 +403,7 @@ type MetricsHealth = {
   poolRewardTokens: number | null;
   /** Official ergo_oracle_active_oracle_count from protocol */
   protocolActive?: number | null;
+  myOperator?: MyOracleOperator | null;
 };
 
 function gauge(text: string, name: string): number | null {
@@ -393,13 +413,32 @@ function gauge(text: string, name: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** e.g. ergo_oracle_oracle_box_height{box_type="posted"} 123 */
+function gaugeWithLabel(
+  text: string,
+  name: string,
+  labelKey: string,
+  labelVal: string
+): number | null {
+  const re = new RegExp(
+    `^${name}\\{[^}]*${labelKey}="${labelVal}"[^}]*\\}\\s+(\\S+)`,
+    "m"
+  );
+  const m = text.match(re);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * Parse oracle-core Prometheus metrics text (local port or bridge-proxied).
+ * Detects "this oracle" via ergo_oracle_oracle_* and marks isMine on the node.
  */
 export function parseMetricsHealth(
   text: string,
   tipHeight: number | null,
-  epochLength: number
+  epochLength: number,
+  opts?: { preferredAddress?: string | null }
 ): MetricsHealth | null {
   if (!text || typeof text !== "string") return null;
 
@@ -424,7 +463,55 @@ export function parseMetricsHealth(
     rewards.set(m[1], Number(m[2]));
   }
 
+  // Local agent identity (no address label — match by height / preferred)
+  const myPostH = gaugeWithLabel(
+    text,
+    "ergo_oracle_oracle_box_height",
+    "box_type",
+    "posted"
+  );
+  const myCollH = gaugeWithLabel(
+    text,
+    "ergo_oracle_oracle_box_height",
+    "box_type",
+    "collected"
+  );
+  const myClaimable = gauge(text, "ergo_oracle_oracle_claimable_rewards");
+  const myHealthyN = gauge(text, "ergo_oracle_oracle_is_healthy");
+  const myWallet = gauge(text, "ergo_oracle_oracle_node_wallet_nano_erg");
+  const preferred = (opts?.preferredAddress || "").trim() || null;
+
+  let mineAddress: string | null = preferred;
+  let matchMethod: MyOracleOperator["matchMethod"] = preferred
+    ? "address"
+    : "unknown";
+
+  if (!mineAddress && myPostH != null) {
+    const byPost = [...posted.entries()].filter(([, h]) => h === myPostH);
+    if (byPost.length === 1) {
+      mineAddress = byPost[0][0];
+      matchMethod = "post_height";
+    } else if (byPost.length > 1 && myCollH != null) {
+      const byBoth = byPost.filter(([addr]) => collected.get(addr) === myCollH);
+      if (byBoth.length === 1) {
+        mineAddress = byBoth[0][0];
+        matchMethod = "post_height";
+      }
+    }
+  }
+  // Unique claimable rewards often disambiguate when several posts share a height
+  if (!mineAddress && myClaimable != null) {
+    const byReward = [...rewards.entries()].filter(
+      ([, r]) => Math.abs(r - myClaimable) < 1e-6
+    );
+    if (byReward.length === 1) {
+      mineAddress = byReward[0][0];
+      matchMethod = "post_height";
+    }
+  }
+
   const addresses = new Set<string>([...posted.keys(), ...collected.keys()]);
+  if (mineAddress) addresses.add(mineAddress);
   if (addresses.size === 0 && !text.includes("ergo_oracle_")) return null;
 
   const nodes: OracleNodeInfo[] = [];
@@ -442,15 +529,27 @@ export function parseMetricsHealth(
         : age == null
           ? "live"
           : statusFromAge(age, epochLength, true);
+    const isMine = !!(mineAddress && address === mineAddress);
     nodes.push({
       address,
       height: height != null && Number.isFinite(height) ? height : null,
       collectedHeight: coll != null && Number.isFinite(coll) ? coll : null,
-      rewardTokens: reward != null && Number.isFinite(reward) ? reward : null,
+      rewardTokens:
+        isMine && myClaimable != null
+          ? myClaimable
+          : reward != null && Number.isFinite(reward)
+            ? reward
+            : null,
       status,
+      isMine,
     });
   }
-  nodes.sort((a, b) => a.address.localeCompare(b.address));
+  // My node first for UI lists
+  nodes.sort((a, b) => {
+    if (a.isMine && !b.isMine) return -1;
+    if (!a.isMine && b.isMine) return 1;
+    return a.address.localeCompare(b.address);
+  });
   const active = nodes.filter((n) => n.status === "live").length;
 
   const poolHealthyN = gauge(text, "ergo_oracle_pool_is_healthy");
@@ -461,6 +560,29 @@ export function parseMetricsHealth(
     "ergo_oracle_pool_box_reward_token_amount"
   );
 
+  const postAgeBlocks =
+    tipHeight != null && myPostH != null
+      ? Math.max(0, tipHeight - myPostH)
+      : mineAddress && posted.has(mineAddress) && tipHeight != null
+        ? Math.max(0, tipHeight - posted.get(mineAddress)!)
+        : null;
+
+  const myOperator: MyOracleOperator | null =
+    myPostH != null || myClaimable != null || mineAddress
+      ? {
+          address: mineAddress,
+          matchMethod,
+          isHealthy:
+            myHealthyN == null ? null : myHealthyN >= 1 ? true : false,
+          claimableRewards: myClaimable,
+          walletNanoErg: myWallet,
+          postHeight: myPostH ?? (mineAddress ? posted.get(mineAddress) ?? null : null),
+          collectedHeight:
+            myCollH ?? (mineAddress ? collected.get(mineAddress) ?? null : null),
+          postAgeBlocks,
+        }
+      : null;
+
   return {
     active,
     total: nodes.length || (protocolActive != null ? protocolActive : 0),
@@ -470,6 +592,7 @@ export function parseMetricsHealth(
     requiredOracles,
     poolRewardTokens,
     protocolActive: protocolActive ?? null,
+    myOperator,
   };
 }
 
@@ -480,7 +603,8 @@ export function parseMetricsHealth(
 async function fetchMetricsHealth(
   port: number | undefined,
   tipHeight: number | null,
-  epochLength: number
+  epochLength: number,
+  preferredAddress?: string | null
 ): Promise<MetricsHealth | null> {
   if (!port) return null;
   try {
@@ -493,7 +617,9 @@ async function fetchMetricsHealth(
     clearTimeout(t);
     if (!res.ok) return null;
     const text = await res.text();
-    return parseMetricsHealth(text, tipHeight, epochLength);
+    return parseMetricsHealth(text, tipHeight, epochLength, {
+      preferredAddress,
+    });
   } catch {
     return null;
   }
@@ -721,14 +847,18 @@ export async function loadOraclesSnapshot(
         if (hist !== base.history) historyDirty = true;
 
         let health: MetricsHealth | null = null;
+        const preferred = opts.preferredAddressByFeed?.[cfg.id] ?? null;
         const injected = opts.metricsByFeed?.[cfg.id];
         if (typeof injected === "string" && injected.length > 0) {
-          health = parseMetricsHealth(injected, tipHeight, cfg.epochLength);
+          health = parseMetricsHealth(injected, tipHeight, cfg.epochLength, {
+            preferredAddress: preferred,
+          });
         } else if (!opts.skipLocalMetrics) {
           health = await fetchMetricsHealth(
             cfg.metricsPort,
             tipHeight,
-            cfg.epochLength
+            cfg.epochLength,
+            preferred
           );
         }
 
@@ -775,6 +905,7 @@ export async function loadOraclesSnapshot(
           poolHealthy: health?.poolHealthy ?? null,
           requiredOracles: health?.requiredOracles ?? null,
           poolRewardTokens: health?.poolRewardTokens ?? null,
+          myOperator: health?.myOperator ?? null,
           history: hist,
           source: health ? ("metrics" as const) : ("explorer" as const),
         };
