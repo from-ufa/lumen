@@ -9,9 +9,11 @@ export async function GET(req: NextRequest) {
     const sp = req.nextUrl.searchParams;
     const blocks = Number(sp.get("blocks") || 5);
     const mempool = Number(sp.get("mempool") || 30);
+    const address = sp.get("address") || null;
     const feed = await getChainFeed({
       blocks: Number.isFinite(blocks) ? blocks : 5,
       mempool: Number.isFinite(mempool) ? mempool : 30,
+      address,
     });
     return NextResponse.json(feed, {
       headers: { "Cache-Control": "no-store" },

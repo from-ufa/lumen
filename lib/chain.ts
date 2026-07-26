@@ -47,6 +47,9 @@ export type ChainBlock = {
   transactions: ChainTx[];
 };
 
+/** Viz lifecycle stage for timeline */
+export type ParticleStage = "mempool" | "assembling" | "sealed" | "focus";
+
 export type ChainFeed = {
   source: "local" | "mixed" | "fallback";
   node: string;
@@ -55,8 +58,12 @@ export type ChainFeed = {
   tip: ChainBlock | null;
   recent: ChainBlock[];
   mempool: ChainTx[];
-  /** Flattened particles for viz (mempool + latest block tokens) */
+  /** Flattened particles for viz (mempool + tip + optional address focus) */
   particles: ChainParticle[];
+  /** Address focus snapshot (when ?address=) */
+  focus?: AddressView | null;
+  /** Token id → display name (server cache) */
+  tokenNames: Record<string, string>;
   generatedAt: string;
 };
 
@@ -65,10 +72,12 @@ export type ChainParticle = {
   kind: "erg" | "token";
   tokenId?: string;
   label: string;
+  name?: string | null;
   amount: string;
   color: string;
   txId: string;
   pending: boolean;
+  stage: ParticleStage;
   /** 0..1 weight for size */
   weight: number;
 };
@@ -81,6 +90,64 @@ export type AddressView = {
   };
   source: "local" | "fallback";
 };
+
+/* ─── Token metadata cache (process lifetime) ───────────────────────────── */
+
+type TokenMeta = { name: string | null; decimals: number | null };
+const tokenMetaCache = new Map<string, TokenMeta>();
+const TOKEN_CACHE_MAX = 2000;
+
+export async function resolveTokenMeta(
+  tokenId: string
+): Promise<TokenMeta> {
+  const hit = tokenMetaCache.get(tokenId);
+  if (hit) return hit;
+  try {
+    const t = await nodeJson<{
+      name?: string;
+      decimals?: number;
+    }>(`/blockchain/token/byId/${tokenId}`);
+    const meta: TokenMeta = {
+      name: t.name ?? null,
+      decimals: typeof t.decimals === "number" ? t.decimals : null,
+    };
+    if (tokenMetaCache.size >= TOKEN_CACHE_MAX) {
+      // drop oldest insertion
+      const first = tokenMetaCache.keys().next().value;
+      if (first) tokenMetaCache.delete(first);
+    }
+    tokenMetaCache.set(tokenId, meta);
+    return meta;
+  } catch {
+    const miss: TokenMeta = { name: null, decimals: null };
+    tokenMetaCache.set(tokenId, miss);
+    return miss;
+  }
+}
+
+async function enrichTokenNames(
+  tokenIds: string[]
+): Promise<Record<string, string>> {
+  const unique = [...new Set(tokenIds.filter(Boolean))].slice(0, 80);
+  await Promise.all(unique.map((id) => resolveTokenMeta(id)));
+  const out: Record<string, string> = {};
+  for (const id of unique) {
+    const m = tokenMetaCache.get(id);
+    if (m?.name) out[id] = m.name;
+  }
+  return out;
+}
+
+function displayLabel(
+  tokenId: string | undefined,
+  names: Record<string, string>
+): string {
+  if (!tokenId || tokenId === "ERG") return "ERG";
+  const n = names[tokenId];
+  if (n && n.length <= 14) return n;
+  if (n) return n.slice(0, 12) + "…";
+  return shortToken(tokenId);
+}
 
 async function nodeFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${NODE_URL}${path.startsWith("/") ? path : `/${path}`}`, {
@@ -178,37 +245,87 @@ function normalizeTx(raw: RawTx, pending: boolean): ChainTx {
   };
 }
 
-function particlesFromTx(tx: ChainTx): ChainParticle[] {
+function particlesFromTx(
+  tx: ChainTx,
+  stage: ParticleStage,
+  names: Record<string, string> = {}
+): ChainParticle[] {
   const out: ChainParticle[] = [];
   // ERG particle (always)
   const ergN = BigInt(tx.ergNano || "0");
   if (ergN > BigInt(0)) {
     const w = Math.min(1, Number(ergN / BigInt(1_000_000_000)) / 50); // ~50 ERG → full
     out.push({
-      id: `${tx.id}:ERG`,
+      id: `${tx.id}:ERG:${stage}`,
       kind: "erg",
       label: "ERG",
+      name: "ERG",
       amount: tx.ergNano,
       color: "#FF7A3D",
       txId: tx.id,
       pending: tx.pending,
+      stage,
       weight: 0.35 + w * 0.5,
     });
   }
   // Cap tokens per tx for viz performance
   for (const t of tx.tokens.slice(0, 8)) {
+    const label = displayLabel(t.tokenId, names);
     out.push({
-      id: `${tx.id}:${t.tokenId}`,
+      id: `${tx.id}:${t.tokenId}:${stage}`,
       kind: "token",
       tokenId: t.tokenId,
-      label: shortToken(t.tokenId),
+      label,
+      name: names[t.tokenId] || null,
       amount: t.amount,
       color: colorFromId(t.tokenId),
       txId: tx.id,
       pending: tx.pending,
+      stage,
       weight:
         0.4 +
         Math.min(0.5, Math.log10(Number(BigInt(t.amount) + BigInt(1))) / 12),
+    });
+  }
+  return out;
+}
+
+function particlesFromAddress(
+  view: AddressView,
+  names: Record<string, string>
+): ChainParticle[] {
+  const out: ChainParticle[] = [];
+  const ergN = BigInt(view.confirmed.nanoErgs || "0");
+  if (ergN > BigInt(0)) {
+    out.push({
+      id: `focus:${view.address}:ERG`,
+      kind: "erg",
+      label: "ERG",
+      name: "ERG",
+      amount: view.confirmed.nanoErgs,
+      color: "#FF7A3D",
+      txId: "focus",
+      pending: false,
+      stage: "focus",
+      weight: 0.55,
+    });
+  }
+  for (const t of view.confirmed.tokens.slice(0, 40)) {
+    // prefer balance-provided name
+    if (t.name && !names[t.tokenId]) names[t.tokenId] = t.name;
+    const label = t.name || displayLabel(t.tokenId, names);
+    out.push({
+      id: `focus:${view.address}:${t.tokenId}`,
+      kind: "token",
+      tokenId: t.tokenId,
+      label: label.length > 14 ? label.slice(0, 12) + "…" : label,
+      name: t.name || names[t.tokenId] || null,
+      amount: t.amount,
+      color: colorFromId(t.tokenId),
+      txId: "focus",
+      pending: false,
+      stage: "focus",
+      weight: 0.5,
     });
   }
   return out;
@@ -287,32 +404,64 @@ export async function getMempool(limit = 40): Promise<ChainTx[]> {
 export async function getChainFeed(opts?: {
   blocks?: number;
   mempool?: number;
+  address?: string | null;
 }): Promise<ChainFeed> {
   const blockN = Math.min(12, Math.max(1, opts?.blocks ?? 5));
   const memN = Math.min(80, Math.max(1, opts?.mempool ?? 30));
+  const address = opts?.address?.trim() || null;
 
-  const [status, recent, mempool] = await Promise.all([
+  const [status, recent, mempool, focus] = await Promise.all([
     getChainStatus(),
     getRecentBlocks(blockN),
     getMempool(memN),
+    address
+      ? getAddress(address).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const tip = recent[0] || null;
-  const particles: ChainParticle[] = [];
 
-  // Mempool first (pending particles)
+  // Collect token ids for name cache
+  const tokenIds: string[] = [];
   for (const tx of mempool) {
-    particles.push(...particlesFromTx(tx));
+    for (const t of tx.tokens) tokenIds.push(t.tokenId);
   }
-  // Latest confirmed block particles (already sealed)
   if (tip) {
-    for (const tx of tip.transactions.slice(0, 24)) {
-      particles.push(...particlesFromTx(tx));
+    for (const tx of tip.transactions) {
+      for (const t of tx.tokens) tokenIds.push(t.tokenId);
+    }
+  }
+  if (focus) {
+    for (const t of focus.confirmed.tokens) tokenIds.push(t.tokenId);
+  }
+  const tokenNames = await enrichTokenNames(tokenIds);
+
+  // Seed names from address balance (often already named)
+  if (focus) {
+    for (const t of focus.confirmed.tokens) {
+      if (t.name) tokenNames[t.tokenId] = t.name;
     }
   }
 
+  const particles: ChainParticle[] = [];
+
+  // 1) Mempool — outer orbit
+  for (const tx of mempool) {
+    particles.push(...particlesFromTx(tx, "mempool", tokenNames));
+  }
+  // 2) Tip block — assembling / sealed core ring
+  if (tip) {
+    for (const tx of tip.transactions.slice(0, 24)) {
+      particles.push(...particlesFromTx(tx, "sealed", tokenNames));
+    }
+  }
+  // 3) Address focus — inner constellation
+  if (focus) {
+    particles.push(...particlesFromAddress(focus, tokenNames));
+  }
+
   // Cap total particles for GPU
-  const capped = particles.slice(0, 220);
+  const capped = particles.slice(0, 260);
 
   return {
     source: "local",
@@ -323,6 +472,8 @@ export async function getChainFeed(opts?: {
     recent,
     mempool,
     particles: capped,
+    focus: focus || null,
+    tokenNames,
     generatedAt: new Date().toISOString(),
   };
 }
