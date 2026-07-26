@@ -473,7 +473,7 @@ export default function ShareCard({
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="flex items-center gap-1 sm:gap-2 px-2.5 sm:px-4 py-2 h-11 sm:h-auto rounded-2xl border border-[#FF7A3D]/40 bg-[#FF7A3D]/10 text-[#FF7A3D] text-[10px] sm:text-xs font-mono tracking-wider sm:tracking-widest hover:bg-[#FF7A3D]/20 hover:border-[#FF7A3D]/60 transition-all active:scale-[0.985] box-border"
+          className="lumen-header-pill inline-flex items-center justify-center gap-2 h-10 px-4 rounded-full border border-[#FF7A3D]/40 bg-[#FF7A3D]/[0.12] text-[#FF7A3D] text-[10px] font-mono font-medium tracking-[0.16em] uppercase hover:bg-[#FF7A3D]/[0.18] hover:border-[#FF7A3D]/55 transition-all duration-200 active:scale-[0.98] box-border"
         >
           <Share2 className="w-3.5 h-3.5 shrink-0" />
           <span className="sm:hidden truncate">SHARE</span>

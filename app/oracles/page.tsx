@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Zap,
   RefreshCw,
-  Gem,
   MoreHorizontal,
   Home,
   Settings,
@@ -14,6 +13,11 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import LumenWordmark from "../components/LumenWordmark";
 import ConnectionSettings from "../components/ConnectionSettings";
+import {
+  HeaderActions,
+  HeaderIconButton,
+  HeaderPill,
+} from "../components/HeaderChrome";
 import OraclesDualView from "./components/OraclesDualView";
 import type { OraclesApiResponse } from "./components/types";
 import type { BridgeStatus, NodeMode, OracleViewMode } from "../lib/node-api";
@@ -152,21 +156,36 @@ export default function OraclesPage() {
               className="flex items-center gap-1.5 shrink-0"
               ref={mobileMenuRef}
             >
+              <HeaderPill
+                tone={
+                  viewMode === "my"
+                    ? bridgeOnline
+                      ? "live"
+                      : "warn"
+                    : isOnline
+                      ? "live"
+                      : "offline"
+                }
+                showDot
+                className="!h-9 !px-3 !text-[9px]"
+              >
+                {viewMode === "my"
+                  ? bridgeOnline
+                    ? "LIVE"
+                    : "OFF"
+                  : isOnline
+                    ? "LIVE"
+                    : "OFF"}
+              </HeaderPill>
               <div className="relative">
-                <button
-                  type="button"
+                <HeaderIconButton
                   onClick={() => setMobileMenuOpen((v) => !v)}
-                  aria-expanded={mobileMenuOpen}
-                  aria-haspopup="menu"
-                  aria-label="Open menu"
-                  className={`h-9 w-9 flex items-center justify-center rounded-xl border transition-all active:scale-[0.97] ${
-                    mobileMenuOpen
-                      ? "border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF]"
-                      : "border-white/12 bg-white/[0.04] text-[#E8E8F0]"
-                  }`}
+                  title="Open menu"
+                  active={mobileMenuOpen}
+                  className="!h-9 !w-9"
                 >
-                  <MoreHorizontal className="w-4.5 h-4.5" />
-                </button>
+                  <MoreHorizontal className="w-4 h-4" />
+                </HeaderIconButton>
 
                 <AnimatePresence>
                   {mobileMenuOpen && (
@@ -238,57 +257,64 @@ export default function OraclesPage() {
               </Link>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 justify-end">
-              <div
-                className={`flex items-center gap-2 px-4 lg:px-5 py-2 rounded-3xl text-sm font-mono tracking-widest border ${
+            <HeaderActions>
+              <HeaderPill
+                tone={
                   viewMode === "my"
                     ? bridgeOnline
-                      ? "border-[#00E5FF]/30 bg-[#00E5FF]/5 text-[#00E5FF]"
-                      : "border-[#F59E0B]/30 bg-[#F59E0B]/5 text-[#F59E0B]"
+                      ? "live"
+                      : "warn"
                     : isOnline
-                      ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]"
-                      : "border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]"
-                }`}
+                      ? "live"
+                      : "offline"
+                }
+                showDot
                 title={
                   viewMode === "my"
                     ? bridgeOnline
                       ? "Your oracle agent via lumen bridge"
-                      : "My Oracle: Bridge offline — open ORACLE SETTINGS"
+                      : "My Oracle — Bridge offline · open ORACLE SETTINGS"
                     : "Public network pools"
                 }
               >
-                <div
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    viewMode === "my"
-                      ? bridgeOnline
-                        ? "bg-[#00E5FF] status-dot"
-                        : "bg-[#F59E0B]"
-                      : isOnline
-                        ? "bg-[#10B981] status-dot"
-                        : "bg-[#EF4444]"
-                  }`}
-                />
                 {viewMode === "my"
                   ? bridgeOnline
-                    ? "MY ORACLE · BRIDGE"
-                    : "MY ORACLE · OFFLINE"
-                  : "NETWORK"}
-              </div>
+                    ? "MY ORACLE LIVE"
+                    : "BRIDGE OFF"
+                  : isOnline
+                    ? "NETWORK LIVE"
+                    : "NETWORK OFF"}
+              </HeaderPill>
 
-              <div className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border border-[#E8C547]/30 bg-[#E8C547]/[0.08] text-[#E8C547]">
-                <Gem className="w-3.5 h-3.5" />
-                ORACLES
-              </div>
-
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border border-white/15 bg-white/5 text-[#A0A0B0] hover:text-white hover:border-white/25 transition-all"
+              <HeaderPill
+                tone={
+                  viewMode === "my"
+                    ? bridgeOnline
+                      ? "cyan"
+                      : "warn"
+                    : "neutral"
+                }
+                className="hidden md:inline-flex"
+                title={
+                  viewMode === "my"
+                    ? "My Oracle via bridge"
+                    : "Public oracle pools from lumen host"
+                }
               >
-                <Home className="w-3.5 h-3.5" />
-                DASHBOARD
-              </Link>
+                {viewMode === "my" ? "MY ORACLE" : "NETWORK"}
+              </HeaderPill>
 
-              <div className="hidden sm:block">
+              <HeaderPill
+                as="link"
+                href="/"
+                tone="gold"
+                title="Node dashboard"
+              >
+                <Home className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                DASHBOARD
+              </HeaderPill>
+
+              <div className="hidden sm:contents">
                 <ConnectionSettings
                   variant="oracle"
                   isOnline={isOnline}
@@ -304,18 +330,15 @@ export default function OraclesPage() {
                 />
               </div>
 
-              <button
-                type="button"
+              <HeaderIconButton
                 onClick={() => void refetch()}
-                className="p-3 rounded-2xl glass border border-white/10 hover:bg-white/5 transition-all active:scale-95"
                 title="Refresh oracle data"
-                aria-label="Refresh oracle data"
               >
                 <RefreshCw
                   className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
                 />
-              </button>
-            </div>
+              </HeaderIconButton>
+            </HeaderActions>
           </div>
         </div>
       </div>

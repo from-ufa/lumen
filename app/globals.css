@@ -75,6 +75,18 @@ body {
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
 }
 
+/* Premium header pills — shared node + oracle chrome */
+.lumen-header-pill {
+  letter-spacing: 0.16em;
+  -webkit-font-smoothing: antialiased;
+}
+.lumen-header-pill:hover {
+  transform: translateY(-0.5px);
+}
+.lumen-header-icon:hover {
+  transform: translateY(-0.5px);
+}
+
 /* Oracle panels/tiles — same highlight language as dashboard .card */
 .lumen-oracle-block {
   transition:

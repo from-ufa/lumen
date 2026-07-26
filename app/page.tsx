@@ -19,6 +19,11 @@ import MempoolFlow from './components/MempoolFlow';
 import ConnectionSettings from './components/ConnectionSettings';
 import ShareCard from './components/ShareCard';
 import LumenWordmark from './components/LumenWordmark';
+import {
+  HeaderActions,
+  HeaderIconButton,
+  HeaderPill,
+} from './components/HeaderChrome';
 import type { NodeInfo, Peer, RecentBlock } from './types/ergo';
 import {
   openBlockOnSigmaSpace,
@@ -468,19 +473,17 @@ export default function LumenDashboard() {
               className="flex items-center gap-1.5 shrink-0"
               ref={mobileMenuRef}
             >
-              {/* Compact LIVE badge — not a full-width bar */}
-              <div
-                className={`flex items-center gap-1.5 h-9 px-2.5 rounded-xl text-[10px] font-mono tracking-wider border ${
+              <HeaderPill
+                tone={
                   isOnline
-                    ? "border-[#10B981]/35 bg-[#10B981]/[0.08] text-[#10B981]"
-                    : "border-[#EF4444]/35 bg-[#EF4444]/[0.08] text-[#EF4444]"
-                }`}
+                    ? "live"
+                    : bridgeOnline && nodeMode === "my"
+                      ? "warn"
+                      : "offline"
+                }
+                showDot
+                className="!h-9 !px-3 !text-[9px]"
               >
-                <div
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
-                  }`}
-                />
                 {nodeMode === "my"
                   ? isOnline
                     ? "LIVE"
@@ -490,7 +493,7 @@ export default function LumenDashboard() {
                   : isOnline
                     ? "LIVE"
                     : "OFF"}
-              </div>
+              </HeaderPill>
 
               <div className="relative">
                 <button
@@ -617,64 +620,71 @@ export default function LumenDashboard() {
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 justify-end">
-              <div
-                className={`flex items-center gap-2 px-4 lg:px-5 py-2 rounded-3xl text-sm font-mono tracking-widest border ${
-                  isOnline
-                    ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]"
-                    : "border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]"
-                }`}
+            <HeaderActions>
+              <HeaderPill
+                tone={
+                  isOnline ? "live" : bridgeOnline && nodeMode === "my" ? "warn" : "offline"
+                }
+                showDot
+                title={
+                  nodeMode === "my"
+                    ? isOnline
+                      ? "Your node live via bridge"
+                      : bridgeOnline
+                        ? "Bridge up — waiting for node"
+                        : "Bridge offline"
+                    : isOnline
+                      ? "lumen node live"
+                      : "lumen node offline"
+                }
               >
-                <div
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
-                  }`}
-                />
                 {nodeMode === "my"
                   ? isOnline
                     ? "MY NODE LIVE"
                     : bridgeOnline
-                      ? "BRIDGE UP · WAITING"
-                      : "BRIDGE OFFLINE"
+                      ? "BRIDGE UP"
+                      : "BRIDGE OFF"
                   : isOnline
                     ? "NODE LIVE"
-                    : "NODE OFFLINE"}
-              </div>
+                    : "NODE OFF"}
+              </HeaderPill>
 
-              <div
-                className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border ${
+              <HeaderPill
+                tone={
                   nodeMode === "my"
                     ? bridgeOnline
-                      ? "border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF]"
-                      : "border-[#F59E0B]/35 bg-[#F59E0B]/10 text-[#F59E0B]"
-                    : "border-white/15 bg-white/5 text-[#A0A0B0]"
-                }`}
+                      ? "cyan"
+                      : "warn"
+                    : "neutral"
+                }
+                className="hidden md:inline-flex"
                 title={
                   nodeMode === "my"
                     ? bridgeOnline
                       ? "Reading your node via lumen bridge"
-                      : "My Node selected — Bridge agent offline"
+                      : "My Node — Bridge agent offline"
                     : "Reading this server’s lumen Ergo node"
                 }
               >
                 {nodeMode === "my" ? (
                   <>
-                    <Cable className="w-3 h-3" />
-                    MY NODE{bridgeOnline ? " · BRIDGE" : ""}
+                    <Cable className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                    MY NODE
                   </>
                 ) : (
                   "lumen node"
                 )}
-              </div>
+              </HeaderPill>
 
-              <Link
+              <HeaderPill
+                as="link"
                 href="/oracles"
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border border-[#E8C547]/30 bg-[#E8C547]/[0.08] text-[#E8C547] hover:bg-[#E8C547]/15 transition-all"
-                title="ERG/USD & ERG/XAU oracle feeds"
+                tone="gold"
+                title="ERG/USD & ERG/XAU oracle pools"
               >
-                <Gem className="w-3.5 h-3.5" />
+                <Gem className="w-3.5 h-3.5 shrink-0 opacity-90" />
                 ORACLES
-              </Link>
+              </HeaderPill>
 
               <ShareCard
                 nodeInfo={nodeInfo}
@@ -698,16 +708,13 @@ export default function LumenDashboard() {
                 onRefreshBridgeStatus={onRefreshBridgeStatus}
               />
 
-              <button
-                type="button"
+              <HeaderIconButton
                 onClick={handleReconnect}
-                className="p-3 rounded-2xl glass border border-white/10 hover:bg-white/5 transition-all active:scale-95"
                 title="Refresh data"
-                aria-label="Refresh data"
               >
                 <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
+              </HeaderIconButton>
+            </HeaderActions>
           </div>
         </div>
       </div>
