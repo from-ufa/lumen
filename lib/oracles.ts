@@ -137,10 +137,21 @@ export interface MyOracleOperator {
   matchMethod: "address" | "post_height" | "unknown";
   isHealthy: boolean | null;
   claimableRewards: number | null;
+  /** Δ claimable since previous API poll (null if first sample) */
+  rewardsDelta: number | null;
   walletNanoErg: number | null;
+  /** Wallet in ERG (nano / 1e9) */
+  walletErg: number | null;
   postHeight: number | null;
   collectedHeight: number | null;
   postAgeBlocks: number | null;
+  /** Blocks since your last collect into a pool refresh */
+  collectedAgeBlocks: number | null;
+  /**
+   * Whether your datapoint was taken into the latest pool box
+   * (collected height ≈ pool settlement).
+   */
+  inLastRefresh: boolean | null;
 }
 
 /** Real-time delta events since previous API poll (server-side). */
@@ -447,11 +458,20 @@ function gaugeWithLabel(
  * Parse oracle-core Prometheus metrics text (local port or bridge-proxied).
  * Detects "this oracle" via ergo_oracle_oracle_* and marks isMine on the node.
  */
+/** Claimable rewards from previous poll — for Δ display */
+const prevClaimableByKey = new Map<string, number>();
+
 export function parseMetricsHealth(
   text: string,
   tipHeight: number | null,
   epochLength: number,
-  opts?: { preferredAddress?: string | null }
+  opts?: {
+    preferredAddress?: string | null;
+    /** Pool settlement height — detect if YOU were in last refresh */
+    poolSettlementHeight?: number | null;
+    /** Stable key for rewards Δ (e.g. feed id) */
+    rewardDeltaKey?: string | null;
+  }
 ): MetricsHealth | null {
   if (!text || typeof text !== "string") return null;
 
@@ -573,26 +593,54 @@ export function parseMetricsHealth(
     "ergo_oracle_pool_box_reward_token_amount"
   );
 
+  const resolvedPostH =
+    myPostH ?? (mineAddress ? posted.get(mineAddress) ?? null : null);
+  const resolvedCollH =
+    myCollH ?? (mineAddress ? collected.get(mineAddress) ?? null : null);
+
   const postAgeBlocks =
-    tipHeight != null && myPostH != null
-      ? Math.max(0, tipHeight - myPostH)
-      : mineAddress && posted.has(mineAddress) && tipHeight != null
-        ? Math.max(0, tipHeight - posted.get(mineAddress)!)
-        : null;
+    tipHeight != null && resolvedPostH != null
+      ? Math.max(0, tipHeight - resolvedPostH)
+      : null;
+  const collectedAgeBlocks =
+    tipHeight != null && resolvedCollH != null
+      ? Math.max(0, tipHeight - resolvedCollH)
+      : null;
+
+  const poolH = opts?.poolSettlementHeight ?? null;
+  const inLastRefresh =
+    resolvedCollH != null && poolH != null && Number.isFinite(poolH)
+      ? Math.abs(resolvedCollH - poolH) <= 2
+      : null;
+
+  let rewardsDelta: number | null = null;
+  if (myClaimable != null && opts?.rewardDeltaKey) {
+    const prev = prevClaimableByKey.get(opts.rewardDeltaKey);
+    if (prev != null && Number.isFinite(prev)) {
+      rewardsDelta = myClaimable - prev;
+    }
+    prevClaimableByKey.set(opts.rewardDeltaKey, myClaimable);
+  }
+
+  const walletErg =
+    myWallet != null && Number.isFinite(myWallet) ? myWallet / 1e9 : null;
 
   const myOperator: MyOracleOperator | null =
-    myPostH != null || myClaimable != null || mineAddress
+    myPostH != null || myClaimable != null || mineAddress || myWallet != null
       ? {
           address: mineAddress,
           matchMethod,
           isHealthy:
             myHealthyN == null ? null : myHealthyN >= 1 ? true : false,
           claimableRewards: myClaimable,
+          rewardsDelta,
           walletNanoErg: myWallet,
-          postHeight: myPostH ?? (mineAddress ? posted.get(mineAddress) ?? null : null),
-          collectedHeight:
-            myCollH ?? (mineAddress ? collected.get(mineAddress) ?? null : null),
+          walletErg,
+          postHeight: resolvedPostH,
+          collectedHeight: resolvedCollH,
           postAgeBlocks,
+          collectedAgeBlocks,
+          inLastRefresh,
         }
       : null;
 
@@ -617,7 +665,11 @@ async function fetchMetricsHealth(
   port: number | undefined,
   tipHeight: number | null,
   epochLength: number,
-  preferredAddress?: string | null
+  preferredAddress?: string | null,
+  extra?: {
+    poolSettlementHeight?: number | null;
+    rewardDeltaKey?: string | null;
+  }
 ): Promise<MetricsHealth | null> {
   if (!port) return null;
   try {
@@ -632,6 +684,8 @@ async function fetchMetricsHealth(
     const text = await res.text();
     return parseMetricsHealth(text, tipHeight, epochLength, {
       preferredAddress,
+      poolSettlementHeight: extra?.poolSettlementHeight,
+      rewardDeltaKey: extra?.rewardDeltaKey,
     });
   } catch {
     return null;
@@ -865,25 +919,36 @@ export async function loadOraclesSnapshot(
         const hasBridgeMetrics =
           typeof injected === "string" && injected.length > 0;
         if (hasBridgeMetrics) {
-          health = parseMetricsHealth(injected, tipHeight, cfg.epochLength, {
+          health = parseMetricsHealth(injected!, tipHeight, cfg.epochLength, {
             preferredAddress: preferred,
+            poolSettlementHeight: box.settlementHeight,
+            rewardDeltaKey: `${cfg.id}:mine`,
           });
         } else if (!opts.skipLocalMetrics || opts.hybridMetrics) {
           // Host / lumen metrics (network pane or hybrid fallback)
+          const allowMine =
+            !(opts.hybridMetrics || opts.view === "my") || false;
           health = await fetchMetricsHealth(
             cfg.metricsPort,
             tipHeight,
             cfg.epochLength,
-            // Never mark host metrics as "mine" unless this is pure host network view
-            opts.hybridMetrics || opts.view === "my" ? null : preferred
+            allowMine ? preferred : null,
+            {
+              poolSettlementHeight: box.settlementHeight,
+              rewardDeltaKey: allowMine ? `${cfg.id}:host` : null,
+            }
           );
           // In hybrid My Oracle, network panes must not claim YOUR ORACLE
-          if (opts.hybridMetrics && health?.nodes) {
-            health = {
-              ...health,
-              nodes: health.nodes.map((n) => ({ ...n, isMine: false })),
-              myOperator: null,
-            };
+          if ((opts.hybridMetrics || opts.view === "my") && health?.nodes) {
+            // Only strip mine if this feed is not a bridge-mine scope
+            const scopeHint = opts.scopeByFeed?.[cfg.id];
+            if (scopeHint !== "mine") {
+              health = {
+                ...health,
+                nodes: health.nodes.map((n) => ({ ...n, isMine: false })),
+                myOperator: null,
+              };
+            }
           }
         }
 

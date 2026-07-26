@@ -374,6 +374,82 @@ function OracleBlock({
     ? `${mine.address.slice(0, 6)}…${mine.address.slice(-4)}`
     : null;
 
+  const liveMaxMine = feed.statusThresholds?.liveMax ?? 24;
+  const activeN = feed.activeOracles;
+  const needN = feed.requiredOracles;
+  const missingN =
+    activeN != null && needN != null ? Math.max(0, needN - activeN) : null;
+
+  const walletErg =
+    mine?.walletErg != null
+      ? mine.walletErg
+      : mine?.walletNanoErg != null
+        ? mine.walletNanoErg / 1e9
+        : null;
+
+  /** Single priority alert for runners */
+  const mineAlert = (() => {
+    if (!isMineScope || !mine) return null;
+    if (mine.isHealthy === false)
+      return { tone: "bad" as const, text: "Oracle agent DOWN — not posting" };
+    if (walletErg != null && walletErg < 0.5)
+      return {
+        tone: "warn" as const,
+        text: `Low gas · ${walletErg.toFixed(2)} ERG in wallet`,
+      };
+    if (mine.postAgeBlocks != null && mine.postAgeBlocks > liveMaxMine)
+      return {
+        tone: "warn" as const,
+        text: `YOU lag ${mine.postAgeBlocks} blk — post soon`,
+      };
+    if (mine.inLastRefresh === false)
+      return {
+        tone: "warn" as const,
+        text: "Not in last pool refresh — wait for next epoch",
+      };
+    if (feed.poolHealthy === false && missingN != null && missingN > 0)
+      return {
+        tone: "info" as const,
+        text: `Pool waiting · need ${missingN} more active`,
+      };
+    return {
+      tone: "ok" as const,
+      text: "All clear · you are in the game",
+    };
+  })();
+
+  const networkAlert = (() => {
+    if (!isNetworkScope) return null;
+    if (feed.poolHealthy === false && missingN != null && missingN > 0)
+      return {
+        tone: "warn" as const,
+        text: `Pool DOWN · missing ${missingN} of ${needN} active`,
+      };
+    if (feed.status === "stale")
+      return {
+        tone: "info" as const,
+        text: `Pool lag ${feed.ageBlocks ?? "—"} blk · public host view`,
+      };
+    if (feed.status === "live")
+      return {
+        tone: "ok" as const,
+        text: "Network live · lumen host metrics",
+      };
+    return {
+      tone: "info" as const,
+      text: "Public pool · not on your bridge",
+    };
+  })();
+
+  const alertTone = (t: "ok" | "warn" | "bad" | "info") =>
+    t === "ok"
+      ? { c: "#34D399", b: "rgba(52,211,153,0.3)", bg: "rgba(52,211,153,0.08)" }
+      : t === "warn"
+        ? { c: "#D4A574", b: "rgba(212,165,116,0.35)", bg: "rgba(212,165,116,0.1)" }
+        : t === "bad"
+          ? { c: "#F87171", b: "rgba(248,113,113,0.4)", bg: "rgba(248,113,113,0.1)" }
+          : { c: "#00E5FF", b: "rgba(0,229,255,0.3)", bg: "rgba(0,229,255,0.08)" };
+
   const scopeBorder = isMineScope
     ? "rgba(255,122,61,0.4)"
     : isNetworkScope
@@ -562,25 +638,45 @@ function OracleBlock({
         row-for-row (identity / price / activity / legend).
       */}
       <div className="shrink-0 px-3 sm:px-4 py-3 sm:py-3.5 grid grid-cols-1 gap-2.5 sm:gap-3">
-        {/* Row 1: identity — always same height when either scope is set */}
+        {/* Row 1: Tier-1 operator / network cockpit — equal height both panes */}
         {(isMineScope || isNetworkScope) && (
           <div
-            className="lumen-oracle-tile h-[9.5rem] rounded-xl border px-3.5 py-3 overflow-hidden flex flex-col"
+            className="lumen-oracle-tile h-[14.5rem] rounded-xl border px-3.5 py-3 overflow-hidden flex flex-col"
             style={
               isMineScope
                 ? {
                     borderColor: "rgba(255,122,61,0.35)",
                     background:
-                      "linear-gradient(135deg, rgba(255,122,61,0.1) 0%, rgba(0,0,0,0.45) 55%)",
-                    boxShadow: "0 0 28px rgba(255,122,61,0.12)",
+                      "linear-gradient(160deg, rgba(255,122,61,0.12) 0%, rgba(0,0,0,0.5) 50%)",
+                    boxShadow: "0 0 32px rgba(255,122,61,0.14)",
                   }
                 : {
                     borderColor: "rgba(0,229,255,0.28)",
                     background:
-                      "linear-gradient(135deg, rgba(0,229,255,0.08) 0%, rgba(0,0,0,0.45) 55%)",
+                      "linear-gradient(160deg, rgba(0,229,255,0.09) 0%, rgba(0,0,0,0.5) 50%)",
                   }
             }
           >
+            {/* Alert strip */}
+            {(() => {
+              const a = isMineScope ? mineAlert : networkAlert;
+              if (!a) return null;
+              const t = alertTone(a.tone);
+              return (
+                <div
+                  className="shrink-0 mb-2 rounded-lg border px-2.5 py-1.5 text-[10px] font-mono tracking-wide leading-snug truncate"
+                  style={{
+                    color: t.c,
+                    borderColor: t.b,
+                    background: t.bg,
+                  }}
+                  title={a.text}
+                >
+                  {a.text}
+                </div>
+              );
+            })()}
+
             <div className="flex items-center justify-between gap-2 shrink-0">
               <div
                 className="text-[9px] font-mono tracking-[0.18em] uppercase"
@@ -625,7 +721,7 @@ function OracleBlock({
             </div>
 
             <div
-              className="mt-1.5 font-mono text-[12px] truncate shrink-0"
+              className="mt-1 font-mono text-[12px] truncate shrink-0"
               style={{ color: isMineScope ? "#F0F0F5" : "#B0B0BC" }}
             >
               {isMineScope
@@ -633,46 +729,33 @@ function OracleBlock({
                 : "Public pool · host metrics"}
             </div>
 
-            {/* Same 3-metric grid on both panes */}
-            <div className="mt-2 grid grid-cols-3 gap-2 text-center shrink-0">
+            {/* 2×3 metric grid — same slots both panes */}
+            <div className="mt-2.5 grid grid-cols-3 gap-x-2 gap-y-2.5 text-center shrink-0">
               <div>
                 <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  {isMineScope ? "Last post" : "Lag"}
+                  {isMineScope ? "Last post" : "Pool lag"}
                 </div>
                 <div
-                  className="mt-0.5 font-mono text-[13px] tabular-nums"
+                  className="mt-0.5 font-mono text-[13px] tabular-nums leading-none"
                   style={{ color: isMineScope ? "#FF7A3D" : "#00E5FF" }}
                 >
                   {isMineScope
                     ? mine?.postAgeBlocks != null
-                      ? `${mine.postAgeBlocks} blk`
+                      ? `${mine.postAgeBlocks}`
                       : "—"
                     : feed.ageBlocks != null
-                      ? `${feed.ageBlocks} blk`
+                      ? `${feed.ageBlocks}`
                       : "—"}
+                  <span className="text-[9px] text-[#6B6B78] ml-0.5">blk</span>
                 </div>
               </div>
               <div>
                 <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  {isMineScope ? "Height" : "Consensus"}
-                </div>
-                <div className="mt-0.5 font-mono text-[12px] tabular-nums text-[#E8E8F0]">
-                  {isMineScope
-                    ? mine?.postHeight != null
-                      ? mine.postHeight.toLocaleString()
-                      : "—"
-                    : `${feed.activeOracles ?? "—"}/${feed.requiredOracles ?? "—"}`}
-                </div>
-              </div>
-              <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  {isMineScope ? "Rewards" : "Health"}
+                  {isMineScope ? "Rewards" : "Active"}
                 </div>
                 <div
-                  className="mt-0.5 font-mono text-[13px] tabular-nums"
-                  style={{
-                    color: isMineScope ? "#E8C547" : health.color,
-                  }}
+                  className="mt-0.5 font-mono text-[13px] tabular-nums leading-none"
+                  style={{ color: isMineScope ? "#E8C547" : "#E8E8F0" }}
                 >
                   {isMineScope
                     ? mine?.claimableRewards != null
@@ -680,6 +763,93 @@ function OracleBlock({
                       : mineNode?.rewardTokens != null
                         ? mineNode.rewardTokens.toLocaleString()
                         : "—"
+                    : `${activeN ?? "—"}`}
+                  {isMineScope && mine?.rewardsDelta != null && (
+                    <span
+                      className="ml-1 text-[10px]"
+                      style={{
+                        color:
+                          mine.rewardsDelta > 0
+                            ? "#34D399"
+                            : mine.rewardsDelta < 0
+                              ? "#F87171"
+                              : "#6B6B78",
+                      }}
+                    >
+                      {mine.rewardsDelta > 0
+                        ? `+${mine.rewardsDelta}`
+                        : mine.rewardsDelta === 0
+                          ? "±0"
+                          : `${mine.rewardsDelta}`}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  {isMineScope ? "Wallet" : "Need"}
+                </div>
+                <div className="mt-0.5 font-mono text-[13px] tabular-nums leading-none text-[#E8E8F0]">
+                  {isMineScope
+                    ? walletErg != null
+                      ? `${walletErg < 10 ? walletErg.toFixed(2) : walletErg.toFixed(1)}`
+                      : "—"
+                    : `${needN ?? "—"}`}
+                  {isMineScope && walletErg != null && (
+                    <span className="text-[9px] text-[#6B6B78] ml-0.5">
+                      ERG
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  {isMineScope ? "In refresh" : "Missing"}
+                </div>
+                <div
+                  className="mt-0.5 font-mono text-[12px] tabular-nums leading-none font-medium"
+                  style={{
+                    color: isMineScope
+                      ? mine?.inLastRefresh === true
+                        ? "#34D399"
+                        : mine?.inLastRefresh === false
+                          ? "#D4A574"
+                          : "#8B8B9A"
+                      : missingN != null && missingN > 0
+                        ? "#D4A574"
+                        : "#34D399",
+                  }}
+                >
+                  {isMineScope
+                    ? mine?.inLastRefresh === true
+                      ? "YES"
+                      : mine?.inLastRefresh === false
+                        ? "NO"
+                        : "—"
+                    : missingN != null
+                      ? `${missingN}`
+                      : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  Quorum
+                </div>
+                <div className="mt-0.5 font-mono text-[12px] tabular-nums leading-none text-[#E8E8F0]">
+                  {activeN != null && needN != null
+                    ? `${activeN}/${needN}`
+                    : "—"}
+                </div>
+              </div>
+              <div>
+                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                  {isMineScope ? "Collect" : "Pool"}
+                </div>
+                <div className="mt-0.5 font-mono text-[12px] tabular-nums leading-none text-[#B0B0BC]">
+                  {isMineScope
+                    ? mine?.collectedAgeBlocks != null
+                      ? `${mine.collectedAgeBlocks} blk`
+                      : "—"
                     : health.label === "—"
                       ? "—"
                       : health.label}
@@ -687,29 +857,20 @@ function OracleBlock({
               </div>
             </div>
 
-            {/* Bottom strip — fixed height so both panes stay level */}
-            <div className="mt-auto pt-2 border-t border-white/[0.06] h-[2.75rem] overflow-hidden">
+            <div className="mt-auto pt-2 border-t border-white/[0.06] h-[1.85rem] overflow-hidden">
               {isMineScope ? (
                 myActivity.length > 0 ? (
-                  <ul className="space-y-0.5">
-                    {myActivity.slice(0, 2).map((row) => (
-                      <li
-                        key={row.id}
-                        className="text-[10px] font-mono truncate text-[#FF7A3D]/90"
-                      >
-                        ◆ {row.message}
-                      </li>
-                    ))}
-                  </ul>
+                  <p className="text-[10px] font-mono truncate text-[#FF7A3D]/90">
+                    ◆ {myActivity[0].message}
+                  </p>
                 ) : (
-                  <p className="text-[10px] text-[#6B6B78] leading-snug line-clamp-2">
-                    Orange node on the map is you. Posts flash when you publish.
+                  <p className="text-[10px] text-[#6B6B78] truncate">
+                    YOU on map · posts flash orange when you publish
                   </p>
                 )
               ) : (
-                <p className="text-[10px] text-[#6B6B78] leading-snug line-clamp-2">
-                  Not on your bridge — public data from lumen (explorer + host
-                  metrics). Attach in ORACLE SETTINGS if you run this pool.
+                <p className="text-[10px] text-[#6B6B78] truncate">
+                  Attach this pool in ORACLE SETTINGS to run as YOURS
                 </p>
               )}
             </div>

@@ -32,10 +32,14 @@ export interface MyOracleOperator {
   matchMethod: "address" | "post_height" | "unknown";
   isHealthy: boolean | null;
   claimableRewards: number | null;
+  rewardsDelta: number | null;
   walletNanoErg: number | null;
+  walletErg: number | null;
   postHeight: number | null;
   collectedHeight: number | null;
   postAgeBlocks: number | null;
+  collectedAgeBlocks: number | null;
+  inLastRefresh: boolean | null;
 }
 
 export interface OracleHistoryPoint {
