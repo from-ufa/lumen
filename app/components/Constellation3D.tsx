@@ -1833,7 +1833,7 @@ function Scene({
                 {musicMode === "file"
                   ? "Playing /audio/stay.* (your file)"
                   : musicMode === "synth"
-                    ? "Lumen space pad · M to toggle"
+                    ? "lumen space pad · M to toggle"
                     : "Press M · stay.mp3 in /public/audio"}
               </div>
             </div>

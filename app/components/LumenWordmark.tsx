@@ -1,4 +1,4 @@
-/** Brand wordmark — lowercase for even letter height. */
+/** Brand name: always lowercase «lumen». */
 export default function LumenWordmark({
   className = "",
 }: {
@@ -7,7 +7,7 @@ export default function LumenWordmark({
   return (
     <span
       className={`font-semibold leading-none tracking-[-0.035em] ${className}`.trim()}
-      aria-label="Lumen"
+      aria-label="lumen"
     >
       lumen
     </span>

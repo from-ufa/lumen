@@ -605,7 +605,7 @@ export async function GET(req: NextRequest) {
       connectedRaw = [];
     }
 
-    let meName = "Lumen Node";
+    let meName = "lumen node";
     try {
       const infoRes = await fetch(`${UPSTREAM}/info`, {
         signal: AbortSignal.timeout(5000),

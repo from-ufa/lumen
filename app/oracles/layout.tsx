@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Oracles · Lumen",
+  title: "Oracles · lumen",
   description:
     "Ergo Oracle Pools — dual Constellation for ERG/USD and ERG/XAU (live on-chain data)",
 };

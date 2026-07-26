@@ -266,11 +266,11 @@ export default function ConnectionSettings({
     if (mode === "my") {
       toast.success("My Node mode", {
         description: bridgeOnline
-          ? "Dashboard reads your node via Lumen Bridge"
+          ? "Dashboard reads your node via lumen bridge"
           : "Run the Docker command below to connect Bridge",
       });
     } else {
-      toast.success("Lumen Node mode", {
+      toast.success("lumen node mode", {
         description: "Using this server’s Ergo node",
       });
     }
@@ -360,7 +360,7 @@ export default function ConnectionSettings({
       return { text: "● WAITING FOR BRIDGE…", ok: false as const };
     }
     return {
-      text: isOnline ? "● LUMEN NODE · ONLINE" : "● LUMEN NODE · OFFLINE",
+      text: isOnline ? "● lumen node · ONLINE" : "● lumen node · OFFLINE",
       ok: isOnline,
     };
   };
@@ -401,7 +401,7 @@ export default function ConnectionSettings({
                     NODE SETTINGS
                   </div>
                   <div className="text-2xl sm:text-3xl font-semibold tracking-tighter mt-1">
-                    {nodeMode === "my" ? "My Node" : "Lumen Node"}
+                    {nodeMode === "my" ? "My Node" : "lumen node"}
                   </div>
                   <div
                     className={`mt-2 text-[10px] font-mono tracking-widest ${
@@ -440,7 +440,7 @@ export default function ConnectionSettings({
                       }`}
                     >
                       <span className="text-[11px] font-mono tracking-widest flex items-center gap-1.5">
-                        <Sparkles size={13} /> LUMEN NODE
+                        <Sparkles size={13} /> lumen node
                       </span>
                       <span className="text-[10px] text-[#A0A0B0]/80 leading-snug font-normal">
                         This server’s Ergo node
@@ -459,7 +459,7 @@ export default function ConnectionSettings({
                         <Cable size={13} /> MY NODE
                       </span>
                       <span className="text-[10px] text-[#A0A0B0]/80 leading-snug font-normal">
-                        Via Lumen Bridge
+                        Via lumen bridge
                       </span>
                     </button>
                   </div>

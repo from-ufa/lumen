@@ -400,7 +400,7 @@ export default function LumenDashboard() {
     }
     toast.loading(
       nodeMode === "my"
-        ? "Reconnecting via Lumen Bridge..."
+        ? "Reconnecting via lumen bridge..."
         : "Reconnecting to Ergo node...",
       { id: "reconnect" }
     );
@@ -652,9 +652,9 @@ export default function LumenDashboard() {
                 title={
                   nodeMode === "my"
                     ? bridgeOnline
-                      ? "Reading your node via Lumen Bridge"
+                      ? "Reading your node via lumen bridge"
                       : "My Node selected — Bridge agent offline"
-                    : "Reading this server’s Lumen Ergo node"
+                    : "Reading this server’s lumen Ergo node"
                 }
               >
                 {nodeMode === "my" ? (
@@ -663,7 +663,7 @@ export default function LumenDashboard() {
                     MY NODE{bridgeOnline ? " · BRIDGE" : ""}
                   </>
                 ) : (
-                  "LUMEN NODE"
+                  "lumen node"
                 )}
               </div>
 
@@ -731,7 +731,7 @@ export default function LumenDashboard() {
                     : "border-white/15 text-[#A0A0B0] bg-white/5"
                 }`}
               >
-                {nodeMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · LUMEN"}
+                {nodeMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
               </span>
               {effectiveInfo?.name && (
                 <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
@@ -815,7 +815,7 @@ export default function LumenDashboard() {
                 lastBlockHeight={lastBlockHeight || (effectiveInfo?.fullHeight || 0)}
                 onPeerHover={setSelectedPeer}
                 hideControls={isAnyModalOpen}
-                centerLabel={nodeMode === "my" ? "My Node" : "Lumen Node"}
+                centerLabel={nodeMode === "my" ? "My Node" : "lumen node"}
                 onSimulateBlock={() => {
                   if ((window as any).__lumenSimulateBlock) {
                     (window as any).__lumenSimulateBlock();

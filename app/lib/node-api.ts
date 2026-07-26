@@ -47,12 +47,12 @@ export function isNodeMode(v: unknown): v is NodeMode {
 
 /** Human-readable active center node (map pin, 3D sun, settings). */
 export function centerNodeLabel(mode: NodeMode): string {
-  return mode === "my" ? "My Node" : "Lumen Node";
+  return mode === "my" ? "My Node" : "lumen node";
 }
 
-/** Uppercase mono label for map tooltips / legends. */
+/** Mono label for map tooltips / legends. */
 export function centerNodeLabelUpper(mode: NodeMode): string {
-  return mode === "my" ? "MY NODE" : "LUMEN NODE";
+  return mode === "my" ? "MY NODE" : "lumen node";
 }
 
 /**

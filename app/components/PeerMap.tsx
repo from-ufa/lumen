@@ -343,7 +343,7 @@ function peerPopupHtml(
   },
   isMe = false,
   /** Active data source label for the center pin, e.g. LUMEN NODE / MY NODE */
-  meRoleLabel = "LUMEN NODE"
+  meRoleLabel = "lumen node"
 ): string {
   const loc =
     [m.city, m.country].filter(Boolean).join(", ") || "Unknown location";
@@ -684,7 +684,7 @@ function FocusNodeLayer({
 function MeMarkerLayer({
   me,
   onSelect,
-  roleLabel = "LUMEN NODE",
+  roleLabel = "lumen node",
 }: {
   me: PeerMapMarker;
   onSelect: (m: PeerMapMarker) => void;
@@ -2003,7 +2003,7 @@ export default function PeerMap({
               <MeMarkerLayer
                 me={data.me}
                 onSelect={(m) => handleSelectPeer(m, { fly: false })}
-                roleLabel={nodeMode === "my" ? "MY NODE" : "LUMEN NODE"}
+                roleLabel={nodeMode === "my" ? "MY NODE" : "lumen node"}
               />
             )}
 
@@ -2134,7 +2134,7 @@ export default function PeerMap({
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[40] glass rounded-2xl px-4 py-2 text-[10px] font-mono tracking-wider border border-white/10 hidden md:flex items-center gap-3.5 text-[#A0A0B0] pointer-events-none">
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#FF7A3D]" />{" "}
-          {nodeMode === "my" ? "My Node" : "Lumen"}
+          {nodeMode === "my" ? "My Node" : "lumen"}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#00E5FF] shadow-[0_0_6px_rgba(0,229,255,0.6)]" />{" "}
@@ -2180,7 +2180,7 @@ export default function PeerMap({
                     {selected.id === "me"
                       ? nodeMode === "my"
                         ? "MY NODE"
-                        : "LUMEN NODE"
+                        : "lumen node"
                       : stateMeta(normalizeState(selected.state)).short}
                   </div>
                   <div className="font-semibold text-sm break-all">
@@ -2237,8 +2237,8 @@ export default function PeerMap({
                     {selected.id === "me" && (
                       <span className="text-[#FF7A3D]">
                         {nodeMode === "my"
-                          ? "Active source · via Lumen Bridge"
-                          : "Active source · this Lumen server"}
+                          ? "Active source · via lumen bridge"
+                          : "Active source · this lumen server"}
                       </span>
                     )}
                   </div>
@@ -2395,7 +2395,7 @@ export default function PeerMap({
                 {selected.id === "me"
                   ? nodeMode === "my"
                     ? "MY NODE"
-                    : "LUMEN NODE"
+                    : "lumen node"
                   : stateMeta(normalizeState(selected.state)).short}
               </div>
               <div className="font-semibold text-sm break-all">
@@ -2516,7 +2516,7 @@ export default function PeerMap({
             <span className="w-2 h-2 rounded-full bg-[#FF7A3D]" />
             <span>
               <span className="text-white">
-                {nodeMode === "my" ? "My Node" : "Lumen Node"}
+                {nodeMode === "my" ? "My Node" : "lumen node"}
               </span>
               {nodeMode === "my" ? " — via Bridge" : " — center"}
             </span>

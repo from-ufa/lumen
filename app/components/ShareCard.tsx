@@ -106,7 +106,7 @@ export default function ShareCard({
     ``,
     `Watch it live: ${origin}`,
     ``,
-    `#Ergo #Lumen`,
+    `#Ergo #lumen`,
   ].join("\n");
 
   const copyLink = async () => {
@@ -306,7 +306,7 @@ export default function ShareCard({
                       </div>
                       <div className="min-w-0">
                         <div className="font-semibold text-2xl tracking-tight text-white leading-none">
-                          Lumen
+                          lumen
                         </div>
                         <div className="text-[10px] sm:text-[11px] text-[#A0A0B0] mt-1.5 leading-snug">
                           Ergo Node Dashboard · The living pulse of your Ergo node
@@ -370,7 +370,7 @@ export default function ShareCard({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="text-[10px] font-mono tracking-[0.2em] text-[#A0A0B0]/85 mb-1">
-                        POWERED BY LUMEN
+                        powered by lumen
                       </div>
                       <div className="text-[11px] text-[#A0A0B0]/70 leading-snug max-w-[200px]">
                         Scan QR or open the link to watch this node live.
@@ -399,7 +399,7 @@ export default function ShareCard({
                         bgColor="#FFFFFF"
                         fgColor="#0A0A0F"
                         marginSize={0}
-                        title="Lumen public URL QR"
+                        title="lumen public URL QR"
                       />
                     </div>
                   </div>

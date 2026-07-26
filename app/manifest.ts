@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Lumen — Ergo Node Dashboard",
-    short_name: "Lumen",
+    name: "lumen — Ergo Node Dashboard",
+    short_name: "lumen",
     description: "The living pulse of your Ergo node",
     start_url: "/",
     scope: "/",
