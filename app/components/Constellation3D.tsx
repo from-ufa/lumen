@@ -77,12 +77,13 @@ const HUD_CARD =
 const HUD_BTN =
   "glass w-full h-11 px-4 rounded-2xl text-[11px] font-mono tracking-widest border border-white/10 hover:border-white/25 flex items-center justify-center gap-2 transition-all active:scale-[0.985] box-border";
 
-/** Orbital radii (world units) — denser shells */
+/** Orbital radii (world units) — altitude ~½ of previous (2× closer to Earth) */
 const EARTH_R = 3.2;
 const SHELL_R: Record<PeerShell, [number, number]> = {
-  live: [5.2, 6.9],
-  seen: [7.6, 9.8],
-  ghost: [10.6, 13.6],
+  // EARTH_R + (old - EARTH_R) / 2
+  live: [4.2, 5.05],
+  seen: [5.4, 6.5],
+  ghost: [6.9, 8.4],
 };
 
 /** Premium status palette — bright live, calm seen, muted ghost */
