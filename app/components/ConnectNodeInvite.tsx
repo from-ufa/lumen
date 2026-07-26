@@ -1,20 +1,24 @@
 "use client";
 
 /**
- * Persistent call-to-action: connect your Ergo node via My Node / Settings.
- * After delay expands once, then STAYS and gently pulses until user is on My Node.
- * Purpose: invite operators into the lumen network.
+ * Connect-node invite — typewriter terminal field (search font).
+ * Shell expands after delay, stays open; text types letter by letter with blinking _.
+ * No icons / logos. Click opens Settings → My Node.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Cable, Settings } from "lucide-react";
 
-/** Legacy key — clear so one-time dismiss never hides the invite again */
+/** Legacy key — clear so old permanent dismiss never hides the invite */
 const LS_DISMISS_LEGACY = "lumen-connect-node-invite-dismissed";
 
+const FULL_TEXT =
+  "Connect your Ergo node to lumen.\nOpen Settings → My Node.";
+
+const TYPE_MS = 38;
+const CURSOR_ONLY_MS = 700;
+
 export default function ConnectNodeInvite({
-  /** Only show when browsing lumen host (not already My Node) */
   enabled,
   onOpenSettings,
   delayMs = 5000,
@@ -24,8 +28,10 @@ export default function ConnectNodeInvite({
   delayMs?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const [typing, setTyping] = useState(false);
+  const [done, setDone] = useState(false);
 
-  // Wipe old permanent dismiss so CTA always comes back
   useEffect(() => {
     try {
       localStorage.removeItem(LS_DISMISS_LEGACY);
@@ -34,15 +40,50 @@ export default function ConnectNodeInvite({
     }
   }, []);
 
-  // Expand after dwell time; stays open while enabled
   useEffect(() => {
     if (!enabled) {
       setOpen(false);
+      setTyped("");
+      setTyping(false);
+      setDone(false);
       return;
     }
     const t = window.setTimeout(() => setOpen(true), delayMs);
     return () => window.clearTimeout(t);
   }, [enabled, delayMs]);
+
+  // Typewriter: empty + blinking _ first, then char by char
+  useEffect(() => {
+    if (!open || !enabled) return;
+
+    setTyped("");
+    setTyping(false);
+    setDone(false);
+
+    let i = 0;
+    let intervalId = 0;
+    const startId = window.setTimeout(() => {
+      setTyping(true);
+      intervalId = window.setInterval(() => {
+        i += 1;
+        if (i >= FULL_TEXT.length) {
+          setTyped(FULL_TEXT);
+          setTyping(false);
+          setDone(true);
+          window.clearInterval(intervalId);
+          return;
+        }
+        setTyped(FULL_TEXT.slice(0, i));
+      }, TYPE_MS);
+    }, CURSOR_ONLY_MS);
+
+    return () => {
+      window.clearTimeout(startId);
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [open, enabled]);
+
+  const lines = useMemo(() => typed.split("\n"), [typed]);
 
   if (!enabled) return null;
 
@@ -54,187 +95,108 @@ export default function ConnectNodeInvite({
             key="connect-invite"
             initial={{
               opacity: 0,
-              scaleX: 0.08,
-              scaleY: 0.35,
-              filter: "blur(10px)",
-            }}
-            animate={{
-              opacity: 1,
-              scaleX: 1,
-              scaleY: 1,
-              filter: "blur(0px)",
-            }}
-            exit={{
-              opacity: 0,
-              scaleX: 0.12,
+              scaleX: 0.06,
               scaleY: 0.4,
-              filter: "blur(8px)",
-              transition: { duration: 0.35, ease: [0.4, 0, 0.2, 1] },
             }}
+            animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
+            exit={{ opacity: 0, scaleX: 0.1, scaleY: 0.4 }}
             transition={{
-              duration: 0.75,
+              duration: 0.7,
               ease: [0.16, 1, 0.3, 1],
-              opacity: { duration: 0.45 },
-              filter: { duration: 0.55 },
             }}
             style={{ originX: 1, originY: 0, transformOrigin: "right top" }}
             className="relative w-full max-w-[min(100%,22rem)] md:max-w-[22rem]"
           >
-            {/* Outer pulse halo — keeps drawing the eye */}
+            {/* Soft persistent pulse — attention without icons */}
             <motion.div
               aria-hidden
-              className="pointer-events-none absolute -inset-3 rounded-[1.35rem]"
-              animate={{
-                opacity: [0.35, 0.75, 0.35],
-                scale: [1, 1.03, 1],
-              }}
-              transition={{
-                duration: 2.8,
-                ease: "easeInOut",
-                repeat: Infinity,
-              }}
+              className="pointer-events-none absolute -inset-2 rounded-2xl"
+              animate={{ opacity: [0.25, 0.55, 0.25] }}
+              transition={{ duration: 2.8, ease: "easeInOut", repeat: Infinity }}
               style={{
-                background:
-                  "radial-gradient(ellipse 80% 70% at 70% 50%, rgba(255,122,61,0.35), rgba(0,229,255,0.1) 50%, transparent 72%)",
-                filter: "blur(6px)",
+                boxShadow:
+                  "0 0 0 1px rgba(232,232,240,0.08), 0 0 28px rgba(255,122,61,0.12)",
               }}
             />
 
-            <motion.div
-              className="relative overflow-hidden rounded-2xl border backdrop-blur-2xl"
-              animate={{
-                borderColor: [
-                  "rgba(255,122,61,0.28)",
-                  "rgba(255,122,61,0.55)",
-                  "rgba(0,229,255,0.35)",
-                  "rgba(255,122,61,0.28)",
-                ],
-                boxShadow: [
-                  "0 16px 40px rgba(0,0,0,0.4), 0 0 0 0 rgba(255,122,61,0)",
-                  "0 18px 48px rgba(0,0,0,0.45), 0 0 28px 2px rgba(255,122,61,0.22)",
-                  "0 16px 44px rgba(0,0,0,0.42), 0 0 24px 1px rgba(0,229,255,0.12)",
-                  "0 16px 40px rgba(0,0,0,0.4), 0 0 0 0 rgba(255,122,61,0)",
-                ],
-              }}
-              transition={{
-                duration: 3.2,
-                ease: "easeInOut",
-                repeat: Infinity,
-              }}
-              style={{
-                background:
-                  "linear-gradient(135deg, rgba(18,18,28,0.94) 0%, rgba(12,14,22,0.9) 55%, rgba(22,12,10,0.92) 100%)",
-              }}
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="
+                group relative w-full text-left rounded-2xl border border-white/10
+                bg-[#0A0A0F]/92 backdrop-blur-xl
+                shadow-[0_8px_32px_rgba(0,0,0,0.45)]
+                px-3.5 py-2.5
+                transition-colors duration-300
+                hover:border-white/20
+                focus:outline-none focus-visible:border-[#E8E8F0]/35
+              "
+              aria-label="Open settings to connect your Ergo node"
             >
-              {/* Soft sweep loop */}
-              <motion.div
-                aria-hidden
-                className="pointer-events-none absolute inset-y-0 w-1/3"
-                animate={{ x: ["-40%", "280%"], opacity: [0, 0.45, 0] }}
-                transition={{
-                  duration: 4.5,
-                  ease: "easeInOut",
-                  repeat: Infinity,
-                  repeatDelay: 1.2,
-                }}
-                style={{
-                  background:
-                    "linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent)",
-                }}
-              />
-
-              <div className="relative px-4 py-3.5 sm:px-4 sm:py-4">
-                <div className="flex items-start gap-3">
-                  <motion.div
-                    className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#FF7A3D]/35"
-                    animate={{
-                      boxShadow: [
-                        "0 0 12px rgba(255,122,61,0.2)",
-                        "0 0 22px rgba(255,122,61,0.45)",
-                        "0 0 12px rgba(255,122,61,0.2)",
-                      ],
-                    }}
-                    transition={{
-                      duration: 2.2,
-                      ease: "easeInOut",
-                      repeat: Infinity,
-                    }}
-                    style={{
-                      background:
-                        "linear-gradient(145deg, rgba(255,122,61,0.25), rgba(0,229,255,0.1))",
-                    }}
-                  >
-                    <Cable className="h-4 w-4 text-[#FF7A3D]" />
-                  </motion.div>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-mono tracking-[0.22em] text-[#FF7A3D] uppercase">
-                        Join the network
-                      </span>
+              {/* Typewriter field — same language as lumen-search-input */}
+              <div
+                className="
+                  lumen-search-input min-h-[2.75rem] w-full
+                  font-mono tracking-wide text-[#E8E8F0]
+                  whitespace-pre-wrap break-words
+                "
+                style={{ lineHeight: 1.45 }}
+              >
+                {lines.map((line, li) => (
+                  <span key={li} className="block">
+                    {line}
+                    {/* caret only on last line while typing or after done (idle blink) */}
+                    {li === lines.length - 1 && (
                       <span
-                        className="inline-flex h-1.5 w-1.5 rounded-full bg-[#FF7A3D] status-dot"
+                        className="lumen-search-caret ml-0.5 text-[#E8E8F0]"
                         aria-hidden
-                      />
-                    </div>
-                    <p className="mt-1 text-[13px] sm:text-sm font-medium text-[#F0F0F6] leading-snug tracking-tight">
-                      Connect your Ergo node to lumen
-                    </p>
-                    <p className="mt-1 text-[11px] text-[#8B8B9A] leading-relaxed">
-                      Run the Bridge — show your height, peers, and map. One
-                      token. Settings → My Node.
-                    </p>
-
-                    <div className="mt-3">
-                      <motion.button
-                        type="button"
-                        onClick={onOpenSettings}
-                        className="inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[10px] font-mono tracking-[0.16em] uppercase text-black active:scale-[0.98]"
-                        animate={{
-                          boxShadow: [
-                            "0 6px 18px rgba(255,122,61,0.25)",
-                            "0 8px 28px rgba(255,122,61,0.45)",
-                            "0 6px 18px rgba(255,122,61,0.25)",
-                          ],
-                        }}
-                        transition={{
-                          duration: 2.4,
-                          ease: "easeInOut",
-                          repeat: Infinity,
-                        }}
-                        style={{
-                          background:
-                            "linear-gradient(120deg, #FF7A3D 0%, #FF9A5C 50%, #00E5FF 160%)",
-                        }}
                       >
-                        <Settings className="h-3 w-3" />
-                        Open settings
-                      </motion.button>
-                    </div>
-                  </div>
-                </div>
+                        _
+                      </span>
+                    )}
+                  </span>
+                ))}
+                {/* empty state: only caret */}
+                {typed.length === 0 && (
+                  <span className="lumen-search-caret text-[#E8E8F0]" aria-hidden>
+                    _
+                  </span>
+                )}
               </div>
-            </motion.div>
+
+              {/* Invisible spacer so height doesn't jump while typing short first line */}
+              <span className="sr-only">{FULL_TEXT}</span>
+            </button>
+
+            {/* Hint under field after type finishes */}
+            <AnimatePresence>
+              {done && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 0.55 }}
+                  exit={{ opacity: 0 }}
+                  className="mt-1.5 px-1 text-right font-mono text-[10px] tracking-wide text-[#E8E8F0]"
+                >
+                  tap to open settings
+                </motion.p>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Seed pulse while waiting to expand */}
+      {/* Seed before expand */}
       <AnimatePresence>
         {!open && (
           <motion.div
             key="seed"
-            initial={{ opacity: 0, scale: 0.4 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 1.8 }}
-            transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-2 top-1 pointer-events-none w-0 h-0"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute right-1 top-0.5 pointer-events-none font-mono text-[#E8E8F0]"
             aria-hidden
           >
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#FF7A3D]/5" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#FF7A3D] shadow-[0_0_14px_rgba(255,122,61,0.85)]" />
-            </span>
+            <span className="lumen-search-caret text-sm">_</span>
           </motion.div>
         )}
       </AnimatePresence>
