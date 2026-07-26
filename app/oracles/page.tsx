@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import LumenWordmark from "../components/LumenWordmark";
 import OraclesDualView from "./components/OraclesDualView";
 import type { OraclesApiResponse } from "./components/types";
 
@@ -61,8 +62,8 @@ export default function OraclesPage() {
                 <Zap className="w-4 h-4 text-black" />
               </div>
               <div className="min-w-0">
-                <div className="font-semibold tracking-[-0.5px] text-xl leading-none truncate">
-                  Lumen
+                <div className="tracking-[-0.5px] text-xl leading-none truncate">
+                  <LumenWordmark />
                 </div>
                 <div className="text-[8px] text-[#A0A0B0] mt-0.5 font-mono tracking-[1.5px] truncate">
                   Oracles
@@ -137,8 +138,8 @@ export default function OraclesPage() {
                   <Zap className="w-5 h-5 text-black" />
                 </div>
                 <div className="min-w-0">
-                  <div className="font-semibold tracking-[-0.5px] text-3xl leading-none group-hover:text-white transition-colors">
-                    Lumen
+                  <div className="tracking-[-0.5px] text-3xl leading-none group-hover:text-white transition-colors">
+                    <LumenWordmark />
                   </div>
                   <div className="text-[10px] text-[#A0A0B0] mt-0.5 font-mono tracking-[3px] truncate">
                     Ergo Node Dashboard
@@ -189,7 +190,7 @@ export default function OraclesPage() {
               Consensus, visualized.
             </h1>
             <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1">
-              Live ERG/USD and ERG/XAU from on-chain pool boxes.
+              Live USD and XAU from on-chain pool boxes.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
               <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#A0A0B0] bg-white/5">

@@ -18,6 +18,7 @@ import BlocksTimeline from './components/BlocksTimeline';
 import MempoolFlow from './components/MempoolFlow';
 import ConnectionSettings from './components/ConnectionSettings';
 import ShareCard from './components/ShareCard';
+import LumenWordmark from './components/LumenWordmark';
 import type { NodeInfo, Peer, RecentBlock } from './types/ergo';
 import {
   openBlockOnSigmaSpace,
@@ -454,8 +455,8 @@ export default function LumenDashboard() {
                 <Zap className="w-4 h-4 text-black" />
               </div>
               <div className="min-w-0">
-                <div className="font-semibold tracking-[-0.5px] text-xl leading-none truncate">
-                  Lumen
+                <div className="tracking-[-0.5px] text-xl leading-none truncate">
+                  <LumenWordmark />
                 </div>
                 <div className="text-[8px] text-[#A0A0B0] mt-0.5 font-mono tracking-[1.5px] truncate">
                   Ergo Node Dashboard
@@ -607,8 +608,8 @@ export default function LumenDashboard() {
                 <Zap className="w-5 h-5 text-black" />
               </div>
               <div className="min-w-0">
-                <div className="font-semibold tracking-[-0.5px] text-3xl leading-none">
-                  Lumen
+                <div className="tracking-[-0.5px] text-3xl leading-none">
+                  <LumenWordmark />
                 </div>
                 <div className="text-[10px] text-[#A0A0B0] mt-0.5 font-mono tracking-[3px] truncate">
                   Ergo Node Dashboard
