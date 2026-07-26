@@ -77,7 +77,6 @@ export default function LumenDashboard() {
   const [lastBlockHeight, setLastBlockHeight] = useState(0);
   const [avgBlockTime, setAvgBlockTime] = useState<number | null>(null);
   const [avgBlockSamples, setAvgBlockSamples] = useState(0);
-  const [selectedPeer, setSelectedPeer] = useState<Peer | null>(null);
   const [viewMode, setViewMode] = useState<'constellation' | 'map'>('constellation');
   const [publicMode, setPublicMode] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
@@ -820,7 +819,6 @@ export default function LumenDashboard() {
                 myNodeHeight={effectiveInfo?.fullHeight || effectiveInfo?.headersHeight || 0}
                 isOnline={isOnline}
                 lastBlockHeight={lastBlockHeight || (effectiveInfo?.fullHeight || 0)}
-                onPeerHover={setSelectedPeer}
                 hideControls={isAnyModalOpen}
                 centerLabel={nodeMode === "my" ? "My Node" : "lumen node"}
                 onSimulateBlock={() => {
@@ -831,14 +829,6 @@ export default function LumenDashboard() {
                   }
                 }}
               />
-              
-              {selectedPeer && (
-                <div className="mt-2.5 md:mt-0 md:absolute md:bottom-6 md:left-1/2 md:-translate-x-1/2 z-30 glass rounded-2xl sm:rounded-3xl px-4 sm:px-8 py-2.5 sm:py-3 flex flex-wrap items-center gap-2 sm:gap-6 text-sm border border-white/10 w-full md:w-auto md:max-w-[min(90vw,520px)]">
-                  <div className="font-mono text-[#00E5FF] text-[10px] sm:text-xs tracking-[2px]">SELECTED PEER</div>
-                  <div className="font-mono text-white text-xs sm:text-sm break-all flex-1 min-w-0">{selectedPeer.address || selectedPeer.name || '—'}</div>
-                  <button onClick={() => setSelectedPeer(null)} className="text-[#A0A0B0] hover:text-white text-xs font-mono tracking-widest flex-shrink-0">CLOSE</button>
-                </div>
-              )}
             </>
           ) : (
             <PeerMap
