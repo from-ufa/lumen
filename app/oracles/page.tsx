@@ -13,7 +13,6 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import LumenWordmark from "../components/LumenWordmark";
 import ConnectionSettings from "../components/ConnectionSettings";
-import ShareCard from "../components/ShareCard";
 import {
   HeaderActions,
   HeaderIconButton,
@@ -62,7 +61,6 @@ export default function OraclesPage() {
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
-  const [shareOpenKey, setShareOpenKey] = useState(0);
 
   const [viewMode, setViewMode] = useState<OracleViewMode>("network");
   const [bridgeToken, setBridgeToken] = useState("");
@@ -158,27 +156,6 @@ export default function OraclesPage() {
               className="flex items-center gap-1.5 shrink-0"
               ref={mobileMenuRef}
             >
-              <HeaderPill
-                tone={
-                  viewMode === "my"
-                    ? bridgeOnline
-                      ? "live"
-                      : "warn"
-                    : isOnline
-                      ? "live"
-                      : "offline"
-                }
-                showDot
-                className="!h-9 !px-3 !text-[9px]"
-              >
-                {viewMode === "my"
-                  ? bridgeOnline
-                    ? "LIVE"
-                    : "OFF"
-                  : isOnline
-                    ? "LIVE"
-                    : "OFF"}
-              </HeaderPill>
               <div className="relative">
                 <HeaderIconButton
                   onClick={() => setMobileMenuOpen((v) => !v)}
@@ -208,21 +185,6 @@ export default function OraclesPage() {
                         <Home className="w-3.5 h-3.5 text-[#A0A0B0] shrink-0" />
                         DASHBOARD
                       </Link>
-                      <div className="h-px bg-white/[0.06]" />
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMobileMenuOpen(false);
-                          setShareOpenKey((k) => k + 1);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
-                      >
-                        <span className="w-3.5 h-3.5 text-[#FF7A3D] shrink-0 text-center leading-none">
-                          ↗
-                        </span>
-                        SHARE
-                      </button>
                       <div className="h-px bg-white/[0.06]" />
                       <button
                         type="button"
@@ -276,52 +238,6 @@ export default function OraclesPage() {
 
             <HeaderActions>
               <HeaderPill
-                tone={
-                  viewMode === "my"
-                    ? bridgeOnline
-                      ? "live"
-                      : "warn"
-                    : isOnline
-                      ? "live"
-                      : "offline"
-                }
-                showDot
-                title={
-                  viewMode === "my"
-                    ? bridgeOnline
-                      ? "Your oracle agent via lumen bridge"
-                      : "My Oracle — Bridge offline · open ORACLE SETTINGS"
-                    : "Public network pools"
-                }
-              >
-                {viewMode === "my"
-                  ? bridgeOnline
-                    ? "MY ORACLE LIVE"
-                    : "BRIDGE OFF"
-                  : isOnline
-                    ? "NETWORK LIVE"
-                    : "NETWORK OFF"}
-              </HeaderPill>
-
-              <HeaderPill
-                tone={
-                  viewMode === "my"
-                    ? bridgeOnline
-                      ? "cyan"
-                      : "warn"
-                    : "neutral"
-                }
-                className="hidden md:inline-flex"
-                title={
-                  viewMode === "my"
-                    ? "My Oracle via bridge"
-                    : "Public oracle pools from lumen host"
-                }
-              >
-                {viewMode === "my" ? "MY ORACLE" : "NETWORK"}
-              </HeaderPill>
-
-              <HeaderPill
                 as="link"
                 href="/"
                 tone="gold"
@@ -330,16 +246,6 @@ export default function OraclesPage() {
                 <Home className="w-3.5 h-3.5 shrink-0 opacity-90" />
                 DASHBOARD
               </HeaderPill>
-
-              <ShareCard
-                variant="oracle"
-                isOnline={isOnline}
-                oracleFeeds={feeds}
-                oracleView={viewMode}
-                bridgeOnline={bridgeOnline}
-                triggerLabel="SHARE MY ORACLE"
-                openKey={shareOpenKey}
-              />
 
               <div className="hidden sm:contents">
                 <ConnectionSettings
@@ -405,10 +311,34 @@ export default function OraclesPage() {
                 : "Live USD and XAU from on-chain pool boxes."}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
-              <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#A0A0B0] bg-white/5">
+              <span
+                title={
+                  isOnline
+                    ? viewMode === "my"
+                      ? "Live — bridge oracle"
+                      : "Live — lumen network oracles"
+                    : "Oracle source offline"
+                }
+                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
+                  isOnline
+                    ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                    : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                  }`}
+                  aria-hidden
+                />
                 {viewMode === "my"
-                  ? "SOURCE · BRIDGE + EXPLORER"
-                  : "SOURCE · EXPLORER + METRICS"}
+                  ? "SOURCE · BRIDGE"
+                  : "SOURCE · lumen"}
+                {isOnline && (
+                  <span className="text-[9px] tracking-[0.14em] opacity-80">
+                    LIVE
+                  </span>
+                )}
               </span>
               {data?.tipHeight != null && (
                 <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
