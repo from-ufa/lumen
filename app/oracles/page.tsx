@@ -13,6 +13,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import LumenWordmark from "../components/LumenWordmark";
 import ConnectionSettings from "../components/ConnectionSettings";
+import ShareCard from "../components/ShareCard";
 import {
   HeaderActions,
   HeaderIconButton,
@@ -61,6 +62,7 @@ export default function OraclesPage() {
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [shareOpenKey, setShareOpenKey] = useState(0);
 
   const [viewMode, setViewMode] = useState<OracleViewMode>("network");
   const [bridgeToken, setBridgeToken] = useState("");
@@ -212,6 +214,21 @@ export default function OraclesPage() {
                         role="menuitem"
                         onClick={() => {
                           setMobileMenuOpen(false);
+                          setShareOpenKey((k) => k + 1);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
+                      >
+                        <span className="w-3.5 h-3.5 text-[#FF7A3D] shrink-0 text-center leading-none">
+                          ↗
+                        </span>
+                        SHARE
+                      </button>
+                      <div className="h-px bg-white/[0.06]" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
                           setSettingsOpenKey((k) => k + 1);
                         }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
@@ -313,6 +330,16 @@ export default function OraclesPage() {
                 <Home className="w-3.5 h-3.5 shrink-0 opacity-90" />
                 DASHBOARD
               </HeaderPill>
+
+              <ShareCard
+                variant="oracle"
+                isOnline={isOnline}
+                oracleFeeds={feeds}
+                oracleView={viewMode}
+                bridgeOnline={bridgeOnline}
+                triggerLabel="SHARE MY ORACLE"
+                openKey={shareOpenKey}
+              />
 
               <div className="hidden sm:contents">
                 <ConnectionSettings
