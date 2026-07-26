@@ -50,6 +50,18 @@ export type ChainBlock = {
 /** Viz lifecycle stage for timeline */
 export type ParticleStage = "mempool" | "assembling" | "sealed" | "focus";
 
+/** TX constellation group for Block Genesis (client-ready) */
+export type ChainTxGroup = {
+  txId: string;
+  stage: ParticleStage;
+  pending: boolean;
+  inputs: number;
+  outputs: number;
+  ergNano: string;
+  tokens: Array<ChainToken & { label: string; color: string }>;
+  particleIds: string[];
+};
+
 export type ChainFeed = {
   source: "local" | "mixed" | "fallback";
   node: string;
@@ -60,6 +72,8 @@ export type ChainFeed = {
   mempool: ChainTx[];
   /** Flattened particles for viz (mempool + tip + optional address focus) */
   particles: ChainParticle[];
+  /** Per-TX groups for constellation viz (Block Genesis) */
+  txGroups: ChainTxGroup[];
   /** Address focus snapshot (when ?address=) */
   focus?: AddressView | null;
   /** Token id → display name (server cache) */
@@ -463,6 +477,14 @@ export async function getChainFeed(opts?: {
   // Cap total particles for GPU
   const capped = particles.slice(0, 260);
 
+  // TX groups for Block Genesis (constellations)
+  const txGroups = buildTxGroups({
+    mempool: mempool.slice(0, 16),
+    tipTxs: tip ? tip.transactions.slice(0, 16) : [],
+    particles: capped,
+    tokenNames,
+  });
+
   return {
     source: "local",
     node: NODE_URL,
@@ -472,10 +494,51 @@ export async function getChainFeed(opts?: {
     recent,
     mempool,
     particles: capped,
+    txGroups,
     focus: focus || null,
     tokenNames,
     generatedAt: new Date().toISOString(),
   };
+}
+
+function buildTxGroups(opts: {
+  mempool: ChainTx[];
+  tipTxs: ChainTx[];
+  particles: ChainParticle[];
+  tokenNames: Record<string, string>;
+}): ChainTxGroup[] {
+  const byTx = new Map<string, ChainParticle[]>();
+  for (const p of opts.particles) {
+    if (!p.txId || p.txId === "focus") continue;
+    const arr = byTx.get(p.txId) || [];
+    arr.push(p);
+    byTx.set(p.txId, arr);
+  }
+
+  const groups: ChainTxGroup[] = [];
+  const pushTx = (tx: ChainTx, stage: ParticleStage) => {
+    if (!tx.id) return;
+    const parts = byTx.get(tx.id) || [];
+    groups.push({
+      txId: tx.id,
+      stage,
+      pending: tx.pending,
+      inputs: tx.inputs,
+      outputs: tx.outputs,
+      ergNano: tx.ergNano,
+      tokens: tx.tokens.map((t) => ({
+        ...t,
+        label: displayLabel(t.tokenId, opts.tokenNames),
+        color: colorFromId(t.tokenId),
+        name: opts.tokenNames[t.tokenId] || t.name || null,
+      })),
+      particleIds: parts.map((p) => p.id),
+    });
+  };
+
+  for (const tx of opts.mempool) pushTx(tx, "mempool");
+  for (const tx of opts.tipTxs) pushTx(tx, "sealed");
+  return groups;
 }
 
 export async function getAddress(address: string): Promise<AddressView> {
