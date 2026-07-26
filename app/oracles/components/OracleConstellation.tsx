@@ -212,10 +212,18 @@ function confidenceFromFeed(feed: OracleFeedData): number {
 export default function OracleConstellation({
   feed,
   compact = false,
+  /** When false, only canvas + tooltip — parent shell owns metrics panels */
+  chrome = true,
+  /** Bubble activity log for parent shell */
+  onActivity,
 }: {
   feed: OracleFeedData;
   /** Tighter layout for dual-pane */
   compact?: boolean;
+  chrome?: boolean;
+  onActivity?: (
+    rows: { id: string; t: number; kind: string; message: string }[]
+  ) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -418,6 +426,7 @@ export default function OracleConstellation({
           })),
           ...log,
         ].slice(0, 24);
+        onActivity?.(next);
         return next;
       });
     }
@@ -1075,186 +1084,27 @@ export default function OracleConstellation({
         }}
       />
 
-      <style>{`
-        @media (max-width: 900px) {
-          .oc-legend { display: none !important; }
-        }
-        @media (max-width: 640px) {
-          .oc-hud { min-width: 120px !important; padding: 10px 12px !important; }
-          .oc-hud-value { font-size: 16px !important; }
-        }
-      `}</style>
-
-      {/* HUD: Network */}
-      <div className="oc-hud" style={hudStyle}>
-        <div style={hudLabelStyle}>Network Consensus</div>
-        <div className="oc-hud-value" style={hudValueStyle}>
-          <span style={{ ...dotStyle, background: statusColorHud }} />
-          {activeCount}/{totalCount}
-        </div>
-        <div style={hudSubStyle}>
-          oracles · {poolStatus.toUpperCase()}
-        </div>
-      </div>
-
-      {/* HUD: Pool */}
-      <div className="oc-hud" style={{ ...hudStyle, left: compact ? 200 : 260 }}>
-        <div style={hudLabelStyle}>Pool</div>
-        <div className="oc-hud-value" style={{ ...hudValueStyle, fontSize: 18 }}>
-          <span style={{ color: feed.accent || "#00E5FF" }}>{feed.pair}</span>
-        </div>
-        <div style={hudSubStyle}>
-          lag {ageBlocks ?? "—"} blk
-          {feed.tipHeight != null ? ` · tip ${feed.tipHeight}` : ""}
-        </div>
-      </div>
-
-      {/* HUD: Datapoint */}
-      <div className="oc-hud" style={{ ...hudStyle, top: compact ? 118 : 130 }}>
-        <div style={hudLabelStyle}>On-chain datapoint</div>
-        <div
-          className="oc-hud-value"
-          style={{ ...hudValueStyle, color: "#00E5FF", fontSize: 20 }}
-        >
-          {priceLabel}
-        </div>
-        <div style={hudSubStyle}>
-          conf {confidence}% · src {activeSources}
-          {feed.requiredOracles != null
-            ? ` · need ${feed.requiredOracles}`
-            : ""}
-          {feed.unitLabel ? ` · ${feed.unitLabel}` : ""}
-        </div>
-        <div
-          style={{
-            ...hudSubStyle,
-            marginTop: 6,
-            color:
-              livePhase === "idle"
-                ? "rgba(226,232,240,0.35)"
-                : livePhase === "datapoints"
-                  ? "#00D4AA"
-                  : livePhase === "rewards"
-                    ? "#FFD700"
-                    : "#00E5FF",
-          }}
-        >
-          FLOW · {livePhase.toUpperCase()}
-          {feed.poolHealthy != null
-            ? feed.poolHealthy
-              ? " · POOL OK"
-              : " · POOL DOWN"
-            : ""}
-        </div>
-      </div>
-
-      {/* Live activity log — real posts / rewards / refreshes */}
-      <div
-        style={{
-          position: "absolute",
-          left: 14,
-          bottom: compact ? 78 : 88,
-          zIndex: 12,
-          width: compact ? "min(280px, 46%)" : "min(320px, 40%)",
-          maxHeight: compact ? 110 : 140,
-          overflow: "hidden",
-          background: "rgba(13,19,33,0.82)",
-          backdropFilter: "blur(16px)",
-          border: "1px solid rgba(255,255,255,0.06)",
-          borderRadius: 12,
-          padding: "10px 12px",
-          pointerEvents: "none",
-        }}
-      >
-        <div style={{ ...hudLabelStyle, marginBottom: 6 }}>Live activity</div>
-        {activityLog.length === 0 ? (
-          <div style={{ ...hudSubStyle, fontSize: 10 }}>
-            Waiting for network posts / pool refresh…
-          </div>
-        ) : (
-          activityLog.slice(0, 6).map((row) => (
-            <div
-              key={row.id}
-              style={{
-                fontSize: 10,
-                fontFamily: "ui-monospace, monospace",
-                color:
-                  row.kind === "datapoint"
-                    ? "#00D4AA"
-                    : row.kind === "reward"
-                      ? "#FFD700"
-                      : row.kind === "pool_refresh"
-                        ? "#00E5FF"
-                        : "rgba(226,232,240,0.7)",
-                marginBottom: 3,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {row.kind === "datapoint"
-                ? "◆ "
-                : row.kind === "reward"
-                  ? "★ "
-                  : row.kind === "pool_refresh"
-                    ? "⬡ "
-                    : "· "}
-              {row.message}
+      {/* Floating overlays only when chrome=true (standalone mode) */}
+      {chrome && (
+        <>
+          <div className="oc-hud" style={hudStyle}>
+            <div style={hudLabelStyle}>Network Consensus</div>
+            <div className="oc-hud-value" style={hudValueStyle}>
+              <span style={{ ...dotStyle, background: statusColorHud }} />
+              {activeCount}/{totalCount}
             </div>
-          ))
-        )}
-      </div>
-
-      {/* Epoch Ring */}
-      <div style={epochRingStyle}>
-        <svg
-          width="90"
-          height="90"
-          viewBox="0 0 90 90"
-          style={{ transform: "rotate(-90deg)" }}
-        >
-          <circle
-            cx="45"
-            cy="45"
-            r="40"
-            fill="none"
-            stroke="rgba(255,255,255,0.05)"
-            strokeWidth="4"
-          />
-          <circle
-            cx="45"
-            cy="45"
-            r="40"
-            fill="none"
-            stroke="#00E5FF"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeDasharray={251}
-            strokeDashoffset={251 * (1 - epochProgress)}
-            style={{
-              filter: "drop-shadow(0 0 6px rgba(0,229,255,0.4))",
-              transition: "stroke-dashoffset 0.1s linear",
-            }}
-          />
-        </svg>
-        <div style={epochTextStyle}>
-          <div
-            style={{ fontSize: 16, fontWeight: 300, fontFamily: "monospace" }}
-          >
-            {epoch}
+            <div style={hudSubStyle}>
+              oracles · {poolStatus.toUpperCase()}
+            </div>
           </div>
-          <div
-            style={{
-              fontSize: 9,
-              textTransform: "uppercase",
-              letterSpacing: 1,
-              color: "rgba(226,232,240,0.4)",
-            }}
-          >
-            epoch
+          <div className="oc-hud" style={{ ...hudStyle, left: 220 }}>
+            <div style={hudLabelStyle}>Pool lag</div>
+            <div className="oc-hud-value" style={{ ...hudValueStyle, fontSize: 18 }}>
+              {ageBlocks ?? "—"} blk
+            </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Tooltip */}
       {hovered && (
@@ -1324,90 +1174,7 @@ export default function OracleConstellation({
         </div>
       )}
 
-      {/* Epoch / history bar from real samples */}
-      <div style={epochBarStyle}>
-        {epochHistory.map((e, idx) => {
-          const h = 16 + Math.min(36, e.sources * 2.5);
-          const isActive = idx === epochHistory.length - 1;
-          return (
-            <div
-              key={`${e.epoch}-${idx}`}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: 4,
-                minWidth: 32,
-                transform: isActive ? "translateY(-4px)" : "none",
-              }}
-            >
-              <div
-                style={{
-                  width: 24,
-                  height: h,
-                  borderRadius: "4px 4px 0 0",
-                  background: "linear-gradient(to top, #00D4AA, #00E5FF)",
-                  opacity: isActive ? 1 : 0.55,
-                  boxShadow: isActive
-                    ? "0 0 12px rgba(0,229,255,0.3)"
-                    : "none",
-                }}
-              />
-              <div
-                style={{
-                  fontSize: 8,
-                  color: isActive ? "#00E5FF" : "rgba(226,232,240,0.35)",
-                  fontFamily: "monospace",
-                }}
-              >
-                {e.epoch}
-              </div>
-            </div>
-          );
-        })}
-      </div>
 
-      {/* Legend */}
-      <div className="oc-legend" style={legendStyle}>
-        {[
-          { shape: "hex", color: "#00E5FF", label: "Pool Box" },
-          { shape: "circle", color: "#00D4AA", label: "Live oracle" },
-          { shape: "circle", color: "#FBBF24", label: "Stale" },
-          { shape: "circle", color: "#555", label: "Offline" },
-          { shape: "diamond", color: "#00D4AA", label: "Datapoint" },
-          { shape: "star", color: "#FFD700", label: "Reward" },
-        ].map((item) => (
-          <div
-            key={item.label}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              marginBottom: 6,
-            }}
-          >
-            <div
-              style={{
-                width: 10,
-                height: 10,
-                background: item.color,
-                clipPath:
-                  item.shape === "hex"
-                    ? "polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%)"
-                    : item.shape === "diamond"
-                      ? "polygon(50% 0%,100% 50%,50% 100%,0% 50%)"
-                      : item.shape === "star"
-                        ? "polygon(50% 0%,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%)"
-                        : "none",
-                borderRadius: item.shape === "circle" ? "50%" : 0,
-              }}
-            />
-            <span style={{ fontSize: 11, color: "rgba(226,232,240,0.5)" }}>
-              {item.label}
-            </span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
