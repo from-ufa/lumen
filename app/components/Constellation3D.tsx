@@ -241,7 +241,6 @@ function heartbeat(t: number, freq: number, phase: number): number {
 
 const GEO_EARTH = new THREE.SphereGeometry(1, 96, 96);
 const GEO_CLOUDS = new THREE.SphereGeometry(1, 64, 64);
-const GEO_ATMOS = new THREE.SphereGeometry(1, 64, 64);
 const GEO_PEER = new THREE.SphereGeometry(1, 10, 10);
 const GEO_HALO = new THREE.SphereGeometry(1, 8, 8);
 
@@ -256,35 +255,8 @@ const SIZE_MY = 0.055;
 /** Soft halo relative to core — never soap-bubble large */
 const GLOW_MUL = 1.55;
 
-/* ─── Atmosphere fresnel ────────────────────────────────────────────────── */
-
-const atmosVertex = /* glsl */ `
-  varying vec3 vNormalW;
-  varying vec3 vViewW;
-  void main() {
-    vec4 world = modelMatrix * vec4(position, 1.0);
-    vNormalW = normalize(mat3(modelMatrix) * normal);
-    vViewW = normalize(cameraPosition - world.xyz);
-    gl_Position = projectionMatrix * viewMatrix * world;
-  }
-`;
-
-const atmosFragment = /* glsl */ `
-  uniform vec3 uColor;
-  uniform float uIntensity;
-  uniform float uPower;
-  varying vec3 vNormalW;
-  varying vec3 vViewW;
-  void main() {
-    float ndv = max(dot(normalize(vNormalW), normalize(vViewW)), 0.0);
-    float fresnel = pow(1.0 - ndv, uPower);
-    float alpha = fresnel * uIntensity;
-    vec3 col = mix(uColor, vec3(0.75, 0.88, 1.0), 0.35);
-    gl_FragColor = vec4(col, alpha);
-  }
-`;
-
 /* Day + night blend Earth shader (sun-lit day, city lights on night side) */
+/* Limb haze baked into earth shader rim — no separate sphere (that = ring) */
 const earthVertex = /* glsl */ `
   varying vec2 vUv;
   varying vec3 vNormalW;
@@ -330,9 +302,10 @@ const earthFragment = /* glsl */ `
     vec3 col = mix(night * nightMask + ambient, day, dayMask);
     col += vec3(0.55, 0.72, 1.0) * spec;
 
-    // Subtle limb darkening
-    float rim = pow(1.0 - max(dot(N, V), 0.0), 2.4);
-    col += vec3(0.25, 0.45, 0.85) * rim * 0.12;
+    // Very soft edge falloff (surface only — no separate ring mesh)
+    float rim = pow(1.0 - max(dot(N, V), 0.0), 3.2);
+    col *= 1.0 - rim * 0.18;
+    col += vec3(0.35, 0.55, 0.85) * rim * 0.06;
 
     gl_FragColor = vec4(col, 1.0);
   }
@@ -419,31 +392,11 @@ function Earth() {
     });
   }, [maps]);
 
-  // Soft limb haze only — single shell, no double-ring look
-  const atmosMat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        vertexShader: atmosVertex,
-        fragmentShader: atmosFragment,
-        uniforms: {
-          uColor: { value: new THREE.Color("#9ad0ff") },
-          uIntensity: { value: 0.38 },
-          uPower: { value: 3.8 },
-        },
-        transparent: true,
-        depthWrite: false,
-        side: THREE.BackSide,
-        blending: THREE.AdditiveBlending,
-      }),
-    []
-  );
-
   useEffect(
     () => () => {
       earthMat?.dispose();
-      atmosMat.dispose();
     },
-    [earthMat, atmosMat]
+    [earthMat]
   );
 
   useFrame((state) => {
@@ -467,13 +420,13 @@ function Earth() {
         </mesh>
       )}
 
-      {/* Clouds */}
+      {/* Clouds — tight to surface, no separate halo shell */}
       {maps?.clouds && (
-        <mesh ref={cloudsRef} geometry={GEO_CLOUDS} scale={1.018}>
+        <mesh ref={cloudsRef} geometry={GEO_CLOUDS} scale={1.012}>
           <meshStandardMaterial
             map={maps.clouds}
             transparent
-            opacity={0.42}
+            opacity={0.38}
             depthWrite={false}
             roughness={1}
             metalness={0}
@@ -481,9 +434,7 @@ function Earth() {
           />
         </mesh>
       )}
-
-      {/* Single soft limb haze — never hard blue rings */}
-      <mesh geometry={GEO_ATMOS} scale={1.045} material={atmosMat} />
+      {/* No atmosphere sphere: BackSide fresnel reads as a hard blue ring */}
     </group>
   );
 }
