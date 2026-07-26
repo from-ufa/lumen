@@ -455,24 +455,6 @@ export default function LumenDashboard() {
               className="flex items-center gap-1.5 shrink-0"
               ref={mobileMenuRef}
             >
-              {/* Source: green when lumen (or my node) is up, red when down */}
-              <HeaderPill
-                tone={isOnline ? "live" : "offline"}
-                showDot
-                className="!h-9 !px-3 !text-[9px]"
-                title={
-                  nodeMode === "my"
-                    ? isOnline
-                      ? "Source: your node via bridge"
-                      : "Source offline"
-                    : isOnline
-                      ? "Source: lumen"
-                      : "Source lumen offline"
-                }
-              >
-                {nodeMode === "my" ? "MY" : "LUMEN"}
-              </HeaderPill>
-
               <div className="relative">
                 <button
                   type="button"
@@ -576,25 +558,6 @@ export default function LumenDashboard() {
             </div>
 
             <HeaderActions>
-              {/* Source indicator only: green = up, red = down */}
-              <HeaderPill
-                tone={isOnline ? "live" : "offline"}
-                showDot
-                title={
-                  nodeMode === "my"
-                    ? isOnline
-                      ? "Source: your node via bridge"
-                      : bridgeOnline
-                        ? "Bridge up — waiting for node"
-                        : "Source offline"
-                    : isOnline
-                      ? "Source: lumen"
-                      : "Source lumen offline"
-                }
-              >
-                {nodeMode === "my" ? "MY" : "LUMEN"}
-              </HeaderPill>
-
               <HeaderPill
                 as="link"
                 href="/oracles"
@@ -642,13 +605,35 @@ export default function LumenDashboard() {
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
               <span
-                className={`px-2.5 py-1 rounded-full border ${
-                  nodeMode === "my"
-                    ? "border-[#00E5FF]/35 text-[#00E5FF] bg-[#00E5FF]/10"
-                    : "border-white/15 text-[#A0A0B0] bg-white/5"
+                title={
+                  isOnline
+                    ? nodeMode === "my"
+                      ? "Live — your node via bridge"
+                      : "Live — source lumen"
+                    : nodeMode === "my"
+                      ? "Offline — bridge / node"
+                      : "Offline — source lumen"
+                }
+                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
+                  isOnline
+                    ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                    : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
                 }`}
               >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isOnline
+                      ? "bg-[#10B981] status-dot"
+                      : "bg-[#EF4444]"
+                  }`}
+                  aria-hidden
+                />
                 {nodeMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
+                {isOnline && (
+                  <span className="text-[9px] tracking-[0.14em] opacity-80">
+                    LIVE
+                  </span>
+                )}
               </span>
               {effectiveInfo?.name && (
                 <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
