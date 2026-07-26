@@ -101,13 +101,13 @@ const SHELL_BRIGHT: Record<PeerShell, number> = {
 const LIVE_MS = 120_000;
 const SEEN_MS = 30 * 60_000;
 
-/** Trail particles per peer by shell (perf-capped) */
+/** Ultra-thin trail — live peers only, almost invisible */
 const TRAIL_LEN: Record<PeerShell, number> = {
-  live: 6,
-  seen: 4,
-  ghost: 2,
+  live: 2,
+  seen: 0,
+  ghost: 0,
 };
-const MAX_TRAIL_PEERS = 120;
+const MAX_TRAIL_PEERS = 48;
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -232,13 +232,9 @@ function slotWorldPos(slot: PeerSlot, t: number, out: THREE.Vector3) {
   return out;
 }
 
-/** Calm multi-harmonic heartbeat 0.85–1.2 */
-function heartbeat(t: number, freq: number, phase: number, amp = 1): number {
-  const a =
-    Math.sin(t * freq + phase) * 0.55 +
-    Math.sin(t * freq * 1.7 + phase * 1.3) * 0.28 +
-    Math.sin(t * freq * 0.5 + phase * 0.4) * 0.17;
-  return 1 + a * 0.14 * amp;
+/** Gentle breath only: scale 1.0 → 1.12 max */
+function heartbeat(t: number, freq: number, phase: number): number {
+  return 1 + Math.sin(t * freq + phase) * 0.06;
 }
 
 /* ─── Shared geometries ─────────────────────────────────────────────────── */
@@ -246,14 +242,19 @@ function heartbeat(t: number, freq: number, phase: number, amp = 1): number {
 const GEO_EARTH = new THREE.SphereGeometry(1, 96, 96);
 const GEO_CLOUDS = new THREE.SphereGeometry(1, 64, 64);
 const GEO_ATMOS = new THREE.SphereGeometry(1, 64, 64);
-const GEO_PEER = new THREE.SphereGeometry(1, 14, 14);
-const GEO_HALO = new THREE.SphereGeometry(1, 10, 10);
+const GEO_PEER = new THREE.SphereGeometry(1, 10, 10);
+const GEO_HALO = new THREE.SphereGeometry(1, 8, 8);
 
-/** Peer core sizes — bright & readable at distance */
-const SIZE_LIVE = 0.155;
-const SIZE_SEEN = 0.125;
-const SIZE_GHOST = 0.095;
-const SIZE_MY = 0.21;
+/**
+ * Compact orbital points (world units).
+ * Earth radius ≈ 3.2 — peers must stay tiny pinpricks.
+ */
+const SIZE_LIVE = 0.038;
+const SIZE_SEEN = 0.032;
+const SIZE_GHOST = 0.026;
+const SIZE_MY = 0.055;
+/** Soft halo relative to core — never soap-bubble large */
+const GLOW_MUL = 1.55;
 
 /* ─── Atmosphere fresnel ────────────────────────────────────────────────── */
 
@@ -418,34 +419,16 @@ function Earth() {
     });
   }, [maps]);
 
-  // Soft limb haze only — no hard blue rings
+  // Soft limb haze only — single shell, no double-ring look
   const atmosMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
         vertexShader: atmosVertex,
         fragmentShader: atmosFragment,
         uniforms: {
-          uColor: { value: new THREE.Color("#8ec8ff") },
-          uIntensity: { value: 0.48 },
-          uPower: { value: 3.4 },
-        },
-        transparent: true,
-        depthWrite: false,
-        side: THREE.BackSide,
-        blending: THREE.AdditiveBlending,
-      }),
-    []
-  );
-
-  const atmosOuterMat = useMemo(
-    () =>
-      new THREE.ShaderMaterial({
-        vertexShader: atmosVertex,
-        fragmentShader: atmosFragment,
-        uniforms: {
-          uColor: { value: new THREE.Color("#6aa8e8") },
-          uIntensity: { value: 0.14 },
-          uPower: { value: 4.2 },
+          uColor: { value: new THREE.Color("#9ad0ff") },
+          uIntensity: { value: 0.38 },
+          uPower: { value: 3.8 },
         },
         transparent: true,
         depthWrite: false,
@@ -459,9 +442,8 @@ function Earth() {
     () => () => {
       earthMat?.dispose();
       atmosMat.dispose();
-      atmosOuterMat.dispose();
     },
-    [earthMat, atmosMat, atmosOuterMat]
+    [earthMat, atmosMat]
   );
 
   useFrame((state) => {
@@ -500,14 +482,13 @@ function Earth() {
         </mesh>
       )}
 
-      {/* Soft atmosphere limb only (not ring bands) */}
-      <mesh geometry={GEO_ATMOS} scale={1.055} material={atmosMat} />
-      <mesh geometry={GEO_ATMOS} scale={1.12} material={atmosOuterMat} />
+      {/* Single soft limb haze — never hard blue rings */}
+      <mesh geometry={GEO_ATMOS} scale={1.045} material={atmosMat} />
     </group>
   );
 }
 
-/* ─── My Node — premium orbital peer (expressive pulse, not a sun) ──────── */
+/* ─── My Node — compact orbital pin (slightly larger peer) ──────────────── */
 
 function MyNodeDot({
   label,
@@ -518,109 +499,43 @@ function MyNodeDot({
 }) {
   const groupRef = useRef<THREE.Group>(null!);
   const coreRef = useRef<THREE.Mesh>(null!);
-  const haloRef = useRef<THREE.Mesh>(null!);
-  const auraRef = useRef<THREE.Mesh>(null!);
-  const trailRef = useRef<THREE.Points>(null!);
-  const pos = useMemo(() => new THREE.Vector3(), []);
-  const prev = useMemo(() => new THREE.Vector3(), []);
+  const glowRef = useRef<THREE.Mesh>(null!);
 
-  const radius = (SHELL_R.live[0] + SHELL_R.live[1]) / 2 + 0.15;
-  const phi = 0.14;
-  const drift = 0.07;
+  const radius = (SHELL_R.live[0] + SHELL_R.live[1]) / 2 + 0.1;
+  const phi = 0.12;
+  const drift = 0.055;
   const phase = 1.15;
-  const accent = isOnline ? "#F0D09A" : "#8a7a60";
-  const accentC = useMemo(() => new THREE.Color(accent), [accent]);
-
-  const trailN = 10;
-  const trailPos = useMemo(() => new Float32Array(trailN * 3), []);
-  const trailCol = useMemo(() => new Float32Array(trailN * 3), []);
-  const trailGeom = useMemo(() => {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(trailPos, 3));
-    g.setAttribute("color", new THREE.BufferAttribute(trailCol, 3));
-    return g;
-  }, [trailPos, trailCol]);
-
-  useEffect(() => () => trailGeom.dispose(), [trailGeom]);
+  const accent = isOnline ? "#E8C48A" : "#8a7a60";
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const ang = phase + t * drift;
-    const bob =
-      Math.sin(t * 0.4 + phase) * 0.1 + Math.sin(t * 0.17) * 0.04;
-    const r = radius + Math.sin(t * 0.25 + phase) * 0.05;
+    const bob = Math.sin(t * 0.35 + phase) * 0.06;
+    const r = radius + Math.sin(t * 0.22 + phase) * 0.03;
     const cosP = Math.cos(phi);
-    prev.copy(pos);
-    pos.set(
-      r * Math.cos(ang) * cosP,
-      r * Math.sin(phi) + bob,
-      r * Math.sin(ang) * cosP
-    );
-    if (groupRef.current) groupRef.current.position.copy(pos);
-
-    // Expressive but calm heartbeat
-    const hb = heartbeat(t, 2.05, phase, 1.35);
-    const hbSoft = heartbeat(t, 1.55, phase + 0.6, 1.1);
+    if (groupRef.current) {
+      groupRef.current.position.set(
+        r * Math.cos(ang) * cosP,
+        r * Math.sin(phi) + bob,
+        r * Math.sin(ang) * cosP
+      );
+    }
+    const hb = heartbeat(t, 1.7, phase);
     if (coreRef.current) coreRef.current.scale.setScalar(SIZE_MY * hb);
-    if (haloRef.current) {
-      haloRef.current.scale.setScalar(SIZE_MY * 2.4 * hbSoft);
-      (haloRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.32 + (hb - 1) * 1.4;
+    if (glowRef.current) {
+      glowRef.current.scale.setScalar(SIZE_MY * GLOW_MUL * hb);
+      (glowRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.2 + (hb - 1) * 0.8;
     }
-    if (auraRef.current) {
-      auraRef.current.scale.setScalar(SIZE_MY * 4.2 * hbSoft);
-      (auraRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.12 + (hb - 1) * 0.55;
-    }
-
-    // Soft emission trail opposite motion
-    const dx = prev.x - pos.x;
-    const dy = prev.y - pos.y;
-    const dz = prev.z - pos.z;
-    for (let i = 0; i < trailN; i++) {
-      const f = (i + 1) / trailN;
-      const o = i * 3;
-      trailPos[o] = pos.x + dx * f * 14 + Math.sin(t * 2 + i) * 0.02;
-      trailPos[o + 1] = pos.y + dy * f * 14 + Math.cos(t * 1.6 + i) * 0.015;
-      trailPos[o + 2] = pos.z + dz * f * 14;
-      const fade = (1 - f) * (0.55 + (hb - 1) * 1.2);
-      trailCol[o] = accentC.r * fade;
-      trailCol[o + 1] = accentC.g * fade;
-      trailCol[o + 2] = accentC.b * fade;
-    }
-    trailGeom.attributes.position.needsUpdate = true;
-    trailGeom.attributes.color.needsUpdate = true;
   });
 
   return (
     <group ref={groupRef}>
-      <points ref={trailRef} geometry={trailGeom} frustumCulled={false}>
-        <pointsMaterial
-          size={0.065}
-          vertexColors
-          transparent
-          opacity={0.85}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          sizeAttenuation
-          toneMapped={false}
-        />
-      </points>
-      <mesh ref={auraRef} geometry={GEO_HALO}>
+      <mesh ref={glowRef} geometry={GEO_HALO}>
         <meshBasicMaterial
           color={accent}
           transparent
-          opacity={0.12}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
-      <mesh ref={haloRef} geometry={GEO_HALO}>
-        <meshBasicMaterial
-          color={accent}
-          transparent
-          opacity={0.32}
+          opacity={0.2}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -631,16 +546,16 @@ function MyNodeDot({
       </mesh>
       <Html
         center
-        distanceFactor={18}
+        distanceFactor={20}
         style={{ pointerEvents: "none", userSelect: "none" }}
-        position={[0, 0.28, 0]}
+        position={[0, 0.14, 0]}
       >
         <div
-          className="whitespace-nowrap text-[8px] sm:text-[9px] font-mono tracking-[0.22em] uppercase"
+          className="whitespace-nowrap text-[7px] sm:text-[8px] font-mono tracking-[0.2em] uppercase"
           style={{
             color: accent,
-            opacity: 0.88,
-            textShadow: "0 0 10px rgba(240,208,154,0.45)",
+            opacity: 0.75,
+            textShadow: "0 0 6px rgba(232,196,138,0.3)",
           }}
         >
           {label}
@@ -650,7 +565,7 @@ function MyNodeDot({
   );
 }
 
-/* ─── Premium peers: core + glow + particle trails ──────────────────────── */
+/* ─── Compact peers: tiny core + minimal glow + optional micro-trail ────── */
 
 function PeerInstances({
   slots,
@@ -667,21 +582,19 @@ function PeerInstances({
 }) {
   const coreRef = useRef<THREE.InstancedMesh>(null!);
   const glowRef = useRef<THREE.InstancedMesh>(null!);
-  const auraRef = useRef<THREE.InstancedMesh>(null!);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
   const tmp = useMemo(() => new THREE.Color(), []);
   const count = slots.length;
 
-  // Trail particle budget
   const trailMeta = useMemo(() => {
     const n = Math.min(count, MAX_TRAIL_PEERS);
     let total = 0;
     const offsets: number[] = [];
     const lengths: number[] = [];
     for (let i = 0; i < n; i++) {
-      offsets.push(total);
       const len = TRAIL_LEN[slots[i].shell];
+      offsets.push(total);
       lengths.push(len);
       total += len;
     }
@@ -710,22 +623,21 @@ function PeerInstances({
     slotsRef.current = slots;
   }, [slots, slotsRef]);
 
-  /** Init instance colors immediately — avoids black first paint */
   useEffect(() => {
-    const paint = (mesh: THREE.InstancedMesh | null, scale = 1) => {
+    const paint = (mesh: THREE.InstancedMesh | null, mul: number) => {
       if (!mesh || count === 0) return;
       for (let i = 0; i < count; i++) {
-        color.copy(slots[i].color);
-        if (scale !== 1) color.multiplyScalar(scale);
-        mesh.setColorAt(i, color);
-        dummy.position.copy(slots[i].position);
-        dummy.scale.setScalar(
-          slots[i].shell === "live"
+        const s = slots[i];
+        const base =
+          s.shell === "live"
             ? SIZE_LIVE
-            : slots[i].shell === "seen"
+            : s.shell === "seen"
               ? SIZE_SEEN
-              : SIZE_GHOST
-        );
+              : SIZE_GHOST;
+        color.copy(s.color);
+        mesh.setColorAt(i, color);
+        dummy.position.copy(s.position);
+        dummy.scale.setScalar(base * mul);
         dummy.updateMatrix();
         mesh.setMatrixAt(i, dummy.matrix);
       }
@@ -733,14 +645,12 @@ function PeerInstances({
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     };
     paint(coreRef.current, 1);
-    paint(glowRef.current, 0.9);
-    paint(auraRef.current, 0.55);
+    paint(glowRef.current, GLOW_MUL);
   }, [count, slots, color, dummy]);
 
   useFrame((state) => {
     const core = coreRef.current;
     const glow = glowRef.current;
-    const aura = auraRef.current;
     if (!core || count === 0) return;
     const t = state.clock.elapsedTime;
     const boom = boomEnvelope(propagationStart);
@@ -757,85 +667,50 @@ function PeerInstances({
           : slot.shell === "seen"
             ? SIZE_SEEN
             : SIZE_GHOST;
-      const amp =
-        slot.shell === "live" ? 1.15 : slot.shell === "seen" ? 0.85 : 0.5;
-      const hb = heartbeat(t, slot.pulseFreq, slot.phase, amp);
-      const focusMul = isFocus ? 1.65 : 1;
-      const boomMul = 1 + boom * (slot.shell === "live" ? 0.45 : 0.18);
+      // Scale breath only 1.0–1.12; focus slightly larger but still a pin
+      const hb = heartbeat(t, slot.pulseFreq, slot.phase);
+      const focusMul = isFocus ? 1.25 : 1;
+      const boomMul = 1 + boom * 0.08;
       const coreScale = base * hb * focusMul * boomMul;
-      const glowScale =
-        coreScale *
-        (slot.shell === "live" ? 2.7 : slot.shell === "seen" ? 2.35 : 2.0);
-      const auraScale =
-        coreScale *
-        (slot.shell === "live" ? 4.6 : slot.shell === "seen" ? 3.7 : 3.0);
 
-      // Core
       dummy.position.copy(slot.position);
       dummy.scale.setScalar(coreScale);
       dummy.updateMatrix();
       core.setMatrixAt(i, dummy.matrix);
 
       if (glow) {
-        dummy.scale.setScalar(glowScale);
+        dummy.scale.setScalar(coreScale * GLOW_MUL);
         dummy.updateMatrix();
         glow.setMatrixAt(i, dummy.matrix);
       }
-      if (aura) {
-        dummy.scale.setScalar(auraScale);
-        dummy.updateMatrix();
-        aura.setMatrixAt(i, dummy.matrix);
-      }
 
-      // Bright status color — never black
       color.copy(slot.color);
-      if (isFocus) color.set("#F0D09A");
-      // Ensure minimum luminance so dots always read as light
-      const pulseLift = 1.05 + (hb - 1) * 0.55;
-      color.multiplyScalar(pulseLift);
-      color.r = Math.min(1, Math.max(color.r, 0.15));
-      color.g = Math.min(1, Math.max(color.g, 0.15));
-      color.b = Math.min(1, Math.max(color.b, 0.18));
-      if (boom > 0 && slot.shell === "live") {
-        color.lerp(tmp.set("#fff8e8"), boom * 0.45);
-      }
+      if (isFocus) color.set("#E8C48A");
+      // Brightness breath (not size explosion)
+      const bright = 0.92 + (hb - 1) * 2.5 + boom * 0.25;
+      color.multiplyScalar(bright);
       core.setColorAt(i, color);
-
       if (glow) {
         tmp.copy(color);
         glow.setColorAt(i, tmp);
       }
-      if (aura) {
-        tmp.copy(color).multiplyScalar(0.75);
-        aura.setColorAt(i, tmp);
-      }
 
-      // Particle trail (capped peers)
-      if (i < trailMeta.n) {
+      // Micro trail — live only, 2 faint sparks
+      if (i < trailMeta.n && trailMeta.lengths[i] > 0) {
         const len = trailMeta.lengths[i];
         const baseOff = trailMeta.offsets[i];
         const dx = slot.prevPosition.x - slot.position.x;
         const dy = slot.prevPosition.y - slot.position.y;
         const dz = slot.prevPosition.z - slot.position.z;
-        // If first frame, use tangent from orbit
         const speed = Math.hypot(dx, dy, dz) || 0.001;
-        const trailAmp =
-          (slot.shell === "live" ? 18 : slot.shell === "seen" ? 12 : 7) /
-          Math.max(speed, 0.0004);
+        const trailAmp = 4 / Math.max(speed, 0.0005);
         for (let k = 0; k < len; k++) {
-          const f = (k + 1) / len;
+          const f = (k + 1) / (len + 0.5);
           const o = (baseOff + k) * 3;
-          const jitter = Math.sin(t * 2.2 + slot.phase + k * 0.9) * 0.018 * f;
-          trailPos[o] =
-            slot.position.x + dx * f * trailAmp + jitter;
-          trailPos[o + 1] =
-            slot.position.y + dy * f * trailAmp + jitter * 0.6;
-          trailPos[o + 2] =
-            slot.position.z + dz * f * trailAmp - jitter * 0.4;
-          const fade =
-            (1 - f) *
-            (slot.shell === "live" ? 0.7 : slot.shell === "seen" ? 0.45 : 0.22) *
-            (0.75 + (hb - 1) * 1.5);
+          trailPos[o] = slot.position.x + dx * f * trailAmp;
+          trailPos[o + 1] = slot.position.y + dy * f * trailAmp;
+          trailPos[o + 2] = slot.position.z + dz * f * trailAmp;
+          const fade = (1 - f) * 0.22;
           trailCol[o] = slot.color.r * fade;
           trailCol[o + 1] = slot.color.g * fade;
           trailCol[o + 2] = slot.color.b * fade;
@@ -849,10 +724,6 @@ function PeerInstances({
       glow.instanceMatrix.needsUpdate = true;
       if (glow.instanceColor) glow.instanceColor.needsUpdate = true;
     }
-    if (aura) {
-      aura.instanceMatrix.needsUpdate = true;
-      if (aura.instanceColor) aura.instanceColor.needsUpdate = true;
-    }
     if (trailMeta.total > 0) {
       trailGeom.attributes.position.needsUpdate = true;
       trailGeom.attributes.color.needsUpdate = true;
@@ -864,28 +735,24 @@ function PeerInstances({
       e.stopPropagation();
       const id = e.instanceId;
       if (id == null || id < 0 || id >= slots.length) return;
-      const slot = slots[id];
-      onHover(slot.peer, slot.position.clone());
+      onHover(slots[id].peer, slots[id].position.clone());
     },
     [slots, onHover]
   );
 
-  const handleLeave = useCallback(() => {
-    onHover(null);
-  }, [onHover]);
+  const handleLeave = useCallback(() => onHover(null), [onHover]);
 
   if (count === 0) return null;
 
   return (
     <group>
-      {/* Soft particle trails */}
       {trailMeta.total > 0 && (
         <points geometry={trailGeom} frustumCulled={false}>
           <pointsMaterial
-            size={0.08}
+            size={0.022}
             vertexColors
             transparent
-            opacity={0.95}
+            opacity={0.55}
             depthWrite={false}
             blending={THREE.AdditiveBlending}
             sizeAttenuation
@@ -894,26 +761,7 @@ function PeerInstances({
         </points>
       )}
 
-      {/*
-        IMPORTANT: do NOT set vertexColors on InstancedMesh materials.
-        Instance tint uses setColorAt → instanceColor. vertexColors without
-        a geometry color attribute multiplies everything to black.
-      */}
-      <instancedMesh
-        ref={auraRef}
-        args={[GEO_HALO, undefined, count]}
-        frustumCulled={false}
-      >
-        <meshBasicMaterial
-          color="#ffffff"
-          transparent
-          opacity={0.22}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-          toneMapped={false}
-        />
-      </instancedMesh>
-
+      {/* Minimal soft halo — not soap bubbles */}
       <instancedMesh
         ref={glowRef}
         args={[GEO_HALO, undefined, count]}
@@ -922,7 +770,7 @@ function PeerInstances({
         <meshBasicMaterial
           color="#ffffff"
           transparent
-          opacity={0.55}
+          opacity={0.18}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
@@ -937,63 +785,8 @@ function PeerInstances({
         onPointerOut={handleLeave}
         frustumCulled={false}
       >
-        <meshBasicMaterial
-          color="#ffffff"
-          toneMapped={false}
-          transparent={false}
-          depthWrite
-        />
+        <meshBasicMaterial color="#ffffff" toneMapped={false} depthWrite />
       </instancedMesh>
-    </group>
-  );
-}
-
-/* ─── Block boom — soft spherical pulse (NO ring/hoop geometry) ─────────── */
-
-function BoomWaves({ propagationStart }: { propagationStart: number }) {
-  const groupRef = useRef<THREE.Group>(null!);
-  const mats = useRef<THREE.MeshBasicMaterial[]>([]);
-
-  useFrame(() => {
-    if (propagationStart <= 0) {
-      if (groupRef.current) groupRef.current.visible = false;
-      return;
-    }
-    const elapsed = (Date.now() - propagationStart) / 1000;
-    if (elapsed > 2.4) {
-      if (groupRef.current) groupRef.current.visible = false;
-      return;
-    }
-    if (groupRef.current) groupRef.current.visible = true;
-    groupRef.current.children.forEach((child, i) => {
-      const delay = i * 0.28;
-      const local = Math.max(0, elapsed - delay);
-      const progress = Math.min(1, local / 1.6);
-      const r = EARTH_R * 1.05 + progress * 12;
-      child.scale.setScalar(r);
-      const mat = mats.current[i];
-      if (mat) mat.opacity = (1 - progress) * 0.18 * (1 - i * 0.2);
-    });
-  });
-
-  return (
-    <group ref={groupRef} visible={false}>
-      {[0, 1, 2].map((i) => (
-        <mesh key={i} geometry={GEO_ATMOS}>
-          <meshBasicMaterial
-            ref={(m) => {
-              if (m) mats.current[i] = m;
-            }}
-            color={i === 0 ? "#E8C48A" : i === 1 ? "#4DFFC4" : "#6EB4FF"}
-            transparent
-            opacity={0}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-            side={THREE.BackSide}
-            toneMapped={false}
-          />
-        </mesh>
-      ))}
     </group>
   );
 }
@@ -1241,7 +1034,7 @@ function NetworkOrbitWorld({
         slotsRef={slotsRef}
       />
       <MyNodeDot label={centerLabel} isOnline={isOnline} />
-      <BoomWaves propagationStart={propagationStart} />
+      {/* Boom = peer brightness flash only (no ring/sphere geometry) */}
 
       <CameraRig
         autoOrbit={autoOrbit}
