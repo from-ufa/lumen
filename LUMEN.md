@@ -84,6 +84,37 @@ It shows:
 Not a miner, wallet, explorer, or tx broadcaster.  
 Does **not** control `ergonode` / `oracle-core` units. Only **allowlisted GET** Ergo REST + public Explorer for oracle pool boxes.
 
+### Oracles data & status rules
+
+| | |
+|--|--|
+| **UI** | `/oracles` — dual Canvas Constellation (ERG/USD · ERG/XAU) |
+| **API** | `GET /api/oracles` → `lib/oracles.ts` |
+| **Price source** | Ergo Explorer **unspent pool box** by pool NFT (`api.ergoplatform.com/api/v1/boxes/unspent/byTokenId/{nft}`) |
+| **Rate** | Register **R4** = nanoERG per 1 USD or 1 XAU oz → display USD/ERG or oz XAU/ERG |
+| **Epoch** | Register **R5** (epoch counter) |
+| **Tip height** | Local node `GET /info` (`fullHeight`), fallback Explorer network state |
+| **Age** | `ageBlocks = tipHeight − poolBox.settlementHeight` |
+| **Operators** | Optional enrichment from local `oracle-core` Prometheus (`:9021` USD, `:9011` XAU) — addresses + post heights |
+
+**Pool NFT (mainnet):**
+
+| Feed | NFT token id | Epoch length (config) |
+|------|----------------|------------------------|
+| ERG/USD | `6a2b821b…d07c66` | 6 blocks |
+| ERG/XAU | `3c45f29a…07cf4a` | 30 blocks |
+
+**LIVE / STALE / OFFLINE** (pool box age, `statusFromAge` in `lib/oracles.ts`):
+
+| Status | Meaning | Threshold |
+|--------|---------|-----------|
+| **LIVE** | Pool box refreshed recently | `age ≤ liveMax`, `liveMax = min(max(3×epoch, 24), 90)` |
+| **STALE** | On-chain price still present, consensus lagging | `liveMax < age ≤ staleMax`, `staleMax = min(max(20×epoch, 120), 720)` |
+| **OFFLINE** | No pool box / no tip / extremely old | no data, or `age > staleMax` |
+
+Examples (≈2 min/block): USD epoch 6 → live ≤24 blk (~48m), stale ≤120 blk (~4h). XAU epoch 30 → live ≤90 blk (~3h), stale ≤600 blk (~20h).  
+**Note:** STALE is not a Lumen bug — USD pool often fails on-chain refresh (needs ≥8 datapoints within 5% deviation). Price can still be shown while lagging.
+
 ---
 
 ## 2. Stack and layout
@@ -526,6 +557,7 @@ Do not:
 | 2026-07-26 | **Singularity Andromeda pass:** NASA/GALEX photo skybox, crystalline core, spiral-arm nodes, restrained SpaceX presentation |
 | 2026-07-26 | **Oracle Constellation:** replace R3F singularity with Canvas 2D constellation from operator prompt |
 | 2026-07-26 | **Oracles dual live:** Constellation×2 wired to real pool data (nodes, epoch, price, status) |
+| 2026-07-26 | **Oracle status thresholds:** fix short-epoch OFFLINE false positive; document LIVE/STALE/OFFLINE in LUMEN.md |
 
 ### Block miner attribution (honest)
 

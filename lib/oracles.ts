@@ -69,6 +69,8 @@ export interface OracleFeedSnapshot {
   accent: string;
   accentSoft: string;
   status: OracleStatus;
+  /** Block-age thresholds used for this feed's status */
+  statusThresholds?: { liveMax: number; staleMax: number };
   /** Raw R4: nanoERG per 1 USD or 1 XAU oz */
   rateNano: number | null;
   /** Primary human price */
@@ -205,16 +207,41 @@ export function formatXauOz(ozPerErg: number): string {
   return ozPerErg.toFixed(6);
 }
 
-function statusFromAge(
+/**
+ * Status thresholds for a pool box (tip − settlementHeight).
+ *
+ * Epoch length sets expected refresh cadence, but short epochs (USD = 6)
+ * must not mark a still-readable on-chain price as OFFLINE after ~1h.
+ *
+ * - LIVE:   fresh enough vs cadence (floored so short epochs get ~30–90 min)
+ * - STALE:  pool box exists, price still on-chain, consensus lagging
+ * - OFFLINE: no box / unknown tip / extremely old (default: multi-hour+)
+ *
+ * Approximate block time used only for docs: ~2 min/block.
+ */
+export function poolStatusThresholds(epochLength: number): {
+  liveMax: number;
+  staleMax: number;
+} {
+  const ep = Math.max(1, epochLength || 1);
+  // Live: ~3 epochs, floor 24 blk (~48m), cap 90 blk (~3h)
+  const liveMax = Math.min(Math.max(ep * 3, 24), 90);
+  // Stale: extended lag while box still useful; floor 120 (~4h), cap 720 (~24h)
+  const staleMax = Math.min(Math.max(ep * 20, 120), 720);
+  return { liveMax, staleMax };
+}
+
+export function statusFromAge(
   ageBlocks: number | null,
   epochLength: number,
   hasData: boolean
 ): OracleStatus {
-  if (!hasData || ageBlocks == null || ageBlocks < 0) return "offline";
-  // Live: within ~2 epochs of fresh posting window
-  if (ageBlocks <= epochLength * 2) return "live";
-  // Stale: still recently on-chain but lagging
-  if (ageBlocks <= epochLength * 10) return "stale";
+  if (!hasData || ageBlocks == null || !Number.isFinite(ageBlocks) || ageBlocks < 0) {
+    return "offline";
+  }
+  const { liveMax, staleMax } = poolStatusThresholds(epochLength);
+  if (ageBlocks <= liveMax) return "live";
+  if (ageBlocks <= staleMax) return "stale";
   return "offline";
 }
 
@@ -319,11 +346,11 @@ async function fetchMetricsHealth(
         tipHeight != null && Number.isFinite(height)
           ? Math.max(0, tipHeight - height)
           : null;
-      let status: OracleStatus = "live";
-      if (age == null) status = "live";
-      else if (age <= epochLength * 2) status = "live";
-      else if (age <= epochLength * 10) status = "stale";
-      else status = "offline";
+      // Per-operator freshness uses the same honest thresholds as the pool
+      const status: OracleStatus =
+        age == null
+          ? "live"
+          : statusFromAge(age, epochLength, true);
       nodes.push({
         address,
         height: Number.isFinite(height) ? height : null,
@@ -440,6 +467,7 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
         return {
           ...base,
           status: statusFromAge(ageBlocks, cfg.epochLength, true),
+          statusThresholds: poolStatusThresholds(cfg.epochLength),
           rateNano: box.rateNano,
           price: disp.price,
           priceAlt: disp.priceAlt,
