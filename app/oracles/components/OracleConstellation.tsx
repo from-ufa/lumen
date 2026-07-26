@@ -214,6 +214,8 @@ export default function OracleConstellation({
   compact = false,
   /** When false, only canvas + tooltip — parent shell owns metrics panels */
   chrome = true,
+  /** Override core/glow accent (gold for XAU, cyan for USD) */
+  accentOverride,
   /** Bubble activity log for parent shell */
   onActivity,
 }: {
@@ -221,6 +223,7 @@ export default function OracleConstellation({
   /** Tighter layout for dual-pane */
   compact?: boolean;
   chrome?: boolean;
+  accentOverride?: string;
   onActivity?: (
     rows: { id: string; t: number; kind: string; message: string }[]
   ) => void;
@@ -264,8 +267,10 @@ export default function OracleConstellation({
     epoch: feed.epoch ?? 0,
     currentPrice: feed.price ?? 0,
     priceLabel: feed.priceLabel ?? "—",
+    priceAlt: feed.priceAlt ?? "",
     pairLabel: feed.pair,
     unitLabel: feed.unitLabel,
+    accent: accentOverride || feed.accent || "#00E5FF",
     confidence: confidenceFromFeed(feed),
     activeSources: feed.activeOracles ?? 0,
     totalSources: feed.totalOracles ?? feed.nodes?.length ?? 0,
@@ -320,8 +325,10 @@ export default function OracleConstellation({
     ad.epoch = feed.epoch ?? ad.epoch;
     ad.currentPrice = feed.price ?? ad.currentPrice;
     ad.priceLabel = feed.priceLabel ?? "—";
+    ad.priceAlt = feed.priceAlt ?? "";
     ad.pairLabel = feed.pair;
     ad.unitLabel = feed.unitLabel;
+    ad.accent = accentOverride || feed.accent || "#00E5FF";
     ad.confidence = confidenceFromFeed(feed);
     ad.activeSources = feed.activeOracles ?? feed.nodes?.length ?? 0;
     ad.totalSources = feed.totalOracles ?? feed.nodes?.length ?? 0;
@@ -651,20 +658,30 @@ export default function OracleConstellation({
       });
     }
 
+    function hexToRgba(hex: string, a: number): string {
+      const h = hex.replace("#", "");
+      const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+      const r = (n >> 16) & 255;
+      const g = (n >> 8) & 255;
+      const b = n & 255;
+      return `rgba(${r},${g},${b},${a})`;
+    }
+
     function drawCore() {
       const pulse = Math.sin(ad.time * 0.04) * 4;
+      const accent = ad.accent || "#00E5FF";
       const statusGlow =
         ad.poolStatus === "live"
-          ? "#00E5FF"
+          ? accent
           : ad.poolStatus === "stale"
-            ? "#FBBF24"
+            ? "#D4A574"
             : "#EF4444";
-      glow(ad.CX, ad.CY, 70 + pulse, statusGlow, 0.12);
+      glow(ad.CX, ad.CY, 70 + pulse, statusGlow, 0.14);
       for (let i = 0; i < 3; i++) {
         const ph = (ad.time * 0.015 + i * 2.1) % 6;
         const rad = 35 + ph * 18;
-        const a = Math.max(0, 1 - ph / 6) * 0.12;
-        ctx.strokeStyle = `rgba(0,229,255,${a})`;
+        const a = Math.max(0, 1 - ph / 6) * 0.14;
+        ctx.strokeStyle = hexToRgba(accent, a);
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.arc(ad.CX, ad.CY, rad, 0, Math.PI * 2);
@@ -672,32 +689,39 @@ export default function OracleConstellation({
       }
       const coreR = 28 + pulse * 0.3;
       const grad = ctx.createRadialGradient(ad.CX, ad.CY, 0, ad.CX, ad.CY, coreR);
-      grad.addColorStop(0, "rgba(0,229,255,0.25)");
-      grad.addColorStop(0.6, "rgba(0,229,255,0.08)");
+      grad.addColorStop(0, hexToRgba(accent, 0.28));
+      grad.addColorStop(0.6, hexToRgba(accent, 0.08));
       grad.addColorStop(1, "transparent");
-      drawHex(ad.CX, ad.CY, coreR, grad, "rgba(0,229,255,0.35)", 1.5);
+      drawHex(ad.CX, ad.CY, coreR, grad, hexToRgba(accent, 0.4), 1.5);
       drawHex(ad.CX, ad.CY, 14, null, "rgba(255,255,255,0.25)", 1);
-      ctx.fillStyle = "#00E5FF";
+      ctx.fillStyle = accent;
       ctx.beginPath();
       ctx.arc(ad.CX, ad.CY, 5, 0, Math.PI * 2);
       ctx.fill();
-      glow(ad.CX, ad.CY, 18, "#00E5FF", 0.4);
+      glow(ad.CX, ad.CY, 18, accent, 0.4);
 
-      // Real price label
+      // Real price — human label (μoz for gold, $ for USD)
       const label = ad.priceLabel || "—";
-      const fontSize = label.length > 12 ? 16 : label.length > 8 ? 18 : 22;
-      ctx.fillStyle = "rgba(226,232,240,0.95)";
+      const fontSize =
+        label.length > 14 ? 15 : label.length > 10 ? 17 : 21;
+      ctx.fillStyle = "rgba(245,245,250,0.96)";
       ctx.font = `300 ${fontSize}px "SF Mono", ui-monospace, monospace`;
       ctx.textAlign = "center";
-      ctx.fillText(label, ad.CX, ad.CY - 52);
+      ctx.fillText(label, ad.CX, ad.CY - 54);
 
-      ctx.fillStyle = "rgba(226,232,240,0.4)";
-      ctx.font = '500 9px -apple-system, sans-serif';
-      ctx.fillText(`${ad.pairLabel} POOL BOX`, ad.CX, ad.CY - 36);
+      ctx.fillStyle = "rgba(226,232,240,0.45)";
+      ctx.font = "500 9px -apple-system, sans-serif";
+      ctx.fillText(ad.unitLabel || `${ad.pairLabel}`, ad.CX, ad.CY - 36);
 
-      ctx.fillStyle = "rgba(0,229,255,0.65)";
-      ctx.font = "10px monospace";
-      ctx.fillText(`EPOCH #${ad.epoch}`, ad.CX, ad.CY + 50);
+      if (ad.priceAlt) {
+        ctx.fillStyle = hexToRgba(accent, 0.75);
+        ctx.font = "10px monospace";
+        ctx.fillText(ad.priceAlt, ad.CX, ad.CY + 48);
+      } else {
+        ctx.fillStyle = hexToRgba(accent, 0.65);
+        ctx.font = "10px monospace";
+        ctx.fillText(`EPOCH #${ad.epoch}`, ad.CX, ad.CY + 48);
+      }
     }
 
     function drawOracle(o: Oracle) {
@@ -950,9 +974,10 @@ export default function OracleConstellation({
             setLivePhase("datapoints");
           }
         } else if (ev.kind === "pool_refresh" || ev.kind === "rate_change") {
-          ad.glowRings.push({ r: 28, a: 1, color: "#00E5FF" });
-          ad.glowRings.push({ r: 42, a: 0.75, color: "#00D4AA" });
-          ad.glowRings.push({ r: 55, a: 0.45, color: "#FFD700" });
+          const ac = ad.accent || "#00E5FF";
+          ad.glowRings.push({ r: 28, a: 1, color: ac });
+          ad.glowRings.push({ r: 42, a: 0.75, color: ac });
+          ad.glowRings.push({ r: 55, a: 0.45, color: "#E8D5A3" });
           setPriceLabel(ad.priceLabel);
           setCurrentPrice(ad.currentPrice);
           setEpoch(ad.epoch);

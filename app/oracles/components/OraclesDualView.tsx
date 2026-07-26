@@ -14,38 +14,122 @@ interface Props {
 
 function statusColor(status: string) {
   if (status === "live") return "#10B981";
-  if (status === "stale") return "#F59E0B";
+  if (status === "stale") return "#D4A574";
   return "#EF4444";
 }
 
-function MetricCell({
+/** Premium gold vs cyan palette per feed */
+function feedTheme(feed: OracleFeedData) {
+  const isGold = feed.id === "erg-xau" || feed.pair.includes("XAU");
+  if (isGold) {
+    return {
+      accent: feed.accent || "#C9A84C",
+      accentSoft: "rgba(201, 168, 76, 0.12)",
+      border: "rgba(201, 168, 76, 0.22)",
+      ring: "#C9A84C",
+      glow: "rgba(201, 168, 76, 0.35)",
+      label: "#E8D5A3",
+    };
+  }
+  return {
+    accent: feed.accent || "#00E5FF",
+    accentSoft: "rgba(0, 229, 255, 0.1)",
+    border: "rgba(0, 229, 255, 0.18)",
+    ring: "#00E5FF",
+    glow: "rgba(0, 229, 255, 0.35)",
+    label: "#A8E8F5",
+  };
+}
+
+function EpochRing({
+  epoch,
+  progress,
+  color,
+}: {
+  epoch: number | null;
+  progress: number;
+  color: string;
+}) {
+  const r = 22;
+  const c = 2 * Math.PI * r;
+  const p = Math.min(1, Math.max(0, progress));
+  return (
+    <div className="relative w-14 h-14 sm:w-16 sm:h-16 shrink-0">
+      <svg
+        width="100%"
+        height="100%"
+        viewBox="0 0 56 56"
+        className="absolute inset-0"
+        style={{ transform: "rotate(-90deg)" }}
+      >
+        <circle
+          cx="28"
+          cy="28"
+          r={r}
+          fill="none"
+          stroke="rgba(255,255,255,0.06)"
+          strokeWidth="3"
+        />
+        <circle
+          cx="28"
+          cy="28"
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - p)}
+          style={{
+            filter: `drop-shadow(0 0 6px ${color}66)`,
+            transition: "stroke-dashoffset 0.4s ease",
+          }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div className="font-mono text-[11px] sm:text-xs tabular-nums text-white leading-none">
+          {epoch != null ? epoch.toLocaleString() : "—"}
+        </div>
+        <div className="text-[7px] font-mono tracking-[0.14em] text-[#A0A0B0] mt-0.5 uppercase">
+          epoch
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CornerMetric({
   label,
   value,
   sub,
   accent,
+  align = "left",
 }: {
   label: string;
   value: string;
   sub?: string;
   accent?: string;
+  align?: "left" | "right";
 }) {
   return (
-    <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] px-3 sm:px-4 py-3 sm:py-3.5 min-h-[76px] flex flex-col justify-between">
-      <div className="text-[9px] sm:text-[10px] font-mono tracking-[0.18em] text-[#A0A0B0] uppercase">
+    <div
+      className={`pointer-events-none rounded-xl border border-white/[0.08] bg-black/55 backdrop-blur-md px-2.5 py-2 min-w-[6.5rem] sm:min-w-[7.5rem] shadow-[0_8px_24px_rgba(0,0,0,0.45)] ${
+        align === "right" ? "text-right" : "text-left"
+      }`}
+    >
+      <div className="text-[8px] sm:text-[9px] font-mono tracking-[0.16em] text-[#A0A0B0]/90 uppercase">
         {label}
       </div>
       <div
-        className="mt-1.5 font-mono text-lg sm:text-xl tabular-nums tracking-tight leading-none"
-        style={{ color: accent || "#E8E8F0" }}
+        className="mt-1 font-mono text-sm sm:text-base tabular-nums tracking-tight leading-none"
+        style={{ color: accent || "#F0F0F5" }}
       >
         {value}
       </div>
-      {sub ? (
-        <div className="mt-1.5 text-[10px] font-mono text-[#A0A0B0]/65 tracking-wide truncate">
+      {sub && (
+        <div className="mt-1 text-[8px] sm:text-[9px] font-mono text-[#A0A0B0]/55 tracking-wide truncate max-w-[9rem]">
           {sub}
         </div>
-      ) : (
-        <div className="mt-1.5 h-[14px]" />
       )}
     </div>
   );
@@ -67,11 +151,22 @@ function OracleBlock({
     feed.nodes.filter((n) => n.status === "live").length;
   const total = feed.totalOracles ?? feed.nodes.length;
   const sc = statusColor(feed.status);
+  const theme = feedTheme(feed);
+
+  // Epoch progress = how much of LIVE window is consumed (0 = fresh, 1 = at liveMax)
+  const liveMax = feed.statusThresholds?.liveMax ?? 24;
+  const epochProgress =
+    feed.ageBlocks != null && liveMax > 0
+      ? Math.min(1, feed.ageBlocks / liveMax)
+      : 0;
 
   return (
-    <section className="rounded-2xl sm:rounded-3xl border border-white/[0.08] bg-[#0C0C12]/80 overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
-      {/* ── Header row — symmetric ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-6 py-4 border-b border-white/[0.06]">
+    <section
+      className="rounded-2xl sm:rounded-3xl border bg-[#0C0C12]/85 overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.4)]"
+      style={{ borderColor: theme.border }}
+    >
+      {/* ── Header: title left · epoch ring right (not raw price) ── */}
+      <div className="flex items-center justify-between gap-4 px-4 sm:px-6 py-4 border-b border-white/[0.06]">
         <div className="flex items-center gap-3 min-w-0">
           <span
             className="w-2 h-2 rounded-full shrink-0"
@@ -81,8 +176,11 @@ function OracleBlock({
             }}
           />
           <div className="min-w-0">
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <h2 className="text-lg sm:text-xl font-semibold tracking-tight text-white">
+            <div className="flex items-baseline gap-2.5 flex-wrap">
+              <h2
+                className="text-lg sm:text-xl font-semibold tracking-tight"
+                style={{ color: theme.label }}
+              >
                 {feed.pair}
               </h2>
               <span
@@ -94,89 +192,109 @@ function OracleBlock({
             </div>
             <p className="text-[11px] font-mono text-[#A0A0B0]/70 tracking-wide mt-0.5 truncate">
               {feed.subtitle || "Oracle Pool"} · on-chain
+              {feed.priceAlt ? ` · ${feed.priceAlt}` : ""}
             </p>
           </div>
         </div>
 
-        <div className="sm:text-right shrink-0">
-          <div className="font-mono text-2xl sm:text-3xl font-semibold tabular-nums tracking-tight text-white">
-            {feed.priceLabel || "—"}
-          </div>
-          <div className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.14em] mt-0.5">
-            {feed.unitLabel}
-            {feed.epoch != null ? ` · EPOCH ${feed.epoch.toLocaleString()}` : ""}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Metric grid — 4 equal cells ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 px-4 sm:px-6 pt-4 sm:pt-5">
-        <MetricCell
-          label="Consensus"
-          value={`${live}/${total}`}
-          sub={
-            feed.requiredOracles != null
-              ? `quorum ${feed.requiredOracles}`
-              : "operators live"
-          }
-          accent={sc}
-        />
-        <MetricCell
-          label="Pool lag"
-          value={feed.ageBlocks != null ? `${feed.ageBlocks}` : "—"}
-          sub="blocks behind tip"
-        />
-        <MetricCell
-          label="Pool health"
-          value={
-            feed.poolHealthy == null
-              ? "—"
-              : feed.poolHealthy
-                ? "OK"
-                : "DOWN"
-          }
-          sub={
-            tipHeight != null ? `tip ${tipHeight.toLocaleString()}` : "metrics"
-          }
-          accent={
-            feed.poolHealthy == null
-              ? undefined
-              : feed.poolHealthy
-                ? "#10B981"
-                : "#F59E0B"
-          }
-        />
-        <MetricCell
-          label="Settlement"
-          value={
-            feed.settlementHeight != null
-              ? feed.settlementHeight.toLocaleString()
-              : "—"
-          }
-          sub={feed.priceAlt ? feed.priceAlt.slice(0, 28) : "pool box height"}
+        <EpochRing
+          epoch={feed.epoch}
+          progress={epochProgress}
+          color={theme.ring}
         />
       </div>
 
-      {/* ── Visualization — full-width framed ── */}
-      <div className="px-4 sm:px-6 pt-4 sm:pt-5">
-        <div className="canvas-container lumen-oracle-panel relative w-full">
+      {/* ── Viz with corner-integrated metrics ── */}
+      <div className="px-3 sm:px-5 pt-3 sm:pt-4 pb-2">
+        <div
+          className="canvas-container lumen-oracle-panel relative w-full"
+          style={{
+            boxShadow: `inset 0 0 60px ${theme.accentSoft}`,
+          }}
+        >
           <OracleConstellation
             feed={feed}
             compact
             chrome={false}
+            accentOverride={theme.accent}
             onActivity={setActivity}
           />
+
+          {/* Four corners — integrated into scene */}
+          <div className="absolute top-2.5 left-2.5 sm:top-3 sm:left-3 z-10">
+            <CornerMetric
+              label="Consensus"
+              value={`${live}/${total}`}
+              sub={
+                feed.requiredOracles != null
+                  ? `quorum ${feed.requiredOracles}`
+                  : "operators"
+              }
+              accent={sc}
+            />
+          </div>
+          <div className="absolute top-2.5 right-2.5 sm:top-3 sm:right-3 z-10">
+            <CornerMetric
+              label="Pool lag"
+              value={feed.ageBlocks != null ? `${feed.ageBlocks}` : "—"}
+              sub="blocks"
+              align="right"
+              accent={
+                feed.ageBlocks != null &&
+                feed.statusThresholds &&
+                feed.ageBlocks > feed.statusThresholds.liveMax
+                  ? "#D4A574"
+                  : "#E8E8F0"
+              }
+            />
+          </div>
+          <div className="absolute bottom-2.5 left-2.5 sm:bottom-3 sm:left-3 z-10">
+            <CornerMetric
+              label="Pool health"
+              value={
+                feed.poolHealthy == null
+                  ? "—"
+                  : feed.poolHealthy
+                    ? "OK"
+                    : "DOWN"
+              }
+              sub={
+                tipHeight != null
+                  ? `tip ${tipHeight.toLocaleString()}`
+                  : undefined
+              }
+              accent={
+                feed.poolHealthy == null
+                  ? undefined
+                  : feed.poolHealthy
+                    ? "#10B981"
+                    : "#D4A574"
+              }
+            />
+          </div>
+          <div className="absolute bottom-2.5 right-2.5 sm:bottom-3 sm:right-3 z-10">
+            <CornerMetric
+              label="Settlement"
+              value={
+                feed.settlementHeight != null
+                  ? feed.settlementHeight.toLocaleString()
+                  : "—"
+              }
+              sub="pool box h"
+              align="right"
+            />
+          </div>
         </div>
       </div>
 
-      {/* ── Bottom row: activity | meta — equal columns ── */}
-      <div className="grid sm:grid-cols-2 gap-3 px-4 sm:px-6 py-4 sm:py-5">
-        <div className="rounded-2xl border border-white/[0.06] bg-black/30 px-3.5 py-3 min-h-[112px]">
+      {/* ── Bottom: activity | thresholds — equal ── */}
+      <div className="grid sm:grid-cols-2 gap-3 px-4 sm:px-5 pb-4 sm:pb-5 pt-2">
+        <div className="rounded-2xl border border-white/[0.06] bg-black/30 px-3.5 py-3 min-h-[108px]">
           <div className="text-[9px] font-mono tracking-[0.18em] text-[#A0A0B0] uppercase mb-2">
             Live activity
           </div>
           {activity.length === 0 ? (
-            <p className="text-[11px] font-mono text-[#A0A0B0]/55 leading-relaxed">
+            <p className="text-[11px] font-mono text-[#A0A0B0]/50 leading-relaxed">
               Waiting for network posts / pool refresh…
             </p>
           ) : (
@@ -190,9 +308,9 @@ function OracleBlock({
                       row.kind === "datapoint"
                         ? "#00D4AA"
                         : row.kind === "reward"
-                          ? "#FFD700"
+                          ? theme.accent
                           : row.kind === "pool_refresh"
-                            ? "#00E5FF"
+                            ? theme.ring
                             : "#A0A0B0",
                   }}
                 >
@@ -210,43 +328,33 @@ function OracleBlock({
           )}
         </div>
 
-        <div className="rounded-2xl border border-white/[0.06] bg-black/30 px-3.5 py-3 min-h-[112px]">
+        <div className="rounded-2xl border border-white/[0.06] bg-black/30 px-3.5 py-3 min-h-[108px]">
           <div className="text-[9px] font-mono tracking-[0.18em] text-[#A0A0B0] uppercase mb-2">
-            Thresholds · sample
+            Price · window
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-[11px] font-mono">
-            <div>
-              <div className="text-[#A0A0B0]/60 text-[9px] tracking-wider">
-                LIVE ≤
-              </div>
-              <div className="text-[#E8E8F0] tabular-nums">
-                {feed.statusThresholds?.liveMax ?? "—"} blk
-              </div>
+          <div className="flex items-baseline justify-between gap-2 mb-2">
+            <div
+              className="font-mono text-xl sm:text-2xl tabular-nums tracking-tight"
+              style={{ color: theme.label }}
+            >
+              {feed.priceLabel || "—"}
             </div>
-            <div>
-              <div className="text-[#A0A0B0]/60 text-[9px] tracking-wider">
-                STALE ≤
-              </div>
-              <div className="text-[#E8E8F0] tabular-nums">
-                {feed.statusThresholds?.staleMax ?? "—"} blk
-              </div>
+            <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wide text-right">
+              {feed.unitLabel}
             </div>
-            <div>
-              <div className="text-[#A0A0B0]/60 text-[9px] tracking-wider">
-                HISTORY
-              </div>
-              <div className="text-[#E8E8F0] tabular-nums">
-                {feed.history?.length ?? 0} pts
-              </div>
+          </div>
+          {feed.priceAlt && (
+            <div className="text-[11px] font-mono text-[#A0A0B0]/80 mb-2">
+              {feed.priceAlt}
             </div>
-            <div>
-              <div className="text-[#A0A0B0]/60 text-[9px] tracking-wider">
-                EVENTS
-              </div>
-              <div className="text-[#00E5FF] tabular-nums">
-                +{feed.liveEvents?.length ?? 0}
-              </div>
-            </div>
+          )}
+          <div className="grid grid-cols-2 gap-2 text-[10px] font-mono text-[#A0A0B0]/70">
+            <span>
+              LIVE ≤ {feed.statusThresholds?.liveMax ?? "—"} blk
+            </span>
+            <span>
+              STALE ≤ {feed.statusThresholds?.staleMax ?? "—"} blk
+            </span>
           </div>
         </div>
       </div>
@@ -267,7 +375,7 @@ export default function OraclesDualView({
 
   if (isLoading && !data) {
     return (
-      <div className="flex flex-col gap-5 sm:gap-6">
+      <div className="flex flex-col gap-5 sm:gap-7">
         {[0, 1].map((i) => (
           <div
             key={i}
@@ -297,7 +405,6 @@ export default function OraclesDualView({
 
   return (
     <div className="flex flex-col gap-5 sm:gap-7">
-      {/* Vertical stack: USD then XAU */}
       {panes.map((feed) => (
         <OracleBlock
           key={feed.id}
@@ -307,9 +414,9 @@ export default function OraclesDualView({
       ))}
 
       <p className="text-center text-[10px] sm:text-[11px] font-mono tracking-wide text-[#A0A0B0]/50 max-w-2xl mx-auto leading-relaxed">
-        Prices and epochs from on-chain oracle pool boxes. Operator nodes and
-        rewards from local metrics. Visualization reacts to real network
-        events.
+        Prices and epochs from on-chain oracle pool boxes. Corner metrics and
+        epoch ring use live tip / settlement data. XAU shown as μoz gold per ERG
+        (with ERG per troy oz secondary).
       </p>
     </div>
   );

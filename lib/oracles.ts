@@ -47,8 +47,9 @@ export const ORACLE_FEEDS: OracleFeedConfig[] = [
       "3c45f29a5165b030fdb5eaf5d81f8108f9d8f507b31487dd51f4ae08fe07cf4a",
     epochLength: 30,
     metricsPort: 9011,
-    accent: "#E8C547",
-    accentSoft: "rgba(232, 197, 71, 0.12)",
+    // Champagne / aerospace gold — not neon yellow
+    accent: "#C9A84C",
+    accentSoft: "rgba(201, 168, 76, 0.14)",
   },
 ];
 
@@ -227,13 +228,27 @@ export function formatUsd(price: number): string {
   return `$${price.toFixed(6)}`;
 }
 
+/**
+ * Human gold display for ERG/XAU.
+ * Primary: micro-ounces of gold per 1 ERG (readable scale).
+ * Secondary lines use ergPerXauOz for "ERG per troy oz".
+ */
 export function formatXauOz(ozPerErg: number): string {
   if (!Number.isFinite(ozPerErg) || ozPerErg <= 0) return "—";
-  // Prefer readable scientific / compact
-  if (ozPerErg < 1e-3) {
-    return ozPerErg.toExponential(3).replace("e", "×10^");
+  const uoz = ozPerErg * 1e6; // micro-ounces
+  if (uoz >= 0.01) {
+    return `${uoz.toFixed(3)} μoz`;
   }
-  return ozPerErg.toFixed(6);
+  return `${uoz.toFixed(4)} μoz`;
+}
+
+export function formatXauErgPerOz(rateNano: number): string {
+  const erg = ergPerXauOz(rateNano);
+  if (!Number.isFinite(erg) || erg <= 0) return "—";
+  if (erg >= 1000) {
+    return `${Math.round(erg).toLocaleString()} ERG/oz`;
+  }
+  return `${erg.toFixed(1)} ERG/oz`;
 }
 
 /**
@@ -591,12 +606,12 @@ function displayForFeed(
     };
   }
   const oz = priceXauPerErg(rateNano);
-  const ergOz = ergPerXauOz(rateNano);
   return {
     price: oz,
+    // Primary: μoz gold per ERG (human scale); alt: ERG needed for 1 troy oz
     priceLabel: formatXauOz(oz),
-    priceAlt: `${ergOz.toLocaleString(undefined, { maximumFractionDigits: 0 })} ERG / oz XAU`,
-    unitLabel: "oz XAU / ERG",
+    priceAlt: formatXauErgPerOz(rateNano),
+    unitLabel: "μoz gold / ERG",
   };
 }
 
