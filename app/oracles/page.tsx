@@ -48,17 +48,6 @@ export default function OraclesPage() {
   }, [mobileMenuOpen]);
 
   const feeds = data?.feeds ?? [];
-  const liveCount = feeds.filter((f) => f.status === "live").length;
-  const allLive = feeds.length > 0 && liveCount === feeds.length;
-  const anyStale = feeds.some((f) => f.status === "stale");
-
-  const statusTone = isError
-    ? "off"
-    : allLive
-      ? "live"
-      : anyStale || liveCount > 0
-        ? "warn"
-        : "off";
 
   return (
     <div className="min-h-screen min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
@@ -85,33 +74,6 @@ export default function OraclesPage() {
               className="flex items-center gap-1.5 shrink-0"
               ref={mobileMenuRef}
             >
-              <div
-                className={`flex items-center gap-1.5 h-9 px-2.5 rounded-xl text-[10px] font-mono tracking-wider border ${
-                  statusTone === "live"
-                    ? "border-[#10B981]/35 bg-[#10B981]/[0.08] text-[#10B981]"
-                    : statusTone === "warn"
-                      ? "border-[#F59E0B]/35 bg-[#F59E0B]/[0.08] text-[#F59E0B]"
-                      : "border-[#EF4444]/35 bg-[#EF4444]/[0.08] text-[#EF4444]"
-                }`}
-              >
-                <div
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    statusTone === "live"
-                      ? "bg-[#10B981] status-dot"
-                      : statusTone === "warn"
-                        ? "bg-[#F59E0B]"
-                        : "bg-[#EF4444]"
-                  }`}
-                />
-                {isLoading
-                  ? "…"
-                  : statusTone === "live"
-                    ? "LIVE"
-                    : statusTone === "warn"
-                      ? "MIX"
-                      : "OFF"}
-              </div>
-
               <div className="relative">
                 <button
                   type="button"
@@ -186,33 +148,6 @@ export default function OraclesPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 justify-end">
-              <div
-                className={`flex items-center gap-2 px-4 lg:px-5 py-2 rounded-3xl text-sm font-mono tracking-widest border ${
-                  statusTone === "live"
-                    ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]"
-                    : statusTone === "warn"
-                      ? "border-[#F59E0B]/30 bg-[#F59E0B]/5 text-[#F59E0B]"
-                      : "border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]"
-                }`}
-              >
-                <div
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    statusTone === "live"
-                      ? "bg-[#10B981] status-dot"
-                      : statusTone === "warn"
-                        ? "bg-[#F59E0B]"
-                        : "bg-[#EF4444]"
-                  }`}
-                />
-                {isLoading
-                  ? "LOADING"
-                  : statusTone === "live"
-                    ? "FEEDS LIVE"
-                    : statusTone === "warn"
-                      ? `${liveCount}/${feeds.length || 2} LIVE`
-                      : "FEEDS OFFLINE"}
-              </div>
-
               <div className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border border-[#E8C547]/30 bg-[#E8C547]/[0.08] text-[#E8C547]">
                 <Gem className="w-3.5 h-3.5" />
                 ORACLES
