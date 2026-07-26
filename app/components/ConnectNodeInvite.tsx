@@ -29,7 +29,6 @@ export default function ConnectNodeInvite({
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
-  const [typing, setTyping] = useState(false);
   const [done, setDone] = useState(false);
 
   useEffect(() => {
@@ -44,7 +43,6 @@ export default function ConnectNodeInvite({
     if (!enabled) {
       setOpen(false);
       setTyped("");
-      setTyping(false);
       setDone(false);
       return;
     }
@@ -57,18 +55,15 @@ export default function ConnectNodeInvite({
     if (!open || !enabled) return;
 
     setTyped("");
-    setTyping(false);
     setDone(false);
 
     let i = 0;
     let intervalId = 0;
     const startId = window.setTimeout(() => {
-      setTyping(true);
       intervalId = window.setInterval(() => {
         i += 1;
         if (i >= FULL_TEXT.length) {
           setTyped(FULL_TEXT);
-          setTyping(false);
           setDone(true);
           window.clearInterval(intervalId);
           return;
@@ -142,25 +137,24 @@ export default function ConnectNodeInvite({
                 "
                 style={{ lineHeight: 1.45 }}
               >
-                {lines.map((line, li) => (
-                  <span key={li} className="block">
-                    {line}
-                    {/* caret only on last line while typing or after done (idle blink) */}
-                    {li === lines.length - 1 && (
-                      <span
-                        className="lumen-search-caret ml-0.5 text-[#E8E8F0]"
-                        aria-hidden
-                      >
-                        _
-                      </span>
-                    )}
-                  </span>
-                ))}
-                {/* empty state: only caret */}
-                {typed.length === 0 && (
+                {typed.length === 0 ? (
                   <span className="lumen-search-caret text-[#E8E8F0]" aria-hidden>
                     _
                   </span>
+                ) : (
+                  lines.map((line, li) => (
+                    <span key={li} className="block">
+                      {line}
+                      {li === lines.length - 1 && (
+                        <span
+                          className="lumen-search-caret ml-0.5 text-[#E8E8F0]"
+                          aria-hidden
+                        >
+                          _
+                        </span>
+                      )}
+                    </span>
+                  ))
                 )}
               </div>
 
