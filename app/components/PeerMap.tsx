@@ -1782,7 +1782,10 @@ export default function PeerMap({
     [signalLinks]
   );
 
-  /** Live network stats (full catalog, independent of filter chips) */
+  /**
+   * Catalog counters (full API snapshot) + showing = pins under active filter.
+   * UI must lead with the active filter — not always DISCOVERED/LIVE/CONNECTED.
+   */
   const mapStats = useMemo(() => {
     const markers = allMarkers;
     let connected = 0;
@@ -1800,7 +1803,9 @@ export default function PeerMap({
     liveOnly = data?.liveMapped ?? data?.reachableMapped ?? liveOnly;
     seen = data?.seenMapped ?? seen;
     ghost = data?.ghostMapped ?? ghost;
-    const live = data?.liveTotal ?? connected + liveOnly;
+    /** Live ring = linked + answering (matches filter "Live") */
+    const liveRing = data?.liveTotal ?? connected + liveOnly;
+    /** Active memory without ghost (matches filter "All") */
     const active =
       data?.activeTotal ?? data?.discovered ?? connected + liveOnly + seen;
     const totalEver =
@@ -1808,10 +1813,11 @@ export default function PeerMap({
     const withGeo = data?.withGeo ?? data?.mapped ?? markers.length;
     const unmapped = data?.unmapped ?? 0;
     return {
-      /** Active network memory (no Ghost) */
       discovered: active,
       active,
-      live,
+      /** @deprecated name kept for call sites — means live ring (linked+answering) */
+      live: liveRing,
+      liveRing,
       liveOnly,
       connected,
       seen,
@@ -1822,6 +1828,221 @@ export default function PeerMap({
       showing: peerMarkers.length,
     };
   }, [allMarkers, data, peerMarkers.length]);
+
+  /** Mode-aware stats for ERGO NETWORK MAP panel (desktop + mobile) */
+  const filterView = useMemo(() => {
+    const {
+      connected,
+      liveOnly,
+      liveRing,
+      discovered,
+      seen,
+      ghost,
+      totalEver,
+      withGeo,
+      unmapped,
+      showing,
+    } = mapStats;
+
+    if (mapFilter === "connected") {
+      return {
+        id: "connected" as const,
+        modeTitle: "LINKED",
+        modeHint: "Peers currently linked to this node",
+        hero: connected,
+        heroLabel: "LINKED",
+        heroColor: "#00E5FF",
+        heroClass:
+          "bg-[#00E5FF]/[0.08] border border-[#00E5FF]/25 text-[#00E5FF]",
+        breakdown: [
+          { label: "ON MAP", value: showing, color: "#E8E8F0" },
+          { label: "LIVE RING", value: liveRing, color: "#10B981" },
+          { label: "ACTIVE", value: discovered, color: "#A0A0B0" },
+        ],
+        chipActiveClass:
+          "bg-[#00E5FF]/15 text-[#00E5FF] shadow-[inset_0_0_0_1px_rgba(0,229,255,0.35)]",
+        footer: `linked ${connected} · on map ${showing}`,
+        ghost,
+        totalEver,
+        withGeo,
+        unmapped,
+      };
+    }
+
+    if (mapFilter === "live") {
+      return {
+        id: "live" as const,
+        modeTitle: "LIVE",
+        modeHint: "Linked + answering now (live ring)",
+        hero: liveRing,
+        heroLabel: "LIVE RING",
+        heroColor: "#10B981",
+        heroClass:
+          "bg-[#10B981]/[0.08] border border-[#10B981]/25 text-[#10B981]",
+        breakdown: [
+          { label: "ON MAP", value: showing, color: "#E8E8F0" },
+          { label: "LINKED", value: connected, color: "#00E5FF" },
+          { label: "ANSWERING", value: liveOnly, color: "#34D399" },
+        ],
+        chipActiveClass:
+          "bg-[#10B981]/15 text-[#10B981] shadow-[inset_0_0_0_1px_rgba(16,185,129,0.35)]",
+        footer: `live ring ${liveRing} · linked ${connected} · answering ${liveOnly}`,
+        ghost,
+        totalEver,
+        withGeo,
+        unmapped,
+      };
+    }
+
+    // all
+    return {
+      id: "all" as const,
+      modeTitle: "ALL",
+      modeHint: "Linked + Live + Seen · Ghost stays history-only",
+      hero: discovered,
+      heroLabel: "ACTIVE",
+      heroColor: "#E8E8F0",
+      heroClass:
+        "bg-white/[0.04] border border-white/[0.1] text-white",
+      breakdown: [
+        { label: "ON MAP", value: showing, color: "#E8E8F0" },
+        { label: "LIVE", value: liveRing, color: "#10B981" },
+        { label: "LINKED", value: connected, color: "#00E5FF" },
+        { label: "SEEN", value: seen, color: "#A8B4C8" },
+      ],
+      chipActiveClass:
+        "bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.16)]",
+      footer: `active ${discovered} · live ${liveRing} · seen ${seen}`,
+      ghost,
+      totalEver,
+      withGeo,
+      unmapped,
+    };
+  }, [mapFilter, mapStats]);
+
+  const filterChips = (
+    [
+      { id: "live" as const, label: "Live" },
+      { id: "connected" as const, label: "Linked" },
+      { id: "all" as const, label: "All" },
+    ] as const
+  );
+
+  const renderFilterChips = (compact = false) => (
+    <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10">
+      {filterChips.map((f) => {
+        const active = mapFilter === f.id;
+        return (
+          <button
+            key={f.id}
+            type="button"
+            onClick={() => setMapFilter(f.id)}
+            className={`flex-1 ${compact ? "px-2 py-2" : "px-2 py-1.5"} rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
+              active
+                ? filterView.chipActiveClass
+                : "text-[#A0A0B0] hover:text-[#E8E8F0]"
+            }`}
+          >
+            {f.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const renderModeStats = (opts?: { dense?: boolean }) => {
+    const dense = !!opts?.dense;
+    return (
+      <>
+        <div className="flex items-center justify-between gap-2 mb-2 px-0.5">
+          <div className="min-w-0">
+            <div
+              className="text-[10px] font-mono tracking-[0.2em]"
+              style={{ color: filterView.heroColor }}
+            >
+              MODE · {filterView.modeTitle}
+            </div>
+            <div className="text-[9px] font-mono text-[#A0A0B0]/75 mt-0.5 truncate">
+              {filterView.modeHint}
+            </div>
+          </div>
+        </div>
+
+        <div
+          className={`rounded-xl px-3 ${dense ? "py-2.5" : "py-3"} mb-2.5 ${filterView.heroClass}`}
+        >
+          <div className="font-mono text-2xl sm:text-3xl tabular-nums leading-none tracking-tight">
+            {filterView.hero.toLocaleString()}
+          </div>
+          <div className="text-[9px] font-mono tracking-wider opacity-80 mt-1.5">
+            {filterView.heroLabel}
+          </div>
+        </div>
+
+        <div
+          className={`grid gap-1.5 mb-2.5 ${
+            filterView.breakdown.length > 3 ? "grid-cols-2" : "grid-cols-3"
+          }`}
+        >
+          {filterView.breakdown.map((row) => (
+            <div
+              key={row.label}
+              className="rounded-xl bg-black/25 border border-white/[0.06] px-2 py-2 text-center"
+            >
+              <div
+                className="font-mono text-sm sm:text-base tabular-nums leading-none tracking-tight"
+                style={{ color: row.color }}
+              >
+                {row.value.toLocaleString()}
+              </div>
+              <div className="text-[8px] font-mono tracking-wider text-[#A0A0B0] mt-1">
+                {row.label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex items-center justify-between gap-2 mb-2.5 px-0.5 text-[10px] font-mono text-[#A0A0B0]/80 tracking-wide">
+          <span>
+            <span className="text-[#E8E8F0] tabular-nums">
+              {filterView.withGeo.toLocaleString()}
+            </span>{" "}
+            with geo
+            {filterView.unmapped > 0 && (
+              <span className="text-[#A0A0B0]/50">
+                {" "}
+                · {filterView.unmapped} no geo
+              </span>
+            )}
+          </span>
+          <span className="text-[#A0A0B0]/60">
+            pins{" "}
+            <span className="text-[#E8E8F0] tabular-nums">
+              {mapStats.showing}
+            </span>
+          </span>
+        </div>
+
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-black/25 px-3 py-2 text-[10px] font-mono tracking-wide text-[#A0A0B0]">
+          <span>
+            Ghost{" "}
+            <span className="text-[#C45C5C] tabular-nums">
+              {filterView.ghost.toLocaleString()}
+            </span>
+            <span className="text-[#A0A0B0]/50"> · history</span>
+          </span>
+          <span>
+            Ever{" "}
+            <span className="text-[#E8E8F0]/80 tabular-nums">
+              {filterView.totalEver.toLocaleString()}
+            </span>
+          </span>
+        </div>
+
+        {renderFilterChips(dense)}
+      </>
+    );
+  };
 
   /**
    * Visual epicenter for boom pulses — map "you" pin if known, else geometric
@@ -2265,95 +2486,7 @@ export default function PeerMap({
           </div>
 
           {nodeMode === "lumen" ? (
-            <>
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-2.5 py-2.5">
-                  <div className="font-mono text-lg sm:text-xl tabular-nums text-white leading-none tracking-tight">
-                    {mapStats.discovered.toLocaleString()}
-                  </div>
-                  <div className="text-[9px] font-mono tracking-wider text-[#A0A0B0] mt-1">
-                    DISCOVERED
-                  </div>
-                </div>
-                <div className="rounded-xl bg-[#10B981]/[0.08] border border-[#10B981]/25 px-2.5 py-2.5">
-                  <div className="font-mono text-lg sm:text-xl tabular-nums text-[#10B981] leading-none tracking-tight">
-                    {mapStats.live.toLocaleString()}
-                  </div>
-                  <div className="text-[9px] font-mono tracking-wider text-[#A0A0B0] mt-1">
-                    LIVE
-                  </div>
-                </div>
-                <div className="rounded-xl bg-[#00E5FF]/[0.08] border border-[#00E5FF]/20 px-2.5 py-2.5">
-                  <div className="font-mono text-lg sm:text-xl tabular-nums text-[#00E5FF] leading-none tracking-tight">
-                    {mapStats.connected.toLocaleString()}
-                  </div>
-                  <div className="text-[9px] font-mono tracking-wider text-[#A0A0B0] mt-1">
-                    CONNECTED
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-between gap-2 mb-3 px-0.5 text-[10px] font-mono text-[#A0A0B0]/80 tracking-wide">
-                <span>
-                  <span className="text-[#E8E8F0] tabular-nums">
-                    {mapStats.withGeo.toLocaleString()}
-                  </span>{" "}
-                  on map
-                  {mapStats.unmapped > 0 && (
-                    <span className="text-[#A0A0B0]/50">
-                      {" "}
-                      · {mapStats.unmapped} no geo
-                    </span>
-                  )}
-                </span>
-                <span className="text-[#A0A0B0]/60">
-                  showing{" "}
-                  <span className="text-[#E8E8F0] tabular-nums">
-                    {mapStats.showing}
-                  </span>
-                </span>
-              </div>
-              <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-black/25 px-3 py-2 text-[10px] font-mono tracking-wide text-[#A0A0B0]">
-                <span>
-                  Ghost{" "}
-                  <span className="text-[#C45C5C] tabular-nums">
-                    {mapStats.ghost.toLocaleString()}
-                  </span>
-                  <span className="text-[#A0A0B0]/50"> · history</span>
-                </span>
-                <span>
-                  Total ever{" "}
-                  <span className="text-[#E8E8F0]/80 tabular-nums">
-                    {mapStats.totalEver.toLocaleString()}
-                  </span>
-                </span>
-              </div>
-
-              <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10">
-                {(
-                  [
-                    { id: "live" as const, label: "Live" },
-                    { id: "connected" as const, label: "Linked" },
-                    { id: "all" as const, label: "All" },
-                  ] as const
-                ).map((f) => {
-                  const active = mapFilter === f.id;
-                  return (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => setMapFilter(f.id)}
-                      className={`flex-1 px-2 py-1.5 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
-                        active
-                          ? "bg-white/10 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]"
-                          : "text-[#A0A0B0] hover:text-[#E8E8F0]"
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
+            renderModeStats()
           ) : (
             <div className="rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-3">
               <div className="font-mono text-2xl tabular-nums text-[#00E5FF] leading-none tracking-tight">
@@ -2430,74 +2563,11 @@ export default function PeerMap({
       )}
 
       <div className="glass rounded-2xl px-3 py-3 border border-white/10">
+        <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[2px] mb-2.5">
+          <Globe2 className="w-3.5 h-3.5" /> ERGO NETWORK MAP
+        </div>
         {nodeMode === "lumen" ? (
-          <>
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              <div className="rounded-xl bg-white/5 px-2 py-2 text-center">
-                <div className="font-mono text-lg tabular-nums text-white">
-                  {mapStats.discovered.toLocaleString()}
-                </div>
-                <div className="text-[9px] font-mono text-[#A0A0B0] tracking-wider">
-                  DISCOVERED
-                </div>
-              </div>
-              <div className="rounded-xl bg-[#10B981]/10 px-2 py-2 text-center border border-[#10B981]/20">
-                <div className="font-mono text-lg tabular-nums text-[#10B981]">
-                  {mapStats.live.toLocaleString()}
-                </div>
-                <div className="text-[9px] font-mono text-[#A0A0B0] tracking-wider">
-                  LIVE
-                </div>
-              </div>
-              <div className="rounded-xl bg-[#00E5FF]/10 px-2 py-2 text-center border border-[#00E5FF]/15">
-                <div className="font-mono text-lg tabular-nums text-[#00E5FF]">
-                  {mapStats.connected.toLocaleString()}
-                </div>
-                <div className="text-[9px] font-mono text-[#A0A0B0] tracking-wider">
-                  CONNECTED
-                </div>
-              </div>
-            </div>
-            <div className="text-[10px] font-mono text-[#A0A0B0] mb-2 text-center">
-              {mapStats.withGeo.toLocaleString()} on map · showing{" "}
-              {mapStats.showing}
-            </div>
-            <div className="text-[10px] font-mono text-[#A0A0B0]/80 mb-3 text-center tracking-wide">
-              Ghost{" "}
-              <span className="text-[#C45C5C] tabular-nums">
-                {mapStats.ghost.toLocaleString()}
-              </span>
-              {" · total ever "}
-              <span className="text-[#E8E8F0]/80 tabular-nums">
-                {mapStats.totalEver.toLocaleString()}
-              </span>
-            </div>
-            <div className="flex p-0.5 rounded-xl bg-black/40 border border-white/10 mb-3">
-              {(
-                [
-                  { id: "live" as const, label: "Live" },
-                  { id: "connected" as const, label: "Linked" },
-                  { id: "all" as const, label: "All" },
-                ] as const
-              ).map((f) => {
-                const active = mapFilter === f.id;
-                return (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => setMapFilter(f.id)}
-                    className={`flex-1 px-2 py-2 rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
-                      active
-                        ? "bg-white/10 text-white"
-                        : "text-[#A0A0B0]"
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                );
-              })}
-            </div>
-          </>
+          <div className="mb-3">{renderModeStats({ dense: true })}</div>
         ) : (
           <div className="mb-3 rounded-xl border border-[#00E5FF]/20 bg-[#00E5FF]/[0.06] px-3 py-3 text-center">
             <div className="font-mono text-2xl tabular-nums text-[#00E5FF]">
@@ -2509,7 +2579,7 @@ export default function PeerMap({
           </div>
         )}
         <div className="flex items-center gap-2 text-[#FF7A3D] font-mono text-[10px] tracking-[2px] mb-2">
-          <Globe2 className="w-3.5 h-3.5" /> MAP
+          <Globe2 className="w-3.5 h-3.5" /> LEGEND
         </div>
         <div className="space-y-1.5 text-[11px] text-[#A0A0B0]">
           <div className="flex items-center gap-2">
@@ -2550,16 +2620,13 @@ export default function PeerMap({
       {topRegionsBlock}
       {nodeMode === "lumen" && (
         <div className="flex items-center justify-between px-1 text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-          <span>
-            discovered{" "}
-            <span className="text-white tabular-nums">
-              {mapStats.discovered}
+          <span className="truncate">
+            <span style={{ color: filterView.heroColor }} className="font-medium">
+              {filterView.modeTitle}
             </span>
-            {" · live "}
-            <span className="text-[#10B981] tabular-nums">{mapStats.live}</span>
-            {" · connected "}
-            <span className="text-[#00E5FF] tabular-nums">
-              {mapStats.connected}
+            {" · "}
+            <span className="text-[#E8E8F0] tabular-nums">
+              {filterView.footer}
             </span>
           </span>
         </div>
