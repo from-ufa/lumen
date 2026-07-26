@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Network Orbit — clean space viz (Orbit Veil style)
- * Realistic Earth · orbital peer dots · InstancedMesh · fresnel atmosphere
+ * Network Orbit — premium cinematic network visualizer
+ * Realistic Earth · pulsing peers · soft particle trails · no orbital hoops
  */
 
 import React, {
@@ -62,9 +62,13 @@ type PeerSlot = {
   radius: number;
   driftSpeed: number;
   phase: number;
+  /** Heartbeat frequency (rad/s) */
+  pulseFreq: number;
   color: THREE.Color;
   /** World position updated each frame */
   position: THREE.Vector3;
+  /** Previous frame pos for trail tangent */
+  prevPosition: THREE.Vector3;
 };
 
 const HUD_PANEL_W = "w-[min(280px,32vw)]";
@@ -73,22 +77,37 @@ const HUD_CARD =
 const HUD_BTN =
   "glass w-full h-11 px-4 rounded-2xl text-[11px] font-mono tracking-widest border border-white/10 hover:border-white/25 flex items-center justify-center gap-2 transition-all active:scale-[0.985] box-border";
 
-/** Orbital radii (world units) */
+/** Orbital radii (world units) — denser shells */
 const EARTH_R = 3.2;
 const SHELL_R: Record<PeerShell, [number, number]> = {
-  live: [5.4, 6.6],
-  seen: [8.0, 9.6],
-  ghost: [11.2, 13.4],
+  live: [5.2, 6.9],
+  seen: [7.6, 9.8],
+  ghost: [10.6, 13.6],
 };
 
+/** Premium status palette — bright live, calm seen, muted ghost */
 const SHELL_COLOR: Record<PeerShell, string> = {
-  live: "#3DFFB5",
-  seen: "#5BA8FF",
-  ghost: "#6B7288",
+  live: "#4DFFC4",
+  seen: "#6EB4FF",
+  ghost: "#7A8296",
+};
+
+const SHELL_BRIGHT: Record<PeerShell, number> = {
+  live: 1.15,
+  seen: 0.78,
+  ghost: 0.42,
 };
 
 const LIVE_MS = 120_000;
 const SEEN_MS = 30 * 60_000;
+
+/** Trail particles per peer by shell (perf-capped) */
+const TRAIL_LEN: Record<PeerShell, number> = {
+  live: 6,
+  seen: 4,
+  ghost: 2,
+};
+const MAX_TRAIL_PEERS = 120;
 
 /* ─── Helpers ───────────────────────────────────────────────────────────── */
 
@@ -151,21 +170,31 @@ function easeInOutCubic(t: number): number {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
 
+function applyShellColor(color: THREE.Color, shell: PeerShell) {
+  color.set(SHELL_COLOR[shell]);
+  color.multiplyScalar(SHELL_BRIGHT[shell]);
+  if (shell === "live") color.offsetHSL(0, 0.06, 0.06);
+}
+
 function buildSlot(peer: Peer, index: number, now: number): PeerSlot {
   const address = peer.address || `peer-${index}`;
   const seed = hashString(address);
   const shell = shellFromPeer(peer, now);
   const [r0, r1] = SHELL_R[shell];
   const radius = r0 + seeded01(seed, 1) * (r1 - r0);
-  // Fibonacci-ish sphere distribution biased to equatorial belt for cinematic rings
+  // Dense belt with mild inclination scatter
   const theta = seeded01(seed, 2) * Math.PI * 2;
   const phi =
-    (seeded01(seed, 3) - 0.5) * 0.85 +
-    Math.sin(seeded01(seed, 4) * Math.PI * 2) * 0.12;
-  const color = new THREE.Color(SHELL_COLOR[shell]);
-  // Dim ghosts, bright live
-  if (shell === "ghost") color.multiplyScalar(0.55);
-  if (shell === "live") color.offsetHSL(0, 0.05, 0.08);
+    (seeded01(seed, 3) - 0.5) * 0.72 +
+    Math.sin(seeded01(seed, 4) * Math.PI * 2) * 0.18;
+  const color = new THREE.Color();
+  applyShellColor(color, shell);
+
+  // Live drifts faster; ghosts almost still
+  const driftBase =
+    shell === "live" ? 0.065 : shell === "seen" ? 0.04 : 0.018;
+  const pulseBase =
+    shell === "live" ? 1.85 : shell === "seen" ? 1.25 : 0.75;
 
   return {
     peer,
@@ -175,17 +204,25 @@ function buildSlot(peer: Peer, index: number, now: number): PeerSlot {
     theta,
     phi,
     radius,
-    driftSpeed: 0.04 + seeded01(seed, 5) * 0.09,
+    driftSpeed: driftBase + seeded01(seed, 5) * 0.055,
     phase: seeded01(seed, 6) * Math.PI * 2,
+    pulseFreq: pulseBase + seeded01(seed, 7) * 0.45,
     color,
     position: new THREE.Vector3(),
+    prevPosition: new THREE.Vector3(),
   };
 }
 
 function slotWorldPos(slot: PeerSlot, t: number, out: THREE.Vector3) {
+  // Living orbit: angular drift + gentle radial breathe + vertical bob
   const ang = slot.theta + t * slot.driftSpeed;
-  const bob = Math.sin(t * 0.35 + slot.phase) * 0.08;
-  const r = slot.radius + Math.sin(t * 0.22 + slot.phase) * 0.04;
+  const bob =
+    Math.sin(t * 0.42 + slot.phase) * 0.12 +
+    Math.sin(t * 0.19 + slot.phase * 1.7) * 0.05;
+  const r =
+    slot.radius +
+    Math.sin(t * 0.28 + slot.phase) * 0.07 +
+    Math.cos(t * 0.15 + slot.phase * 0.5) * 0.03;
   const cosP = Math.cos(slot.phi);
   out.set(
     r * Math.cos(ang) * cosP,
@@ -195,19 +232,29 @@ function slotWorldPos(slot: PeerSlot, t: number, out: THREE.Vector3) {
   return out;
 }
 
+/** Calm multi-harmonic heartbeat 0.85–1.2 */
+function heartbeat(t: number, freq: number, phase: number, amp = 1): number {
+  const a =
+    Math.sin(t * freq + phase) * 0.55 +
+    Math.sin(t * freq * 1.7 + phase * 1.3) * 0.28 +
+    Math.sin(t * freq * 0.5 + phase * 0.4) * 0.17;
+  return 1 + a * 0.14 * amp;
+}
+
 /* ─── Shared geometries ─────────────────────────────────────────────────── */
 
 const GEO_EARTH = new THREE.SphereGeometry(1, 96, 96);
 const GEO_CLOUDS = new THREE.SphereGeometry(1, 64, 64);
 const GEO_ATMOS = new THREE.SphereGeometry(1, 64, 64);
-const GEO_PEER = new THREE.SphereGeometry(1, 12, 12);
+const GEO_PEER = new THREE.SphereGeometry(1, 14, 14);
+const GEO_HALO = new THREE.SphereGeometry(1, 10, 10);
 const GEO_WAVE = new THREE.RingGeometry(0.98, 1.02, 128);
 
-/** Peer dot sizes (world units) — My Node slightly larger */
-const SIZE_LIVE = 0.07;
-const SIZE_SEEN = 0.055;
-const SIZE_GHOST = 0.042;
-const SIZE_MY = 0.115;
+/** Peer core sizes — bright & readable at distance */
+const SIZE_LIVE = 0.105;
+const SIZE_SEEN = 0.082;
+const SIZE_GHOST = 0.062;
+const SIZE_MY = 0.145;
 
 /* ─── Atmosphere fresnel ────────────────────────────────────────────────── */
 
@@ -461,7 +508,7 @@ function Earth() {
   );
 }
 
-/* ─── My Node — orbital point (slightly larger peer, no sun/core) ───────── */
+/* ─── My Node — premium orbital peer (expressive pulse, not a sun) ──────── */
 
 function MyNodeDot({
   label,
@@ -471,65 +518,130 @@ function MyNodeDot({
   isOnline: boolean;
 }) {
   const groupRef = useRef<THREE.Group>(null!);
-  const dotRef = useRef<THREE.Mesh>(null!);
-  const softRef = useRef<THREE.Mesh>(null!);
+  const coreRef = useRef<THREE.Mesh>(null!);
+  const haloRef = useRef<THREE.Mesh>(null!);
+  const auraRef = useRef<THREE.Mesh>(null!);
+  const trailRef = useRef<THREE.Points>(null!);
+  const pos = useMemo(() => new THREE.Vector3(), []);
+  const prev = useMemo(() => new THREE.Vector3(), []);
 
-  // Fixed inner-orbit slot — same shell as live peers
-  const radius = (SHELL_R.live[0] + SHELL_R.live[1]) / 2;
-  const phi = 0.18;
-  const drift = 0.055;
-  const phase = 0.9;
-  const accent = isOnline ? "#E8C48A" : "#8a7a60";
+  const radius = (SHELL_R.live[0] + SHELL_R.live[1]) / 2 + 0.15;
+  const phi = 0.14;
+  const drift = 0.07;
+  const phase = 1.15;
+  const accent = isOnline ? "#F0D09A" : "#8a7a60";
+  const accentC = useMemo(() => new THREE.Color(accent), [accent]);
+
+  const trailN = 10;
+  const trailPos = useMemo(() => new Float32Array(trailN * 3), []);
+  const trailCol = useMemo(() => new Float32Array(trailN * 3), []);
+  const trailGeom = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(trailPos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(trailCol, 3));
+    return g;
+  }, [trailPos, trailCol]);
+
+  useEffect(() => () => trailGeom.dispose(), [trailGeom]);
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const ang = phase + t * drift;
-    const bob = Math.sin(t * 0.35 + phase) * 0.06;
-    const r = radius + Math.sin(t * 0.2 + phase) * 0.03;
+    const bob =
+      Math.sin(t * 0.4 + phase) * 0.1 + Math.sin(t * 0.17) * 0.04;
+    const r = radius + Math.sin(t * 0.25 + phase) * 0.05;
     const cosP = Math.cos(phi);
-    if (groupRef.current) {
-      groupRef.current.position.set(
-        r * Math.cos(ang) * cosP,
-        r * Math.sin(phi) + bob,
-        r * Math.sin(ang) * cosP
-      );
+    prev.copy(pos);
+    pos.set(
+      r * Math.cos(ang) * cosP,
+      r * Math.sin(phi) + bob,
+      r * Math.sin(ang) * cosP
+    );
+    if (groupRef.current) groupRef.current.position.copy(pos);
+
+    // Expressive but calm heartbeat
+    const hb = heartbeat(t, 2.05, phase, 1.35);
+    const hbSoft = heartbeat(t, 1.55, phase + 0.6, 1.1);
+    if (coreRef.current) coreRef.current.scale.setScalar(SIZE_MY * hb);
+    if (haloRef.current) {
+      haloRef.current.scale.setScalar(SIZE_MY * 2.4 * hbSoft);
+      (haloRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.32 + (hb - 1) * 1.4;
     }
-    const pulse = 1 + Math.sin(t * 1.6) * 0.05;
-    if (dotRef.current) dotRef.current.scale.setScalar(SIZE_MY * pulse);
-    if (softRef.current) {
-      softRef.current.scale.setScalar(SIZE_MY * 2.2 * pulse);
-      (softRef.current.material as THREE.MeshBasicMaterial).opacity =
-        0.18 + Math.sin(t * 1.6) * 0.04;
+    if (auraRef.current) {
+      auraRef.current.scale.setScalar(SIZE_MY * 4.2 * hbSoft);
+      (auraRef.current.material as THREE.MeshBasicMaterial).opacity =
+        0.12 + (hb - 1) * 0.55;
     }
+
+    // Soft emission trail opposite motion
+    const dx = prev.x - pos.x;
+    const dy = prev.y - pos.y;
+    const dz = prev.z - pos.z;
+    for (let i = 0; i < trailN; i++) {
+      const f = (i + 1) / trailN;
+      const o = i * 3;
+      trailPos[o] = pos.x + dx * f * 14 + Math.sin(t * 2 + i) * 0.02;
+      trailPos[o + 1] = pos.y + dy * f * 14 + Math.cos(t * 1.6 + i) * 0.015;
+      trailPos[o + 2] = pos.z + dz * f * 14;
+      const fade = (1 - f) * (0.55 + (hb - 1) * 1.2);
+      trailCol[o] = accentC.r * fade;
+      trailCol[o + 1] = accentC.g * fade;
+      trailCol[o + 2] = accentC.b * fade;
+    }
+    trailGeom.attributes.position.needsUpdate = true;
+    trailGeom.attributes.color.needsUpdate = true;
   });
 
   return (
     <group ref={groupRef}>
-      {/* Soft halo — subtle, not a sun */}
-      <mesh ref={softRef} geometry={GEO_PEER}>
+      <points ref={trailRef} geometry={trailGeom} frustumCulled={false}>
+        <pointsMaterial
+          size={0.065}
+          vertexColors
+          transparent
+          opacity={0.85}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          sizeAttenuation
+          toneMapped={false}
+        />
+      </points>
+      <mesh ref={auraRef} geometry={GEO_HALO}>
         <meshBasicMaterial
           color={accent}
           transparent
-          opacity={0.18}
+          opacity={0.12}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
           toneMapped={false}
         />
       </mesh>
-      <mesh ref={dotRef} geometry={GEO_PEER}>
+      <mesh ref={haloRef} geometry={GEO_HALO}>
+        <meshBasicMaterial
+          color={accent}
+          transparent
+          opacity={0.32}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh ref={coreRef} geometry={GEO_PEER}>
         <meshBasicMaterial color={accent} toneMapped={false} />
       </mesh>
       <Html
         center
         distanceFactor={18}
         style={{ pointerEvents: "none", userSelect: "none" }}
-        position={[0, 0.22, 0]}
+        position={[0, 0.28, 0]}
       >
         <div
-          className="whitespace-nowrap text-[8px] sm:text-[9px] font-mono tracking-[0.22em] uppercase opacity-80"
+          className="whitespace-nowrap text-[8px] sm:text-[9px] font-mono tracking-[0.22em] uppercase"
           style={{
             color: accent,
-            textShadow: "0 0 8px rgba(232,196,138,0.35)",
+            opacity: 0.88,
+            textShadow: "0 0 10px rgba(240,208,154,0.45)",
           }}
         >
           {label}
@@ -539,32 +651,7 @@ function MyNodeDot({
   );
 }
 
-/* ─── Orbital guide rings (subtle) ──────────────────────────────────────── */
-
-const ORBIT_GUIDE_GEOS = (["live", "seen", "ghost"] as PeerShell[]).map((s) => {
-  const r = (SHELL_R[s][0] + SHELL_R[s][1]) / 2;
-  return { shell: s, geo: new THREE.TorusGeometry(r, 0.008, 8, 128) };
-});
-
-function OrbitGuides() {
-  return (
-    <group rotation={[Math.PI / 2.15, 0, 0.15]}>
-      {ORBIT_GUIDE_GEOS.map(({ shell: s, geo }) => (
-        <mesh key={s} geometry={geo}>
-          <meshBasicMaterial
-            color={SHELL_COLOR[s]}
-            transparent
-            opacity={s === "live" ? 0.09 : s === "seen" ? 0.06 : 0.035}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
-      ))}
-    </group>
-  );
-}
-
-/* ─── Peers InstancedMesh ───────────────────────────────────────────────── */
+/* ─── Premium peers: core + glow + particle trails ──────────────────────── */
 
 function PeerInstances({
   slots,
@@ -579,24 +666,62 @@ function PeerInstances({
   onHover: PeerHoverFn;
   slotsRef: MutableRefObject<PeerSlot[]>;
 }) {
-  const meshRef = useRef<THREE.InstancedMesh>(null!);
+  const coreRef = useRef<THREE.InstancedMesh>(null!);
+  const glowRef = useRef<THREE.InstancedMesh>(null!);
+  const auraRef = useRef<THREE.InstancedMesh>(null!);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const color = useMemo(() => new THREE.Color(), []);
+  const tmp = useMemo(() => new THREE.Color(), []);
   const count = slots.length;
 
-  // Keep slotsRef in sync for camera focus
+  // Trail particle budget
+  const trailMeta = useMemo(() => {
+    const n = Math.min(count, MAX_TRAIL_PEERS);
+    let total = 0;
+    const offsets: number[] = [];
+    const lengths: number[] = [];
+    for (let i = 0; i < n; i++) {
+      offsets.push(total);
+      const len = TRAIL_LEN[slots[i].shell];
+      lengths.push(len);
+      total += len;
+    }
+    return { n, total, offsets, lengths };
+  }, [slots, count]);
+
+  const trailPos = useMemo(
+    () => new Float32Array(Math.max(1, trailMeta.total) * 3),
+    [trailMeta.total]
+  );
+  const trailCol = useMemo(
+    () => new Float32Array(Math.max(1, trailMeta.total) * 3),
+    [trailMeta.total]
+  );
+  const trailGeom = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(trailPos, 3));
+    g.setAttribute("color", new THREE.BufferAttribute(trailCol, 3));
+    g.setDrawRange(0, trailMeta.total);
+    return g;
+  }, [trailPos, trailCol, trailMeta.total]);
+
+  useEffect(() => () => trailGeom.dispose(), [trailGeom]);
+
   useEffect(() => {
     slotsRef.current = slots;
   }, [slots, slotsRef]);
 
   useFrame((state) => {
-    const mesh = meshRef.current;
-    if (!mesh || count === 0) return;
+    const core = coreRef.current;
+    const glow = glowRef.current;
+    const aura = auraRef.current;
+    if (!core || count === 0) return;
     const t = state.clock.elapsedTime;
     const boom = boomEnvelope(propagationStart);
 
     for (let i = 0; i < count; i++) {
       const slot = slots[i];
+      slot.prevPosition.copy(slot.position);
       slotWorldPos(slot, t, slot.position);
 
       const isFocus = focusAddress === slot.address;
@@ -606,29 +731,103 @@ function PeerInstances({
           : slot.shell === "seen"
             ? SIZE_SEEN
             : SIZE_GHOST;
-      const scale =
-        base *
-        (isFocus ? 1.7 : 1) *
-        (1 + boom * (slot.shell === "live" ? 0.4 : 0.15));
+      const amp =
+        slot.shell === "live" ? 1.15 : slot.shell === "seen" ? 0.85 : 0.5;
+      const hb = heartbeat(t, slot.pulseFreq, slot.phase, amp);
+      const focusMul = isFocus ? 1.65 : 1;
+      const boomMul = 1 + boom * (slot.shell === "live" ? 0.45 : 0.18);
+      const coreScale = base * hb * focusMul * boomMul;
+      const glowScale = coreScale * (slot.shell === "live" ? 2.55 : slot.shell === "seen" ? 2.2 : 1.9);
+      const auraScale = coreScale * (slot.shell === "live" ? 4.4 : slot.shell === "seen" ? 3.5 : 2.8);
 
+      // Core
       dummy.position.copy(slot.position);
-      dummy.scale.setScalar(scale);
-      dummy.rotation.set(0, 0, 0);
+      dummy.scale.setScalar(coreScale);
       dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
+      core.setMatrixAt(i, dummy.matrix);
+
+      // Glow
+      if (glow) {
+        dummy.scale.setScalar(glowScale);
+        dummy.updateMatrix();
+        glow.setMatrixAt(i, dummy.matrix);
+      }
+      // Aura
+      if (aura) {
+        dummy.scale.setScalar(auraScale);
+        dummy.updateMatrix();
+        aura.setMatrixAt(i, dummy.matrix);
+      }
 
       color.copy(slot.color);
-      if (isFocus) color.set("#E8C48A");
+      if (isFocus) color.set("#F0D09A");
+      // Brightness rides heartbeat
+      const pulseLift = 0.72 + (hb - 0.9) * 1.6;
+      color.multiplyScalar(pulseLift);
       if (boom > 0 && slot.shell === "live") {
-        color.lerp(new THREE.Color("#fff6e0"), boom * 0.35);
+        color.lerp(tmp.set("#fff8e8"), boom * 0.4);
       }
-      mesh.setColorAt(i, color);
+      core.setColorAt(i, color);
+
+      // Glow / aura tinted softer
+      if (glow) {
+        tmp.copy(color).multiplyScalar(slot.shell === "live" ? 0.95 : 0.7);
+        glow.setColorAt(i, tmp);
+      }
+      if (aura) {
+        tmp.copy(color).multiplyScalar(0.55);
+        aura.setColorAt(i, tmp);
+      }
+
+      // Particle trail (capped peers)
+      if (i < trailMeta.n) {
+        const len = trailMeta.lengths[i];
+        const baseOff = trailMeta.offsets[i];
+        const dx = slot.prevPosition.x - slot.position.x;
+        const dy = slot.prevPosition.y - slot.position.y;
+        const dz = slot.prevPosition.z - slot.position.z;
+        // If first frame, use tangent from orbit
+        const speed = Math.hypot(dx, dy, dz) || 0.001;
+        const trailAmp =
+          (slot.shell === "live" ? 18 : slot.shell === "seen" ? 12 : 7) /
+          Math.max(speed, 0.0004);
+        for (let k = 0; k < len; k++) {
+          const f = (k + 1) / len;
+          const o = (baseOff + k) * 3;
+          const jitter = Math.sin(t * 2.2 + slot.phase + k * 0.9) * 0.018 * f;
+          trailPos[o] =
+            slot.position.x + dx * f * trailAmp + jitter;
+          trailPos[o + 1] =
+            slot.position.y + dy * f * trailAmp + jitter * 0.6;
+          trailPos[o + 2] =
+            slot.position.z + dz * f * trailAmp - jitter * 0.4;
+          const fade =
+            (1 - f) *
+            (slot.shell === "live" ? 0.7 : slot.shell === "seen" ? 0.45 : 0.22) *
+            (0.75 + (hb - 1) * 1.5);
+          trailCol[o] = slot.color.r * fade;
+          trailCol[o + 1] = slot.color.g * fade;
+          trailCol[o + 2] = slot.color.b * fade;
+        }
+      }
     }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    core.instanceMatrix.needsUpdate = true;
+    if (core.instanceColor) core.instanceColor.needsUpdate = true;
+    if (glow) {
+      glow.instanceMatrix.needsUpdate = true;
+      if (glow.instanceColor) glow.instanceColor.needsUpdate = true;
+    }
+    if (aura) {
+      aura.instanceMatrix.needsUpdate = true;
+      if (aura.instanceColor) aura.instanceColor.needsUpdate = true;
+    }
+    if (trailMeta.total > 0) {
+      trailGeom.attributes.position.needsUpdate = true;
+      trailGeom.attributes.color.needsUpdate = true;
+    }
   });
 
-  // Raycast pick: map instanceId → peer
   const handlePointer = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
@@ -647,22 +846,73 @@ function PeerInstances({
   if (count === 0) return null;
 
   return (
-    <instancedMesh
-      ref={meshRef}
-      args={[GEO_PEER, undefined, count]}
-      onPointerOver={handlePointer}
-      onClick={handlePointer}
-      onPointerOut={handleLeave}
-      frustumCulled={false}
-    >
-      <meshBasicMaterial
-        vertexColors
-        toneMapped={false}
-        transparent
-        opacity={0.95}
-        depthWrite
-      />
-    </instancedMesh>
+    <group>
+      {/* Soft particle trails */}
+      {trailMeta.total > 0 && (
+        <points geometry={trailGeom} frustumCulled={false}>
+          <pointsMaterial
+            size={0.055}
+            vertexColors
+            transparent
+            opacity={0.9}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+            sizeAttenuation
+            toneMapped={false}
+          />
+        </points>
+      )}
+
+      {/* Outer aura — very soft bloom-like shells */}
+      <instancedMesh
+        ref={auraRef}
+        args={[GEO_HALO, undefined, count]}
+        frustumCulled={false}
+      >
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.14}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </instancedMesh>
+
+      {/* Mid glow */}
+      <instancedMesh
+        ref={glowRef}
+        args={[GEO_HALO, undefined, count]}
+        frustumCulled={false}
+      >
+        <meshBasicMaterial
+          vertexColors
+          transparent
+          opacity={0.38}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+          toneMapped={false}
+        />
+      </instancedMesh>
+
+      {/* Bright core — pickable */}
+      <instancedMesh
+        ref={coreRef}
+        args={[GEO_PEER, undefined, count]}
+        onPointerOver={handlePointer}
+        onClick={handlePointer}
+        onPointerOut={handleLeave}
+        frustumCulled={false}
+      >
+        <meshBasicMaterial
+          vertexColors
+          toneMapped={false}
+          transparent
+          opacity={1}
+          depthWrite
+        />
+      </instancedMesh>
+    </group>
   );
 }
 
@@ -879,9 +1129,13 @@ function NetworkOrbitWorld({
           const [r0, r1] = SHELL_R[shell];
           const seed = hashString(slot.address);
           slot.radius = r0 + seeded01(seed, 1) * (r1 - r0);
-          slot.color.set(SHELL_COLOR[shell]);
-          if (shell === "ghost") slot.color.multiplyScalar(0.55);
-          if (shell === "live") slot.color.offsetHSL(0, 0.05, 0.08);
+          applyShellColor(slot.color, shell);
+          slot.driftSpeed =
+            (shell === "live" ? 0.065 : shell === "seen" ? 0.04 : 0.018) +
+            seeded01(seed, 5) * 0.055;
+          slot.pulseFreq =
+            (shell === "live" ? 1.85 : shell === "seen" ? 1.25 : 0.75) +
+            seeded01(seed, 7) * 0.45;
         }
       }
     };
@@ -946,7 +1200,6 @@ function NetworkOrbitWorld({
       </mesh>
 
       <Earth />
-      <OrbitGuides />
       <PeerInstances
         slots={slots}
         propagationStart={propagationStart}
