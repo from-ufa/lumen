@@ -569,7 +569,7 @@ function OracleBlock({
               accentOverride={theme.accent}
               hideCenterPrice
               onActivity={(rows) => {
-                setActivity(rows);
+                setActivity((prev) => [...rows, ...prev].slice(0, 24));
                 if (
                   rows.some(
                     (r) => r.kind === "datapoint" || r.kind === "pool_refresh"

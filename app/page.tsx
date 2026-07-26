@@ -485,6 +485,11 @@ export default function LumenDashboard() {
                         href="/oracles"
                         role="menuitem"
                         onClick={() => setMobileMenuOpen(false)}
+                        onMouseEnter={() => {
+                          void fetch("/api/oracles", { cache: "default" }).catch(
+                            () => {}
+                          );
+                        }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
                         <CrystalIcon className="w-3.5 h-3.5 text-[#E8C547] shrink-0" />
@@ -563,6 +568,11 @@ export default function LumenDashboard() {
                 href="/oracles"
                 tone="gold"
                 title="ERG/USD & ERG/XAU oracle pools"
+                onMouseEnter={() => {
+                  void fetch("/api/oracles", { cache: "default" }).catch(
+                    () => {}
+                  );
+                }}
               >
                 <CrystalIcon className="w-3.5 h-3.5 shrink-0 opacity-95" />
                 ORACLES

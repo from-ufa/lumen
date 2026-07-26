@@ -62,6 +62,7 @@ export function HeaderPill({
   as = "div",
   href,
   onClick,
+  onMouseEnter,
   type = "button",
   disabled,
 }: {
@@ -74,6 +75,7 @@ export function HeaderPill({
   as?: "div" | "button" | "link";
   href?: string;
   onClick?: () => void;
+  onMouseEnter?: () => void;
   type?: ButtonHTMLAttributes<HTMLButtonElement>["type"];
   disabled?: boolean;
 }) {
@@ -97,7 +99,13 @@ export function HeaderPill({
 
   if (as === "link" && href) {
     return (
-      <Link href={href} className={base} title={title}>
+      <Link
+        href={href}
+        className={base}
+        title={title}
+        onMouseEnter={onMouseEnter}
+        prefetch
+      >
         {inner}
       </Link>
     );
@@ -107,6 +115,7 @@ export function HeaderPill({
       <button
         type={type}
         onClick={onClick}
+        onMouseEnter={onMouseEnter}
         disabled={disabled}
         className={`${base} disabled:opacity-40 active:scale-[0.98]`}
         title={title}
@@ -116,7 +125,7 @@ export function HeaderPill({
     );
   }
   return (
-    <div className={base} title={title}>
+    <div className={base} title={title} onMouseEnter={onMouseEnter}>
       {inner}
     </div>
   );

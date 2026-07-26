@@ -264,29 +264,22 @@ export default function OracleConstellation({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const chromeRef = useRef(chrome);
+  chromeRef.current = chrome;
+  // React hover state only when identity changes (not every mousemove)
   const [hovered, setHovered] = useState<Oracle | null>(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const lastHoverAddr = useRef<string | null>(null);
   const [epoch, setEpoch] = useState(feed.epoch ?? 0);
-  const [epochProgress, setEpochProgress] = useState(0);
-  const [priceLabel, setPriceLabel] = useState(feed.priceLabel ?? "—");
-  const [currentPrice, setCurrentPrice] = useState(feed.price ?? 0);
   const [confidence, setConfidence] = useState(confidenceFromFeed(feed));
   const [activeSources, setActiveSources] = useState(
     feed.activeOracles ?? feed.nodes?.length ?? 0
   );
   const [poolStatus, setPoolStatus] = useState(feed.status);
   const [ageBlocks, setAgeBlocks] = useState(feed.ageBlocks);
-  const [epochHistory, setEpochHistory] = useState<EpochData[]>(() =>
-    historyToEpochBars(feed)
-  );
-  const [activityLog, setActivityLog] = useState<
-    { id: string; t: number; kind: string; message: string }[]
-  >([]);
-  const [livePhase, setLivePhase] = useState<
-    "idle" | "datapoints" | "refresh" | "rewards"
-  >("idle");
 
-  const feedKey = `${feed.id}:${feed.settlementHeight}:${feed.rateNano ?? ""}:${feed.priceLabel}:${(feed.liveEvents || []).map((e) => e.id).join("|")}:${feed.nodes?.map((n) => `${n.address}:${n.height}:${n.rewardTokens ?? ""}`).join(";")}`;
+  // Light feed key — skip full node string churn every 5s poll when quiet
+  const feedKey = `${feed.id}:${feed.settlementHeight}:${feed.rateNano ?? ""}:${feed.status}:${feed.activeOracles ?? ""}:${feed.nodes?.length ?? 0}:${(feed.liveEvents || []).length}`;
   const clientPrevRef = useRef<{
     settlement: number | null;
     rate: number | null;
@@ -382,14 +375,14 @@ export default function OracleConstellation({
     ad.liveMax = feed.statusThresholds?.liveMax ?? 24;
     ad.epochHistory = historyToEpochBars(feed);
 
-    setEpoch(ad.epoch);
-    setPriceLabel(ad.priceLabel);
-    setCurrentPrice(ad.currentPrice);
-    setConfidence(ad.confidence);
-    setActiveSources(ad.activeSources);
-    setPoolStatus(feed.status);
-    setAgeBlocks(feed.ageBlocks);
-    setEpochHistory(ad.epochHistory);
+    // Dual-pane (chrome=false): keep data in anim ref only — avoid React re-render thrash
+    if (chrome) {
+      setEpoch(ad.epoch);
+      setConfidence(ad.confidence);
+      setActiveSources(ad.activeSources);
+      setPoolStatus(feed.status);
+      setAgeBlocks(feed.ageBlocks);
+    }
 
     // ── Real events from API (server-side diff) ──
     const incoming: OracleLiveEvent[] = [...(feed.liveEvents || [])];
@@ -466,20 +459,17 @@ export default function OracleConstellation({
       ad.eventQueue.push(ev);
     }
 
-    if (incoming.length > 0) {
-      setActivityLog((log) => {
-        const next = [
-          ...incoming.map((e) => ({
+    if (incoming.length > 0 && onActivity) {
+      onActivity(
+        incoming
+          .map((e) => ({
             id: e.id,
             t: e.t,
             kind: e.kind,
             message: e.message,
-          })),
-          ...log,
-        ].slice(0, 24);
-        onActivity?.(next);
-        return next;
-      });
+          }))
+          .slice(0, 24)
+      );
     }
 
     // Remember for next client diff
@@ -514,9 +504,10 @@ export default function OracleConstellation({
 
     const ad = animDataRef.current;
 
-    // Init stars once
+    // Init stars once (kept light — dual canvas cost)
     if (ad.stars.length === 0) {
-      for (let i = 0; i < 160; i++) {
+      const nStars = ad.compact ? 48 : 72;
+      for (let i = 0; i < nStars; i++) {
         ad.stars.push({
           x: Math.random() * 3000,
           y: Math.random() * 2000,
@@ -542,16 +533,34 @@ export default function OracleConstellation({
       const rect = container.getBoundingClientRect();
       ad.W = rect.width;
       ad.H = rect.height;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = ad.W * dpr;
-      canvas.height = ad.H * dpr;
+      // Cap DPR — dual 2× DPR canvases were a major jank source
+      const dpr = Math.min(window.devicePixelRatio || 1, ad.compact ? 1.25 : 1.5);
+      canvas.width = Math.max(1, Math.floor(ad.W * dpr));
+      canvas.height = Math.max(1, Math.floor(ad.H * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ad.CX = ad.W / 2;
       ad.CY = ad.H / 2 - (ad.compact ? 8 : 16);
     }
     resize();
-    const ro = new ResizeObserver(resize);
+    let resizeRaf = 0;
+    const ro = new ResizeObserver(() => {
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(resize);
+    });
     ro.observe(container);
+
+    const placeTooltip = (h: Oracle | null, x: number, y: number) => {
+      const el = tooltipRef.current;
+      if (!el) return;
+      if (!h) {
+        el.style.display = "none";
+        return;
+      }
+      const maxX = (container.clientWidth || 400) - 220;
+      el.style.display = "block";
+      el.style.left = `${Math.min(x + 18, maxX)}px`;
+      el.style.top = `${y + 18}px`;
+    };
 
     const onMove = (e: MouseEvent) => {
       const r = canvas.getBoundingClientRect();
@@ -568,11 +577,17 @@ export default function OracleConstellation({
         }
       }
       ad.hovered = h;
-      setHovered(h);
-      setMousePos({ x: ad.mx, y: ad.my });
+      placeTooltip(h, ad.mx, ad.my);
+      const addr = h?.address ?? null;
+      if (addr !== lastHoverAddr.current) {
+        lastHoverAddr.current = addr;
+        setHovered(h);
+      }
     };
     const onLeave = () => {
       ad.hovered = null;
+      lastHoverAddr.current = null;
+      placeTooltip(null, 0, 0);
       setHovered(null);
     };
     canvas.addEventListener("mousemove", onMove);
@@ -1103,25 +1118,22 @@ export default function OracleConstellation({
               const last = ad.datapoints[ad.datapoints.length - 1];
               if (last) last.progress = -0.12;
             }
-            setLivePhase("datapoints");
           } else if (ad.oracles.length > 0) {
             // Fallback: still show a shot if address mapping missed
             const any =
               ad.oracles.find((o) => o.status === "Active") || ad.oracles[0];
             spawnDatapoint(any, false);
-            setLivePhase("datapoints");
           }
         } else if (ev.kind === "pool_refresh" || ev.kind === "rate_change") {
           const ac = ad.accent || "#00E5FF";
           ad.glowRings.push({ r: 28, a: 1, color: ac });
           ad.glowRings.push({ r: 42, a: 0.75, color: ac });
           ad.glowRings.push({ r: 55, a: 0.45, color: "#E8D5A3" });
-          setPriceLabel(ad.priceLabel);
-          setCurrentPrice(ad.currentPrice);
-          setEpoch(ad.epoch);
-          setConfidence(ad.confidence);
-          setActiveSources(ad.activeSources);
-          setLivePhase("refresh");
+          if (chromeRef.current) {
+            setEpoch(ad.epoch);
+            setConfidence(ad.confidence);
+            setActiveSources(ad.activeSources);
+          }
           // On pool refresh: reward tokens flow to live oracles that recently posted
           if (ev.kind === "pool_refresh") {
             const live = ad.oracles.filter((o) => o.status === "Active");
@@ -1139,7 +1151,6 @@ export default function OracleConstellation({
                 });
               }
             }
-            setLivePhase("rewards");
           }
         } else if (ev.kind === "reward") {
           const tgt = findOracle(ev.address);
@@ -1156,31 +1167,32 @@ export default function OracleConstellation({
               1 + Math.floor((ev.rewardDelta || 1) / 50)
             );
             for (let i = 0; i < n; i++) spawnReward(tgt);
-            setLivePhase("rewards");
           }
         }
       }
 
-      // Soft return to idle when queues empty
-      if (
-        ad.eventQueue.length === 0 &&
-        ad.datapoints.length === 0 &&
-        ad.rewards.length === 0 &&
-        ad.time % 90 === 0
-      ) {
-        setLivePhase("idle");
-      }
-
-      // Epoch progress bar: how much of the LIVE window is consumed
+      // Epoch progress (anim only — no React setState)
       const thr = ad.liveMax || 24;
       const age = ad.ageBlocks ?? 0;
       ad.epochProgress = thr > 0 ? Math.min(1, age / thr) : 0;
-      if (ad.time % 15 === 0) setEpochProgress(ad.epochProgress);
     }
 
+    let animFrame = 0;
+    let running = true;
     function animate() {
+      if (!running) return;
+      // Pause when tab hidden — free main thread
+      if (document.visibilityState === "hidden") {
+        animFrame = requestAnimationFrame(animate);
+        return;
+      }
       ctx.clearRect(0, 0, ad.W, ad.H);
       ad.time++;
+      // Dual compact: skip every other frame for CPU budget
+      if (ad.compact && ad.time % 2 === 0) {
+        animFrame = requestAnimationFrame(animate);
+        return;
+      }
       drawBg();
       drawOrbits();
       drawGlowRings();
@@ -1194,10 +1206,12 @@ export default function OracleConstellation({
       animFrame = requestAnimationFrame(animate);
     }
 
-    let animFrame = requestAnimationFrame(animate);
+    animFrame = requestAnimationFrame(animate);
 
     return () => {
+      running = false;
       cancelAnimationFrame(animFrame);
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
       canvas.removeEventListener("mousemove", onMove);
       canvas.removeEventListener("mouseleave", onLeave);
       ro.disconnect();
@@ -1271,86 +1285,85 @@ export default function OracleConstellation({
         </>
       )}
 
-      {/* Tooltip */}
-      {hovered && (
-        <div
-          style={{
-            ...tooltipStyle,
-            left: Math.min(mousePos.x + 18, (containerRef.current?.clientWidth || 400) - 220),
-            top: mousePos.y + 18,
-          }}
-        >
-          <div
-            style={{
-              fontWeight: 600,
-              fontSize: 13,
-              marginBottom: 10,
-              color: "#fff",
-              wordBreak: "break-all",
-            }}
-          >
-            {hovered.address}
-          </div>
-          {(hovered.isMine || hovered.isLumenHost) && (
+      {/* Tooltip shell — position via DOM (no setState on mousemove) */}
+      <div
+        ref={tooltipRef}
+        style={{ ...tooltipStyle, display: "none", left: 0, top: 0 }}
+      >
+        {hovered && (
+          <>
             <div
               style={{
-                ...ttRowStyle,
-                color: hovered.isMine ? "#FF7A3D" : "#00E5FF",
                 fontWeight: 600,
-                letterSpacing: "0.12em",
-                fontSize: 10,
+                fontSize: 13,
+                marginBottom: 10,
+                color: "#fff",
+                wordBreak: "break-all",
               }}
             >
-              {hovered.isMine ? "YOUR ORACLE" : "LUMEN HOST"}
+              {hovered.address}
             </div>
-          )}
-          <div style={ttRowStyle}>
-            <span>Status:</span>
-            <span
-              style={{
-                color:
-                  hovered.status === "Active"
-                    ? "#00D4AA"
-                    : hovered.status === "Offline"
-                      ? "#777"
-                      : "#FBBF24",
-              }}
-            >
-              {hovered.status}
-            </span>
-          </div>
-          <div style={ttRowStyle}>
-            <span>Post height:</span>
-            <span>{hovered.height?.toLocaleString() ?? "—"}</span>
-          </div>
-          <div style={ttRowStyle}>
-            <span>Age / tip:</span>
-            <span>
-              {hovered.latency === 999
-                ? "offline"
-                : `~${hovered.latency > 8 ? Math.round((hovered.latency - 8) / 2) : 0} blk`}
-            </span>
-          </div>
-          <div style={ttRowStyle}>
-            <span>Freshness:</span>
-            <span>{hovered.accuracy}%</span>
-          </div>
-          {hovered.rewardTokens != null && (
+            {(hovered.isMine || hovered.isLumenHost) && (
+              <div
+                style={{
+                  ...ttRowStyle,
+                  color: hovered.isMine ? "#FF7A3D" : "#00E5FF",
+                  fontWeight: 600,
+                  letterSpacing: "0.12em",
+                  fontSize: 10,
+                }}
+              >
+                {hovered.isMine ? "YOUR ORACLE" : "LUMEN HOST"}
+              </div>
+            )}
             <div style={ttRowStyle}>
-              <span>Claimable rewards:</span>
-              <span style={{ color: "#FFD700" }}>
-                {hovered.rewardTokens.toLocaleString()}
+              <span>Status:</span>
+              <span
+                style={{
+                  color:
+                    hovered.status === "Active"
+                      ? "#00D4AA"
+                      : hovered.status === "Offline"
+                        ? "#777"
+                        : "#FBBF24",
+                }}
+              >
+                {hovered.status}
               </span>
             </div>
-          )}
-          {hovered.collectedHeight != null && (
             <div style={ttRowStyle}>
-              <span>Collected h:</span>
-              <span>{hovered.collectedHeight.toLocaleString()}</span>
+              <span>Post height:</span>
+              <span>{hovered.height?.toLocaleString() ?? "—"}</span>
             </div>
-          )}
-        </div>
-      )}
+            <div style={ttRowStyle}>
+              <span>Age / tip:</span>
+              <span>
+                {hovered.latency === 999
+                  ? "offline"
+                  : `~${hovered.latency > 8 ? Math.round((hovered.latency - 8) / 2) : 0} blk`}
+              </span>
+            </div>
+            <div style={ttRowStyle}>
+              <span>Freshness:</span>
+              <span>{hovered.accuracy}%</span>
+            </div>
+            {hovered.rewardTokens != null && (
+              <div style={ttRowStyle}>
+                <span>Claimable rewards:</span>
+                <span style={{ color: "#FFD700" }}>
+                  {hovered.rewardTokens.toLocaleString()}
+                </span>
+              </div>
+            )}
+            {hovered.collectedHeight != null && (
+              <div style={ttRowStyle}>
+                <span>Collected h:</span>
+                <span>{hovered.collectedHeight.toLocaleString()}</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
 
     </div>

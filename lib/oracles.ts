@@ -841,14 +841,45 @@ function displayForFeed(
   };
 }
 
+/** Short in-process cache for public network snapshot (cuts cold UI wait). */
+const SNAPSHOT_CACHE_MS = 4_000;
+let networkSnapshotCache: {
+  at: number;
+  data: OraclesResponse;
+} | null = null;
+
+function cacheKeyForOpts(opts: LoadOraclesOptions): string | null {
+  // Only cache pure network host view (no bridge metrics / hybrid / tip override)
+  if (opts.view === "my") return null;
+  if (opts.metricsByFeed) return null;
+  if (opts.hybridMetrics) return null;
+  if (opts.tipHeightOverride !== undefined) return null;
+  if (opts.skipLocalMetrics) return null;
+  if (opts.onlyFeeds?.length) return null;
+  return "network";
+}
+
 export async function loadOraclesSnapshot(
   opts: LoadOraclesOptions = {}
 ): Promise<OraclesResponse> {
+  const ck = cacheKeyForOpts(opts);
+  if (ck && networkSnapshotCache) {
+    const age = Date.now() - networkSnapshotCache.at;
+    if (age >= 0 && age < SNAPSHOT_CACHE_MS) {
+      return {
+        ...networkSnapshotCache.data,
+        generatedAt: Date.now(),
+      };
+    }
+  }
+
   const generatedAt = Date.now();
-  const tipHeight =
+  // Tip shares one promise across both feeds — no serial tip-then-boxes waterfall
+  const tipPromise: Promise<number | null> =
     opts.tipHeightOverride !== undefined
-      ? opts.tipHeightOverride
-      : await fetchTipHeight();
+      ? Promise.resolve(opts.tipHeightOverride)
+      : fetchTipHeight();
+
   const historyFile = readHistory();
   let historyDirty = false;
 
@@ -874,7 +905,7 @@ export async function loadOraclesSnapshot(
         epoch: null,
         epochLength: cfg.epochLength,
         settlementHeight: null,
-        tipHeight,
+        tipHeight: null,
         ageBlocks: null,
         ageMs: null,
         lastUpdatedAt: null,
@@ -888,7 +919,13 @@ export async function loadOraclesSnapshot(
       };
 
       try {
-        const box = await fetchPoolBox(cfg.poolNft);
+        // Box + tip in parallel; metrics after box (needs settlement height)
+        const [tipHeight, box] = await Promise.all([
+          tipPromise,
+          fetchPoolBox(cfg.poolNft),
+        ]);
+        base.tipHeight = tipHeight;
+
         if (!box) {
           base.error = "Pool box not found";
           return base;
@@ -980,6 +1017,7 @@ export async function loadOraclesSnapshot(
 
         return {
           ...base,
+          tipHeight,
           status: statusFromAge(ageBlocks, cfg.epochLength, true),
           statusThresholds: poolStatusThresholds(cfg.epochLength),
           rateNano: box.rateNano,
@@ -1021,7 +1059,14 @@ export async function loadOraclesSnapshot(
 
   if (historyDirty) writeHistory(historyFile);
 
-  return {
+  // Resolve tip once for response envelope (feeds already have tipHeight)
+  const tipHeight =
+    opts.tipHeightOverride !== undefined
+      ? opts.tipHeightOverride
+      : feeds.find((f) => f.tipHeight != null)?.tipHeight ??
+        (await tipPromise);
+
+  const result: OraclesResponse = {
     generatedAt,
     tipHeight,
     avgBlockMs: DEFAULT_BLOCK_MS,
@@ -1029,4 +1074,10 @@ export async function loadOraclesSnapshot(
     view: opts.view || "network",
     bridge: opts.bridge,
   };
+
+  if (ck) {
+    networkSnapshotCache = { at: Date.now(), data: result };
+  }
+
+  return result;
 }

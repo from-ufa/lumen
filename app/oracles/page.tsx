@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import {
   Zap,
@@ -18,7 +19,6 @@ import {
   HeaderIconButton,
   HeaderPill,
 } from "../components/HeaderChrome";
-import OraclesDualView from "./components/OraclesDualView";
 import type { OraclesApiResponse } from "./components/types";
 import type { BridgeStatus, NodeMode, OracleViewMode } from "../lib/node-api";
 import {
@@ -28,6 +28,21 @@ import {
   saveBridgeToken,
   saveOracleViewMode,
 } from "../lib/node-api";
+
+/** Heavy dual canvas — load after shell paints (cuts first-switch jank) */
+const OraclesDualView = dynamic(() => import("./components/OraclesDualView"), {
+  ssr: false,
+  loading: () => (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 lg:gap-6 w-full">
+      {[0, 1].map((i) => (
+        <div
+          key={i}
+          className="min-w-0 w-full rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] h-[min(640px,70vh)] animate-pulse"
+        />
+      ))}
+    </div>
+  ),
+});
 
 async function fetchOracles(
   mode: OracleViewMode,
@@ -62,15 +77,15 @@ export default function OraclesPage() {
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
 
-  const [viewMode, setViewMode] = useState<OracleViewMode>("network");
-  const [bridgeToken, setBridgeToken] = useState("");
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    setBridgeToken(loadBridgeToken());
-    setViewMode(loadOracleViewMode());
-    setReady(true);
-  }, []);
+  // Sync hydrate from localStorage — no ready-gate (fetch starts on first paint)
+  const [viewMode, setViewMode] = useState<OracleViewMode>(() => {
+    if (typeof window === "undefined") return "network";
+    return loadOracleViewMode();
+  });
+  const [bridgeToken, setBridgeToken] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return loadBridgeToken();
+  });
 
   const persistToken = useCallback((t: string) => {
     setBridgeToken(t);
@@ -90,9 +105,9 @@ export default function OraclesPage() {
   } = useQuery({
     queryKey: ["bridgeStatus", bridgeToken],
     queryFn: async (): Promise<BridgeStatus> => fetchBridgeStatus(bridgeToken),
-    enabled: ready && !!bridgeToken,
+    enabled: !!bridgeToken,
     refetchInterval: 8_000,
-    staleTime: 3_000,
+    staleTime: 5_000,
   });
 
   const onRefreshBridgeStatus = useCallback(() => {
@@ -102,9 +117,12 @@ export default function OraclesPage() {
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["oracles-constellation", viewMode, bridgeToken],
     queryFn: () => fetchOracles(viewMode, bridgeToken),
-    enabled: ready && (viewMode === "network" || !!bridgeToken),
+    enabled: viewMode === "network" || !!bridgeToken,
     refetchInterval: 5_000,
-    staleTime: 2_000,
+    staleTime: 8_000,
+    gcTime: 60_000,
+    placeholderData: (prev) => prev,
+    refetchOnWindowFocus: false,
   });
 
   const isOnline =
@@ -392,7 +410,7 @@ export default function OraclesPage() {
           </div>
         </div>
 
-        {viewMode === "my" && !bridgeToken && ready ? (
+        {viewMode === "my" && !bridgeToken ? (
           <div className="rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] py-16 flex flex-col items-center gap-4 text-center px-4">
             <p className="font-mono text-xs tracking-[0.2em] text-[#A0A0B0]">
               CONNECT VIA ORACLE SETTINGS
@@ -412,7 +430,7 @@ export default function OraclesPage() {
         ) : (
           <OraclesDualView
             data={data}
-            isLoading={isLoading || !ready}
+            isLoading={isLoading && !data}
             isError={isError}
             isFetching={isFetching}
             onRetry={() => void refetch()}

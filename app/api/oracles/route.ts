@@ -219,7 +219,8 @@ export async function GET(req: NextRequest) {
     const data = await loadOraclesSnapshot({ view: "network" });
     return NextResponse.json(data, {
       headers: {
-        "Cache-Control": "no-store, max-age=0",
+        // Browser may reuse for a few seconds; server still has in-memory 4s cache
+        "Cache-Control": "private, max-age=3, stale-while-revalidate=10",
       },
     });
   } catch (e: unknown) {
