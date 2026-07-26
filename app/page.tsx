@@ -6,8 +6,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { 
   RefreshCw, Zap,
-  ExternalLink, Orbit, Globe2, Cable,
-  MoreHorizontal, Share2, Settings, Gem,
+  ExternalLink, Orbit, Globe2,
+  MoreHorizontal, Settings,
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
@@ -17,7 +17,7 @@ import MetricsCards from './components/MetricsCards';
 import BlocksTimeline from './components/BlocksTimeline';
 import MempoolFlow from './components/MempoolFlow';
 import ConnectionSettings from './components/ConnectionSettings';
-import ShareCard from './components/ShareCard';
+import CrystalIcon from './components/CrystalIcon';
 import LumenWordmark from './components/LumenWordmark';
 import {
   HeaderActions,
@@ -78,14 +78,11 @@ export default function LumenDashboard() {
   const [avgBlockTime, setAvgBlockTime] = useState<number | null>(null);
   const [avgBlockSamples, setAvgBlockSamples] = useState(0);
   const [viewMode, setViewMode] = useState<'constellation' | 'map'>('constellation');
-  const [publicMode, setPublicMode] = useState(false);
-  const [shareModalOpen, setShareModalOpen] = useState(false);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   /** Hide floating Boom/Refresh when any full-screen modal is open */
-  const isAnyModalOpen = shareModalOpen || settingsModalOpen;
+  const isAnyModalOpen = settingsModalOpen;
   /** Mobile header: compact menu */
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [shareOpenKey, setShareOpenKey] = useState(0);
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
@@ -148,20 +145,6 @@ export default function LumenDashboard() {
   useEffect(() => {
     setNodeModeState(loadNodeMode());
     setBridgeTokenState(loadBridgeToken());
-  }, []);
-
-  // Public Mode status (ShareCard / badge only — not editable in Node Settings)
-  useEffect(() => {
-    void (async () => {
-      try {
-        const res = await fetch("/api/public-status", { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        setPublicMode(!!data.publicMode);
-      } catch {
-        /* offline / first paint */
-      }
-    })();
   }, []);
 
   // Bridge connection status (poll when we have a token)
@@ -472,26 +455,22 @@ export default function LumenDashboard() {
               className="flex items-center gap-1.5 shrink-0"
               ref={mobileMenuRef}
             >
+              {/* Source: green when lumen (or my node) is up, red when down */}
               <HeaderPill
-                tone={
-                  isOnline
-                    ? "live"
-                    : bridgeOnline && nodeMode === "my"
-                      ? "warn"
-                      : "offline"
-                }
+                tone={isOnline ? "live" : "offline"}
                 showDot
                 className="!h-9 !px-3 !text-[9px]"
+                title={
+                  nodeMode === "my"
+                    ? isOnline
+                      ? "Source: your node via bridge"
+                      : "Source offline"
+                    : isOnline
+                      ? "Source: lumen"
+                      : "Source lumen offline"
+                }
               >
-                {nodeMode === "my"
-                  ? isOnline
-                    ? "LIVE"
-                    : bridgeOnline
-                      ? "BR"
-                      : "OFF"
-                  : isOnline
-                    ? "LIVE"
-                    : "OFF"}
+                {nodeMode === "my" ? "MY" : "LUMEN"}
               </HeaderPill>
 
               <div className="relative">
@@ -526,22 +505,9 @@ export default function LumenDashboard() {
                         onClick={() => setMobileMenuOpen(false)}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
-                        <Gem className="w-3.5 h-3.5 text-[#E8C547] shrink-0" />
+                        <CrystalIcon className="w-3.5 h-3.5 text-[#E8C547] shrink-0" />
                         ORACLES
                       </Link>
-                      <div className="h-px bg-white/[0.06]" />
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMobileMenuOpen(false);
-                          setShareOpenKey((k) => k + 1);
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
-                      >
-                        <Share2 className="w-3.5 h-3.5 text-[#FF7A3D] shrink-0" />
-                        SHARE
-                      </button>
                       <div className="h-px bg-white/[0.06]" />
                       <button
                         type="button"
@@ -574,18 +540,8 @@ export default function LumenDashboard() {
               </div>
             </div>
 
-            {/* Hidden triggers — modals only */}
+            {/* Hidden triggers — settings modal only */}
             <div className="hidden">
-              <ShareCard
-                nodeInfo={nodeInfo}
-                avgBlockTime={avgBlockTime}
-                isOnline={isOnline}
-                publicMode={publicMode}
-                mempoolSize={mempoolSize}
-                onOpenChange={setShareModalOpen}
-                hideTrigger
-                openKey={shareOpenKey}
-              />
               <ConnectionSettings
                 isOnline={isOnline}
                 onReconnect={handleReconnect}
@@ -620,59 +576,23 @@ export default function LumenDashboard() {
             </div>
 
             <HeaderActions>
+              {/* Source indicator only: green = up, red = down */}
               <HeaderPill
-                tone={
-                  isOnline ? "live" : bridgeOnline && nodeMode === "my" ? "warn" : "offline"
-                }
+                tone={isOnline ? "live" : "offline"}
                 showDot
                 title={
                   nodeMode === "my"
                     ? isOnline
-                      ? "Your node live via bridge"
+                      ? "Source: your node via bridge"
                       : bridgeOnline
                         ? "Bridge up — waiting for node"
-                        : "Bridge offline"
+                        : "Source offline"
                     : isOnline
-                      ? "lumen node live"
-                      : "lumen node offline"
+                      ? "Source: lumen"
+                      : "Source lumen offline"
                 }
               >
-                {nodeMode === "my"
-                  ? isOnline
-                    ? "MY NODE LIVE"
-                    : bridgeOnline
-                      ? "BRIDGE UP"
-                      : "BRIDGE OFF"
-                  : isOnline
-                    ? "NODE LIVE"
-                    : "NODE OFF"}
-              </HeaderPill>
-
-              <HeaderPill
-                tone={
-                  nodeMode === "my"
-                    ? bridgeOnline
-                      ? "cyan"
-                      : "warn"
-                    : "neutral"
-                }
-                className="hidden md:inline-flex"
-                title={
-                  nodeMode === "my"
-                    ? bridgeOnline
-                      ? "Reading your node via lumen bridge"
-                      : "My Node — Bridge agent offline"
-                    : "Reading this server’s lumen Ergo node"
-                }
-              >
-                {nodeMode === "my" ? (
-                  <>
-                    <Cable className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                    MY NODE
-                  </>
-                ) : (
-                  "lumen node"
-                )}
+                {nodeMode === "my" ? "MY" : "LUMEN"}
               </HeaderPill>
 
               <HeaderPill
@@ -681,18 +601,9 @@ export default function LumenDashboard() {
                 tone="gold"
                 title="ERG/USD & ERG/XAU oracle pools"
               >
-                <Gem className="w-3.5 h-3.5 shrink-0 opacity-90" />
+                <CrystalIcon className="w-3.5 h-3.5 shrink-0 opacity-95" />
                 ORACLES
               </HeaderPill>
-
-              <ShareCard
-                nodeInfo={nodeInfo}
-                avgBlockTime={avgBlockTime}
-                isOnline={isOnline}
-                publicMode={publicMode}
-                mempoolSize={mempoolSize}
-                onOpenChange={setShareModalOpen}
-              />
 
               <ConnectionSettings
                 isOnline={isOnline}
