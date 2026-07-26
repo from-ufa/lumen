@@ -1,24 +1,22 @@
-CHAIN VISUALIZATION — CLEAN SLATE (2026-07-26)
-==============================================
+CHAIN VISUALIZATION — CRYSTALLOGENESIS (live)
+=============================================
 
-STATUS: blank page for graphics + look decisions.
+STATUS: Ergo Crystallogenesis is the chain visualizer.
 
-REMOVED (graphics / look only):
-- app/components/ChainPulse.tsx
-- Dashboard tab CHAIN PULSE
-- All prior visual concepts (Block Genesis, Crystallogenesis, soft sprites,
-  crystal core, sealed stack dock, assemble pulse, chime, storyboard HUD, …)
-- Design prescriptions purged from THIN-EXPLORER-CAPABILITIES.txt
+COMPONENT
+- app/components/Crystallogenesis.tsx
+- Dashboard tab: CRYSTALLOGENESIS (viewMode: "chain")
 
-KEPT (data plane — thin explorer):
+DATA PLANE (unchanged)
 - lib/chain.ts
-- app/api/chain/*  (status, feed, blocks, block, mempool, address, token)
+- /api/chain/*  (status, feed, blocks, block, mempool, address, token)
 
-ALSO KEPT (not chain viz):
-- Network Orbit (Constellation3D) + World Map
-- BlocksTimeline / MempoolFlow sidebar lists
+LOOK (master language)
+- Void black · frosted crystal · cool cyan threads
+- Ergo orange (#FF6B00) only on seal / high-energy moments
+- Sequence: mempool → formation → selection → merkle → Autolykos → seal → dock
+- Live feed poll ~4s; genesis pulse on new tip
 
-RULE: next chain visual starts from zero. Data tags (mempool/sealed/focus)
-are API shape only — not a mandate for how anything looks.
-
-Next: design new chain visualization when product direction is set.
+STACK
+- Next.js + R3F + drei MeshTransmissionMaterial + postprocessing bloom
+- Local node via existing thin explorer (not Vite/FastAPI rewrite)
