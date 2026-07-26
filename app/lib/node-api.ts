@@ -85,9 +85,41 @@ export function bridgeInstallCommand(_httpBase?: string): string {
  * One-liner: run Bridge with personal token (after install.sh).
  * Uses ~/lumen-bridge — same default as install.sh.
  */
-export function bridgeRunCommand(token: string, wsUrl?: string): string {
+export function bridgeRunCommand(
+  token: string,
+  wsUrl?: string,
+  opts?: { oracleUsd?: boolean; oracleXau?: boolean }
+): string {
   const server = wsUrl || bridgeWsUrlForClient();
-  return `cd ~/lumen-bridge && node bridge.js --token=${token} --server=${server}`;
+  let cmd = `cd ~/lumen-bridge && node bridge.js --token=${token} --server=${server}`;
+  if (opts?.oracleUsd) cmd += ` --oracle-usd=http://127.0.0.1:9021`;
+  if (opts?.oracleXau) cmd += ` --oracle-xau=http://127.0.0.1:9011`;
+  return cmd;
+}
+
+export const LS_ORACLE_VIEW = "lumen-oracle-view";
+export type OracleViewMode = "network" | "my";
+
+export function isOracleViewMode(v: unknown): v is OracleViewMode {
+  return v === "network" || v === "my";
+}
+
+export function loadOracleViewMode(): OracleViewMode {
+  if (typeof window === "undefined") return "network";
+  try {
+    const raw = localStorage.getItem(LS_ORACLE_VIEW);
+    return isOracleViewMode(raw) ? raw : "network";
+  } catch {
+    return "network";
+  }
+}
+
+export function saveOracleViewMode(mode: OracleViewMode): void {
+  try {
+    localStorage.setItem(LS_ORACLE_VIEW, mode);
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -295,6 +327,8 @@ export type BridgeStatus = {
   remoteAddress: string | null;
   /** Agent-reported public IPv4 (hello.publicIp), if any */
   publicIp?: string | null;
+  /** Configured oracle feeds from agent hello (e.g. ["erg-usd"]) */
+  oracles?: string[];
   pendingRequests: number;
   error?: string;
   message?: string;

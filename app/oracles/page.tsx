@@ -8,25 +8,22 @@ import {
   Gem,
   MoreHorizontal,
   Home,
-  Globe2,
-  Cable,
-  Copy,
-  Check,
+  Settings,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import LumenWordmark from "../components/LumenWordmark";
+import ConnectionSettings from "../components/ConnectionSettings";
 import OraclesDualView from "./components/OraclesDualView";
 import type { OraclesApiResponse } from "./components/types";
+import type { BridgeStatus, NodeMode, OracleViewMode } from "../lib/node-api";
 import {
-  bridgeDockerOracleCommand,
+  fetchBridgeStatus,
   loadBridgeToken,
+  loadOracleViewMode,
   saveBridgeToken,
-  DEFAULT_BRIDGE_WS_PUBLIC,
+  saveOracleViewMode,
 } from "../lib/node-api";
-import { copyTextToClipboard } from "../lib/copy-text";
-
-type OracleViewMode = "network" | "my";
 
 async function fetchOracles(
   mode: OracleViewMode,
@@ -47,19 +44,28 @@ async function fetchOracles(
   return res.json();
 }
 
+/** Map oracle view ↔ ConnectionSettings nodeMode (same modal chrome). */
+function viewToNodeMode(v: OracleViewMode): NodeMode {
+  return v === "my" ? "my" : "lumen";
+}
+function nodeModeToView(m: NodeMode): OracleViewMode {
+  return m === "my" ? "my" : "network";
+}
+
 export default function OraclesPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const [settingsOpenKey, setSettingsOpenKey] = useState(0);
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+
   const [viewMode, setViewMode] = useState<OracleViewMode>("network");
   const [bridgeToken, setBridgeToken] = useState("");
-  const [tokenReady, setTokenReady] = useState(false);
-  const [wantUsd, setWantUsd] = useState(true);
-  const [wantXau, setWantXau] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     setBridgeToken(loadBridgeToken());
-    setTokenReady(true);
+    setViewMode(loadOracleViewMode());
+    setReady(true);
   }, []);
 
   const persistToken = useCallback((t: string) => {
@@ -67,13 +73,40 @@ export default function OraclesPage() {
     saveBridgeToken(t);
   }, []);
 
+  const setNodeMode = useCallback((mode: NodeMode) => {
+    const v = nodeModeToView(mode);
+    setViewMode(v);
+    saveOracleViewMode(v);
+  }, []);
+
+  const {
+    data: bridgeStatus = null,
+    isFetching: bridgeStatusLoading,
+    refetch: refetchBridgeStatus,
+  } = useQuery({
+    queryKey: ["bridgeStatus", bridgeToken],
+    queryFn: async (): Promise<BridgeStatus> => fetchBridgeStatus(bridgeToken),
+    enabled: ready && !!bridgeToken,
+    refetchInterval: 8_000,
+    staleTime: 3_000,
+  });
+
+  const onRefreshBridgeStatus = useCallback(() => {
+    if (bridgeToken) void refetchBridgeStatus();
+  }, [bridgeToken, refetchBridgeStatus]);
+
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ["oracles-constellation", viewMode, bridgeToken],
     queryFn: () => fetchOracles(viewMode, bridgeToken),
-    enabled: tokenReady && (viewMode === "network" || !!bridgeToken),
+    enabled: ready && (viewMode === "network" || !!bridgeToken),
     refetchInterval: 5_000,
     staleTime: 2_000,
   });
+
+  const isOnline =
+    viewMode === "network"
+      ? !isError && !!data?.feeds?.length
+      : !!bridgeStatus?.connected && !isError;
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -91,6 +124,8 @@ export default function OraclesPage() {
   }, [mobileMenuOpen]);
 
   const feeds = data?.feeds ?? [];
+  const nodeMode = viewToNodeMode(viewMode);
+  const bridgeOnline = !!bridgeStatus?.connected;
 
   return (
     <div className="min-h-screen min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
@@ -141,7 +176,7 @@ export default function OraclesPage() {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -4, scale: 0.98 }}
                       transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                      className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[11.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
+                      className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[12rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
                     >
                       <Link
                         href="/"
@@ -152,6 +187,19 @@ export default function OraclesPage() {
                         <Home className="w-3.5 h-3.5 text-[#A0A0B0] shrink-0" />
                         DASHBOARD
                       </Link>
+                      <div className="h-px bg-white/[0.06]" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setMobileMenuOpen(false);
+                          setSettingsOpenKey((k) => k + 1);
+                        }}
+                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
+                      >
+                        <Settings className="w-3.5 h-3.5 text-[#FF7A3D] shrink-0" />
+                        SETTINGS
+                      </button>
                       <div className="h-px bg-white/[0.06]" />
                       <button
                         type="button"
@@ -172,7 +220,7 @@ export default function OraclesPage() {
             </div>
           </div>
 
-          {/* Desktop */}
+          {/* Desktop — mirror dashboard header actions */}
           <div className="hidden sm:flex sm:items-center sm:justify-between sm:gap-4">
             <div className="flex items-center gap-3 min-w-0">
               <Link href="/" className="flex items-center gap-3 min-w-0 group">
@@ -191,6 +239,42 @@ export default function OraclesPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 justify-end">
+              <div
+                className={`flex items-center gap-2 px-4 lg:px-5 py-2 rounded-3xl text-sm font-mono tracking-widest border ${
+                  viewMode === "my"
+                    ? bridgeOnline
+                      ? "border-[#00E5FF]/30 bg-[#00E5FF]/5 text-[#00E5FF]"
+                      : "border-[#F59E0B]/30 bg-[#F59E0B]/5 text-[#F59E0B]"
+                    : isOnline
+                      ? "border-[#10B981]/30 bg-[#10B981]/5 text-[#10B981]"
+                      : "border-[#EF4444]/30 bg-[#EF4444]/5 text-[#EF4444]"
+                }`}
+                title={
+                  viewMode === "my"
+                    ? bridgeOnline
+                      ? "Your oracle agent via lumen bridge"
+                      : "My Oracle: Bridge offline — open ORACLE SETTINGS"
+                    : "Public network pools"
+                }
+              >
+                <div
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    viewMode === "my"
+                      ? bridgeOnline
+                        ? "bg-[#00E5FF] status-dot"
+                        : "bg-[#F59E0B]"
+                      : isOnline
+                        ? "bg-[#10B981] status-dot"
+                        : "bg-[#EF4444]"
+                  }`}
+                />
+                {viewMode === "my"
+                  ? bridgeOnline
+                    ? "MY ORACLE · BRIDGE"
+                    : "MY ORACLE · OFFLINE"
+                  : "NETWORK"}
+              </div>
+
               <div className="hidden md:flex items-center gap-1.5 px-3 py-2 rounded-3xl text-[10px] font-mono tracking-[2px] border border-[#E8C547]/30 bg-[#E8C547]/[0.08] text-[#E8C547]">
                 <Gem className="w-3.5 h-3.5" />
                 ORACLES
@@ -203,6 +287,22 @@ export default function OraclesPage() {
                 <Home className="w-3.5 h-3.5" />
                 DASHBOARD
               </Link>
+
+              <div className="hidden sm:block">
+                <ConnectionSettings
+                  variant="oracle"
+                  isOnline={isOnline}
+                  onReconnect={() => void refetch()}
+                  onOpenChange={setSettingsModalOpen}
+                  nodeMode={nodeMode}
+                  setNodeMode={setNodeMode}
+                  bridgeToken={bridgeToken}
+                  setBridgeToken={persistToken}
+                  bridgeStatus={bridgeStatus}
+                  bridgeStatusLoading={bridgeStatusLoading}
+                  onRefreshBridgeStatus={onRefreshBridgeStatus}
+                />
+              </div>
 
               <button
                 type="button"
@@ -220,10 +320,28 @@ export default function OraclesPage() {
         </div>
       </div>
 
-      {/* === PAGE BODY — same content width / padding as dashboard === */}
+      {/* Single settings instance for mobile (trigger via menu openKey) */}
+      <div className="sm:hidden">
+        <ConnectionSettings
+          variant="oracle"
+          isOnline={isOnline}
+          onReconnect={() => void refetch()}
+          onOpenChange={setSettingsModalOpen}
+          nodeMode={nodeMode}
+          setNodeMode={setNodeMode}
+          bridgeToken={bridgeToken}
+          setBridgeToken={persistToken}
+          bridgeStatus={bridgeStatus}
+          bridgeStatusLoading={bridgeStatusLoading}
+          onRefreshBridgeStatus={onRefreshBridgeStatus}
+          hideTrigger
+          openKey={settingsOpenKey}
+        />
+      </div>
+
+      {/* === PAGE BODY === */}
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
-        {/* Hero */}
-        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-y-4 mb-5 sm:mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-y-4 mb-6 sm:mb-8">
           <div className="min-w-0">
             <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#E8C547] mb-1">
               ERGO ORACLE POOLS
@@ -233,7 +351,7 @@ export default function OraclesPage() {
             </h1>
             <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1">
               {viewMode === "my"
-                ? "Your oracle agent — one pool or both, securely via bridge."
+                ? "Your oracle agent via the same lumen bridge as My Node."
                 : "Live USD and XAU from on-chain pool boxes."}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
@@ -253,240 +371,77 @@ export default function OraclesPage() {
             </div>
           </div>
 
-          <div className="flex flex-col items-stretch sm:items-end gap-3">
-            {/* Network | My oracle */}
-            <div className="inline-flex p-1 rounded-2xl glass border border-white/10 self-start sm:self-end">
-              <button
-                type="button"
-                onClick={() => setViewMode("network")}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[11px] font-mono tracking-widest transition-all ${
-                  viewMode === "network"
-                    ? "bg-white/10 text-white"
-                    : "text-[#A0A0B0] hover:text-white"
-                }`}
-              >
-                <Globe2 className="w-3.5 h-3.5" />
-                NETWORK
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("my")}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[11px] font-mono tracking-widest transition-all ${
-                  viewMode === "my"
-                    ? "bg-white/10 text-white"
-                    : "text-[#A0A0B0] hover:text-white"
-                }`}
-              >
-                <Cable className="w-3.5 h-3.5" />
-                MY ORACLE
-              </button>
-            </div>
-
-            {/* Status chips */}
-            <div className="flex items-end gap-2 sm:gap-3 text-sm flex-wrap justify-end">
-              {feeds.map((f) => {
-                const tone =
-                  f.status === "live"
+          <div className="flex items-end gap-2 sm:gap-3 text-sm flex-wrap">
+            {feeds.map((f) => {
+              const tone =
+                f.status === "live"
+                  ? {
+                      c: "#34D399",
+                      bg: "rgba(52,211,153,0.1)",
+                      b: "rgba(52,211,153,0.28)",
+                    }
+                  : f.status === "stale"
                     ? {
-                        c: "#34D399",
-                        bg: "rgba(52,211,153,0.1)",
-                        b: "rgba(52,211,153,0.28)",
+                        c: "#D4A574",
+                        bg: "rgba(212,165,116,0.1)",
+                        b: "rgba(212,165,116,0.28)",
                       }
-                    : f.status === "stale"
-                      ? {
-                          c: "#D4A574",
-                          bg: "rgba(212,165,116,0.1)",
-                          b: "rgba(212,165,116,0.28)",
-                        }
-                      : {
-                          c: "#F87171",
-                          bg: "rgba(248,113,113,0.1)",
-                          b: "rgba(248,113,113,0.28)",
-                        };
-                return (
-                  <div
-                    key={f.id}
-                    className="rounded-xl border px-3 py-2 min-w-[7.5rem]"
-                    style={{ borderColor: tone.b, background: tone.bg }}
-                  >
-                    <div className="text-[10px] font-mono tracking-[0.14em] text-[#8B8B9A] uppercase">
-                      {f.pair}
-                    </div>
-                    <div
-                      className="mt-1 text-[11px] font-mono tracking-[0.16em] font-medium uppercase"
-                      style={{ color: tone.c }}
-                    >
-                      {f.status}
-                    </div>
+                    : {
+                        c: "#F87171",
+                        bg: "rgba(248,113,113,0.1)",
+                        b: "rgba(248,113,113,0.28)",
+                      };
+              return (
+                <div
+                  key={f.id}
+                  className="rounded-xl border px-3 py-2 min-w-[7.5rem]"
+                  style={{ borderColor: tone.b, background: tone.bg }}
+                >
+                  <div className="text-[10px] font-mono tracking-[0.14em] text-[#8B8B9A] uppercase">
+                    {f.pair}
                   </div>
-                );
-              })}
-            </div>
+                  <div
+                    className="mt-1 text-[11px] font-mono tracking-[0.16em] font-medium uppercase"
+                    style={{ color: tone.c }}
+                  >
+                    {f.status}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* My Oracle connect / status panel */}
-        {viewMode === "my" && (
-          <div className="mb-5 sm:mb-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 sm:px-5 py-4 sm:py-5">
-            <div className="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-8">
-              <div className="min-w-0 flex-1">
-                <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2">
-                  Connect your oracle agent
-                </div>
-                <p className="text-[13px] text-[#A0A0B0] leading-relaxed max-w-2xl">
-                  Run lumen-bridge next to your oracle-core. Set only the pool(s)
-                  you operate — USD, XAU, or both. Metrics stay on{" "}
-                  <span className="text-[#E8E8F0]">127.0.0.1</span>; the dashboard
-                  never opens inbound ports on your machine.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setWantUsd((v) => !v)}
-                    className={`px-3 py-1.5 rounded-full text-[10px] font-mono tracking-wider border transition-all ${
-                      wantUsd
-                        ? "border-[#2DD4BF]/40 bg-[#2DD4BF]/10 text-[#2DD4BF]"
-                        : "border-white/10 text-[#6B6B78]"
-                    }`}
-                  >
-                    ERG/USD {wantUsd ? "· ON" : "· OFF"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setWantXau((v) => !v)}
-                    className={`px-3 py-1.5 rounded-full text-[10px] font-mono tracking-wider border transition-all ${
-                      wantXau
-                        ? "border-[#C9A84C]/40 bg-[#C9A84C]/10 text-[#C9A84C]"
-                        : "border-white/10 text-[#6B6B78]"
-                    }`}
-                  >
-                    ERG/XAU {wantXau ? "· ON" : "· OFF"}
-                  </button>
-                </div>
-                {!wantUsd && !wantXau && (
-                  <p className="mt-2 text-[11px] text-[#D4A574]">
-                    Enable at least one pool for the Docker command.
-                  </p>
-                )}
-              </div>
-
-              <div className="w-full lg:w-[22rem] shrink-0 space-y-3">
-                <div>
-                  <label className="text-[9px] font-mono tracking-[0.16em] text-[#7A7A88] uppercase">
-                    Bridge token
-                  </label>
-                  <input
-                    type="password"
-                    autoComplete="off"
-                    value={bridgeToken}
-                    onChange={(e) => persistToken(e.target.value.trim())}
-                    placeholder="lumen_… from NODE SETTINGS"
-                    className="mt-1.5 w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-[12px] font-mono text-[#E8E8F0] placeholder:text-[#5C5C6A] outline-none focus:border-[#00E5FF]/35"
-                  />
-                  <p className="mt-1.5 text-[10px] text-[#6B6B78]">
-                    Same token as My Node · create under{" "}
-                    <Link href="/" className="text-[#00E5FF] hover:underline">
-                      Dashboard → NODE SETTINGS
-                    </Link>
-                  </p>
-                </div>
-
-                {bridgeToken && (wantUsd || wantXau) && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[9px] font-mono tracking-[0.16em] text-[#7A7A88] uppercase">
-                        Docker command
-                      </span>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const cmd = bridgeDockerOracleCommand(bridgeToken, {
-                            usd: wantUsd,
-                            xau: wantXau,
-                          });
-                          const ok = await copyTextToClipboard(cmd);
-                          if (ok) {
-                            setCopied(true);
-                            window.setTimeout(() => setCopied(false), 1600);
-                          }
-                        }}
-                        className="inline-flex items-center gap-1 text-[10px] font-mono text-[#A0A0B0] hover:text-white"
-                      >
-                        {copied ? (
-                          <Check className="w-3 h-3 text-[#34D399]" />
-                        ) : (
-                          <Copy className="w-3 h-3" />
-                        )}
-                        {copied ? "COPIED" : "COPY"}
-                      </button>
-                    </div>
-                    <pre className="rounded-xl border border-white/10 bg-black/50 px-3 py-2.5 text-[10px] font-mono text-[#B0B0BC] leading-relaxed overflow-x-auto max-h-36">
-                      {bridgeDockerOracleCommand(bridgeToken, {
-                        usd: wantUsd,
-                        xau: wantXau,
-                      })}
-                    </pre>
-                    <p className="mt-1.5 text-[9px] font-mono text-[#5C5C6A] truncate">
-                      WSS · {DEFAULT_BRIDGE_WS_PUBLIC}
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Live bridge status strip */}
-            {bridgeToken && data?.bridge && (
-              <div className="mt-4 pt-3 border-t border-white/[0.06] flex flex-wrap items-center gap-2 text-[11px] font-mono">
-                <span
-                  className={`px-2.5 py-1 rounded-full border ${
-                    data.bridge.connected
-                      ? "border-[#34D399]/35 text-[#34D399] bg-[#34D399]/10"
-                      : "border-[#F87171]/35 text-[#F87171] bg-[#F87171]/10"
-                  }`}
-                >
-                  {data.bridge.connected ? "● BRIDGE ONLINE" : "○ BRIDGE OFFLINE"}
-                </span>
-                {data.bridge.version && (
-                  <span className="text-[#6B6B78]">
-                    agent v{data.bridge.version}
-                  </span>
-                )}
-                {data.bridge.oraclesConfigured?.length > 0 ? (
-                  <span className="text-[#A0A0B0]">
-                    pools · {data.bridge.oraclesConfigured.join(" · ")}
-                  </span>
-                ) : data.bridge.connected ? (
-                  <span className="text-[#D4A574]">
-                    no oracle metrics configured on agent
-                  </span>
-                ) : null}
-              </div>
-            )}
-          </div>
-        )}
-
-        {viewMode === "my" && !bridgeToken && tokenReady ? (
-          <div className="rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] py-16 flex flex-col items-center gap-3 text-center px-4">
-            <Cable className="w-8 h-8 text-[#6B6B78]" />
+        {viewMode === "my" && !bridgeToken && ready ? (
+          <div className="rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] py-16 flex flex-col items-center gap-4 text-center px-4">
             <p className="font-mono text-xs tracking-[0.2em] text-[#A0A0B0]">
-              PASTE YOUR BRIDGE TOKEN ABOVE
+              CONNECT VIA ORACLE SETTINGS
             </p>
-            <p className="text-[13px] text-[#6B6B78] max-w-md">
-              Create a token on the main dashboard (NODE SETTINGS → Connect my
-              node), then paste it here and run the Docker command with your
-              pool(s).
+            <p className="text-[13px] text-[#6B6B78] max-w-md leading-relaxed">
+              Same bridge as My Node — one token. Open settings, start Docker
+              with the pool(s) you run.
             </p>
+            <button
+              type="button"
+              onClick={() => setSettingsOpenKey((k) => k + 1)}
+              className="px-5 py-3 rounded-2xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-xs font-mono tracking-widest hover:bg-[#00E5FF]/15"
+            >
+              OPEN ORACLE SETTINGS
+            </button>
           </div>
         ) : (
           <OraclesDualView
             data={data}
-            isLoading={isLoading || (viewMode === "my" && !tokenReady)}
+            isLoading={isLoading || !ready}
             isError={isError}
             isFetching={isFetching}
             onRetry={() => void refetch()}
           />
         )}
       </div>
+
+      {/* Avoid unused lint for settings modal open state when only onOpenChange used */}
+      {settingsModalOpen ? null : null}
     </div>
   );
 }

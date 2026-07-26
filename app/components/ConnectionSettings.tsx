@@ -26,21 +26,31 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { NodeMode, BridgeStatus } from "../lib/node-api";
+import type {
+  NodeMode,
+  BridgeStatus,
+  OracleViewMode,
+} from "../lib/node-api";
 import {
   bridgeDockerCommand,
+  bridgeDockerOracleCommand,
   bridgeInstallCommand,
   bridgeRunCommand,
   createBridgeToken,
   saveBridgeToken,
   saveNodeMode,
+  saveOracleViewMode,
 } from "../lib/node-api";
 import { copyTextToClipboard } from "../lib/copy-text";
+
+/** Same modal chrome: node dashboard or oracle page (one product, one bridge). */
+export type ConnectionSettingsVariant = "node" | "oracle";
 
 interface ConnectionSettingsProps {
   isOnline: boolean;
   onReconnect: () => void;
   onOpenChange?: (open: boolean) => void;
+  /** Node page: lumen | my. Oracle page: mapped network→lumen, my→my */
   nodeMode: NodeMode;
   setNodeMode: (mode: NodeMode) => void;
   bridgeToken: string;
@@ -52,6 +62,11 @@ interface ConnectionSettingsProps {
   hideTrigger?: boolean;
   /** Bump to open modal from parent menu */
   openKey?: number;
+  /**
+   * node = dashboard NODE SETTINGS (default)
+   * oracle = same UI for /oracles (NETWORK / MY ORACLE + optional pool metrics)
+   */
+  variant?: ConnectionSettingsVariant;
 }
 
 function CopyButton({
@@ -208,7 +223,9 @@ export default function ConnectionSettings({
   onRefreshBridgeStatus,
   hideTrigger = false,
   openKey = 0,
+  variant = "node",
 }: ConnectionSettingsProps) {
+  const isOracle = variant === "oracle";
   const [open, setOpen] = useState(false);
   const lastOpenKey = useRef(0);
 
@@ -221,14 +238,31 @@ export default function ConnectionSettings({
   const [creatingToken, setCreatingToken] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  /** Oracle agent: attach only pools you run (one or both) */
+  const [oracleUsd, setOracleUsd] = useState(true);
+  const [oracleXau, setOracleXau] = useState(false);
 
   const bridgeOnline = !!bridgeStatus?.connected;
   const bridgeKnown = bridgeStatus?.known !== false;
+  const agentOracles = bridgeStatus?.oracles || [];
 
   // Docker context + install.sh come from GitHub (from-ufa/lumen)
-  const dockerCmd = bridgeToken ? bridgeDockerCommand(bridgeToken) : "";
+  const dockerCmd = bridgeToken
+    ? isOracle
+      ? bridgeDockerOracleCommand(bridgeToken, {
+          usd: oracleUsd,
+          xau: oracleXau,
+        })
+      : bridgeDockerCommand(bridgeToken)
+    : "";
   const installCmd = bridgeInstallCommand();
-  const runCmd = bridgeToken ? bridgeRunCommand(bridgeToken) : "";
+  const runCmd = bridgeToken
+    ? bridgeRunCommand(
+        bridgeToken,
+        undefined,
+        isOracle ? { oracleUsd, oracleXau } : undefined
+      )
+    : "";
 
   useEffect(() => {
     setMounted(true);
@@ -262,17 +296,33 @@ export default function ConnectionSettings({
       void ensureToken();
     }
     setNodeMode(mode);
-    saveNodeMode(mode);
-    if (mode === "my") {
-      toast.success("My Node mode", {
-        description: bridgeOnline
-          ? "Dashboard reads your node via lumen bridge"
-          : "Run the Docker command below to connect Bridge",
-      });
+    if (isOracle) {
+      const ov: OracleViewMode = mode === "my" ? "my" : "network";
+      saveOracleViewMode(ov);
+      if (mode === "my") {
+        toast.success("My Oracle mode", {
+          description: bridgeOnline
+            ? "Reading your oracle agent via lumen bridge"
+            : "Run the Docker command below to connect Bridge",
+        });
+      } else {
+        toast.success("Network mode", {
+          description: "Public on-chain oracle pools",
+        });
+      }
     } else {
-      toast.success("lumen node mode", {
-        description: "Using this server’s Ergo node",
-      });
+      saveNodeMode(mode);
+      if (mode === "my") {
+        toast.success("My Node mode", {
+          description: bridgeOnline
+            ? "Dashboard reads your node via lumen bridge"
+            : "Run the Docker command below to connect Bridge",
+        });
+      } else {
+        toast.success("lumen node mode", {
+          description: "Using this server’s Ergo node",
+        });
+      }
     }
     setTimeout(onReconnect, 80);
   };
@@ -297,23 +347,28 @@ export default function ConnectionSettings({
     }
   };
 
+  const switchToMy = () => {
+    setNodeMode("my");
+    if (isOracle) saveOracleViewMode("my");
+    else saveNodeMode("my");
+  };
+
   const handleStartConnect = async () => {
     const t = await ensureToken();
     if (t) {
       toast.success("Your personal token is ready", {
-        description: "Copy the Docker command and paste it next to your node.",
+        description: isOracle
+          ? "Copy the Docker command and paste it next to oracle-core (and/or Ergo)."
+          : "Copy the Docker command and paste it next to your node.",
       });
-      if (nodeMode !== "my") {
-        setNodeMode("my");
-        saveNodeMode("my");
-      }
+      if (nodeMode !== "my") switchToMy();
     }
   };
 
   const handleCreateToken = async () => {
     setCreatingToken(true);
     try {
-      const data = await createBridgeToken("dashboard");
+      const data = await createBridgeToken(isOracle ? "oracle" : "dashboard");
       setBridgeToken(data.token);
       saveBridgeToken(data.token);
       setShowToken(true);
@@ -321,10 +376,7 @@ export default function ConnectionSettings({
         description: "Copy the Docker command again — the old token stops working.",
       });
       onRefreshBridgeStatus?.();
-      if (nodeMode !== "my") {
-        setNodeMode("my");
-        saveNodeMode("my");
-      }
+      if (nodeMode !== "my") switchToMy();
     } catch (err) {
       toast.error("Could not create token", {
         description: err instanceof Error ? err.message : "bridge server error",
@@ -340,24 +392,40 @@ export default function ConnectionSettings({
     setShowToken(false);
     if (nodeMode === "my") {
       setNodeMode("lumen");
-      saveNodeMode("lumen");
+      if (isOracle) saveOracleViewMode("network");
+      else saveNodeMode("lumen");
     }
     toast.message("Bridge token cleared");
   };
 
   const statusLine = () => {
     if (nodeMode === "my") {
-      if (bridgeOnline && isOnline)
-        return { text: "● MY NODE · LIVE", ok: true as const };
-      if (bridgeOnline && !isOnline)
-        return { text: "● BRIDGE UP · NODE SLOW", ok: false as const };
-      if (!bridgeToken)
-        return { text: "● MY NODE · NO TOKEN", ok: false as const };
+      if (isOracle) {
+        if (bridgeOnline && isOnline)
+          return { text: "● MY ORACLE · LIVE", ok: true as const };
+        if (bridgeOnline && !isOnline)
+          return { text: "● BRIDGE UP · FEEDS SLOW", ok: false as const };
+        if (!bridgeToken)
+          return { text: "● MY ORACLE · NO TOKEN", ok: false as const };
+      } else {
+        if (bridgeOnline && isOnline)
+          return { text: "● MY NODE · LIVE", ok: true as const };
+        if (bridgeOnline && !isOnline)
+          return { text: "● BRIDGE UP · NODE SLOW", ok: false as const };
+        if (!bridgeToken)
+          return { text: "● MY NODE · NO TOKEN", ok: false as const };
+      }
       if (bridgeStatus?.error === "bridge_server_unreachable")
         return { text: "● BRIDGE SERVER DOWN", ok: false as const };
       if (bridgeStatus && !bridgeKnown)
         return { text: "● TOKEN UNKNOWN · REISSUE", ok: false as const };
       return { text: "● WAITING FOR BRIDGE…", ok: false as const };
+    }
+    if (isOracle) {
+      return {
+        text: isOnline ? "● NETWORK · ONLINE" : "● NETWORK · OFFLINE",
+        ok: isOnline,
+      };
     }
     return {
       text: isOnline ? "● lumen node · ONLINE" : "● lumen node · OFFLINE",
@@ -377,7 +445,9 @@ export default function ConnectionSettings({
             className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-6"
             role="dialog"
             aria-modal="true"
-            aria-label="Node connection settings"
+            aria-label={
+              isOracle ? "Oracle connection settings" : "Node connection settings"
+            }
           >
             <motion.div
               initial={{ opacity: 0 }}
@@ -398,10 +468,16 @@ export default function ConnectionSettings({
               <div className="flex justify-between items-start mb-6 sm:mb-7">
                 <div>
                   <div className="font-mono text-xs tracking-[4px] text-[#FF7A3D]">
-                    NODE SETTINGS
+                    {isOracle ? "ORACLE SETTINGS" : "NODE SETTINGS"}
                   </div>
                   <div className="text-2xl sm:text-3xl font-semibold tracking-tighter mt-1">
-                    {nodeMode === "my" ? "My Node" : "lumen node"}
+                    {isOracle
+                      ? nodeMode === "my"
+                        ? "My Oracle"
+                        : "Network"
+                      : nodeMode === "my"
+                        ? "My Node"
+                        : "lumen node"}
                   </div>
                   <div
                     className={`mt-2 text-[10px] font-mono tracking-widest ${
@@ -440,10 +516,13 @@ export default function ConnectionSettings({
                       }`}
                     >
                       <span className="text-[11px] font-mono tracking-widest flex items-center gap-1.5">
-                        <Sparkles size={13} /> lumen node
+                        <Sparkles size={13} />{" "}
+                        {isOracle ? "NETWORK" : "lumen node"}
                       </span>
                       <span className="text-[10px] text-[#A0A0B0]/80 leading-snug font-normal">
-                        This server’s Ergo node
+                        {isOracle
+                          ? "Public on-chain pools"
+                          : "This server’s Ergo node"}
                       </span>
                     </button>
                     <button
@@ -456,7 +535,8 @@ export default function ConnectionSettings({
                       }`}
                     >
                       <span className="text-[11px] font-mono tracking-widest flex items-center gap-1.5">
-                        <Cable size={13} /> MY NODE
+                        <Cable size={13} />{" "}
+                        {isOracle ? "MY ORACLE" : "MY NODE"}
                       </span>
                       <span className="text-[10px] text-[#A0A0B0]/80 leading-snug font-normal">
                         Via lumen bridge
@@ -465,13 +545,13 @@ export default function ConnectionSettings({
                   </div>
                 </div>
 
-                {/* === CONNECT MY NODE === */}
+                {/* === CONNECT (same agent for node + oracle) === */}
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5 space-y-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
                       <Cable className="w-4 h-4 text-[#00E5FF]" />
                       <span className="text-xs font-mono tracking-widest text-[#E8E8F0]">
-                        CONNECT MY NODE
+                        {isOracle ? "CONNECT MY ORACLE" : "CONNECT MY NODE"}
                       </span>
                     </div>
                     <span
@@ -493,10 +573,23 @@ export default function ConnectionSettings({
                   </div>
 
                   <p className="text-[11px] text-[#A0A0B0] leading-relaxed">
-                    Connect <span className="text-[#E8E8F0]">your</span> Ergo
-                    node — no open ports.{" "}
-                    <span className="text-[#00E5FF]">Docker</span>: one
-                    command, copy → paste → done.
+                    {isOracle ? (
+                      <>
+                        Same{" "}
+                        <span className="text-[#E8E8F0]">lumen bridge</span> as
+                        My Node — one token, optional oracle metrics. No open
+                        ports.{" "}
+                        <span className="text-[#00E5FF]">Docker</span>: one
+                        command, copy → paste → done.
+                      </>
+                    ) : (
+                      <>
+                        Connect <span className="text-[#E8E8F0]">your</span>{" "}
+                        Ergo node — no open ports.{" "}
+                        <span className="text-[#00E5FF]">Docker</span>: one
+                        command, copy → paste → done.
+                      </>
+                    )}
                   </p>
 
                   {!bridgeToken ? (
@@ -517,10 +610,60 @@ export default function ConnectionSettings({
                     </button>
                   ) : (
                     <div className="space-y-3">
+                      {isOracle && (
+                        <div className="rounded-xl border border-white/10 bg-black/30 p-3 space-y-2">
+                          <div className="text-[10px] font-mono tracking-widest text-[#A0A0B0]">
+                            ORACLE POOLS ON THIS MACHINE
+                          </div>
+                          <p className="text-[10px] text-[#A0A0B0]/75 leading-relaxed">
+                            Enable only what you run — one pool is fine.
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setOracleUsd((v) => !v)}
+                              className={`px-3 py-2.5 rounded-xl border text-left text-[11px] font-mono tracking-wider transition-all ${
+                                oracleUsd
+                                  ? "border-[#2DD4BF]/40 bg-[#2DD4BF]/10 text-[#2DD4BF]"
+                                  : "border-white/10 text-[#6B6B78]"
+                              }`}
+                            >
+                              ERG/USD
+                              <div className="text-[9px] mt-0.5 opacity-70">
+                                :9021
+                              </div>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setOracleXau((v) => !v)}
+                              className={`px-3 py-2.5 rounded-xl border text-left text-[11px] font-mono tracking-wider transition-all ${
+                                oracleXau
+                                  ? "border-[#C9A84C]/40 bg-[#C9A84C]/10 text-[#C9A84C]"
+                                  : "border-white/10 text-[#6B6B78]"
+                              }`}
+                            >
+                              ERG/XAU
+                              <div className="text-[9px] mt-0.5 opacity-70">
+                                :9011
+                              </div>
+                            </button>
+                          </div>
+                          {!oracleUsd && !oracleXau && (
+                            <p className="text-[10px] text-[#F59E0B]">
+                              Select at least one pool for the Docker command.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       <StepCard
                         n={1}
                         title="RUN WITH DOCKER"
-                        subtitle="Paste on the machine with your Ergo node (Docker + Linux host network)."
+                        subtitle={
+                          isOracle
+                            ? "Paste on the machine with oracle-core (and Ergo if you use My Node)."
+                            : "Paste on the machine with your Ergo node (Docker + Linux host network)."
+                        }
                         done={dockerDone}
                         active={!bridgeOnline}
                       >
@@ -541,9 +684,21 @@ export default function ConnectionSettings({
                           <span className="font-mono text-[#A0A0B0]">
                             lumen-bridge
                           </span>{" "}
-                          with your token. Auto-restart after reboot. Needs Ergo
-                          REST on{" "}
-                          <span className="font-mono">127.0.0.1:9053</span>.
+                          with your token. Auto-restart after reboot.
+                          {isOracle ? (
+                            <>
+                              {" "}
+                              Metrics only from{" "}
+                              <span className="font-mono">127.0.0.1</span> —
+                              never exposed.
+                            </>
+                          ) : (
+                            <>
+                              {" "}
+                              Needs Ergo REST on{" "}
+                              <span className="font-mono">127.0.0.1:9053</span>.
+                            </>
+                          )}
                         </p>
                         <div className="flex items-center justify-between gap-2 pt-1">
                           <span className="text-[10px] text-[#A0A0B0]/70 font-mono tracking-wider">
@@ -600,7 +755,9 @@ export default function ConnectionSettings({
                         title="WAIT FOR ONLINE"
                         subtitle={
                           bridgeOnline
-                            ? "Connected. Use My Node mode — data is live."
+                            ? isOracle
+                              ? "Connected. Use My Oracle — your agent metrics are live."
+                              : "Connected. Use My Node mode — data is live."
                             : "After Docker starts, this flips to Online automatically."
                         }
                         done={bridgeOnline}
@@ -636,6 +793,9 @@ export default function ConnectionSettings({
                               {bridgeOnline
                                 ? [
                                     bridgeStatus?.node,
+                                    agentOracles.length
+                                      ? `oracles ${agentOracles.join("+")}`
+                                      : null,
                                     bridgeStatus?.remoteAddress,
                                   ]
                                     .filter(Boolean)
@@ -665,7 +825,7 @@ export default function ConnectionSettings({
                               onClick={() => handleMode("my")}
                               className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-[11px] font-mono tracking-widest hover:bg-[#00E5FF]/15"
                             >
-                              USE MY NODE NOW
+                              {isOracle ? "USE MY ORACLE NOW" : "USE MY NODE NOW"}
                             </button>
                           )}
                         </div>
@@ -778,7 +938,9 @@ export default function ConnectionSettings({
         >
           <Settings className="w-3.5 h-3.5 shrink-0" />
           <span className="sm:hidden truncate">SETTINGS</span>
-          <span className="hidden sm:inline">NODE SETTINGS</span>
+          <span className="hidden sm:inline">
+            {isOracle ? "ORACLE SETTINGS" : "NODE SETTINGS"}
+          </span>
           {bridgeOnline && (
             <span
               className="hidden sm:inline-flex w-1.5 h-1.5 rounded-full bg-[#10B981] status-dot"
