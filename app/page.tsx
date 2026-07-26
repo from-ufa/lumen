@@ -605,27 +605,36 @@ export default function LumenDashboard() {
       </div>
 
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
-        {/* HERO — invite aligned with ERGO NODE VISUALIZER for even top/bottom rhythm */}
-        <div className="mb-6 sm:mb-8 min-w-0">
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-6 mb-1">
-            <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#FF7A3D] pt-0.5 shrink-0">
-              ERGO NODE VISUALIZER
+        {/*
+          HERO — document flow is ONLY label + title + badges (original height).
+          Connect invite is position:absolute top-right at ERGO NODE VISUALIZER
+          level so it never expands the hero and never pushes content down.
+        */}
+        <div className="relative mb-6 sm:mb-8 min-w-0">
+          {/* Overlay CTA: zero layout height */}
+          {nodeMode === "lumen" && (
+            <div className="absolute top-0 right-0 z-20 w-[min(100%,22rem)] max-w-[22rem] pointer-events-none">
+              <div className="pointer-events-auto w-full flex justify-end">
+                <ConnectNodeInvite
+                  enabled
+                  delayMs={5000}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+                />
+              </div>
             </div>
-            <div className="w-full sm:w-auto sm:max-w-[22rem] sm:min-w-[16rem] flex justify-end shrink-0">
-              <ConnectNodeInvite
-                enabled={nodeMode === "lumen"}
-                delayMs={5000}
-                onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
-              />
-            </div>
+          )}
+
+          <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#FF7A3D] mb-1">
+            ERGO NODE VISUALIZER
           </div>
-          <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05]">
+          {/* pr reserves space so title doesn't run under the floating card on wide screens */}
+          <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05] sm:pr-[min(23rem,42%)]">
             The living network.
           </h1>
-          <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1">
+          <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1 sm:pr-[min(23rem,42%)]">
             Your node. Your peers. Real-time beauty.
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider sm:pr-[min(23rem,42%)]">
             <span
               title={
                 isOnline
