@@ -1,15 +1,17 @@
 #!/usr/bin/env node
 /**
- * Lumen Bridge v1
+ * Lumen Bridge v1.1
  *
- * Outbound WebSocket agent that runs next to a user's Ergo node.
- * Connects to the Lumen server and proxies only allowlisted GET requests
- * to the local node REST API.
+ * Outbound WebSocket agent next to a user's Ergo node and/or oracle-core.
+ * Connects to the lumen hub and proxies only allowlisted GET requests:
+ *   - Ergo REST (node)
+ *   - Oracle metrics (optional, one or both pools — USD and/or XAU)
  *
  * Usage:
  *   node bridge.js --token=lumen_xxxxx
  *   node bridge.js --token=lumen_xxxxx --node=http://127.0.0.1:9053
- *   node bridge.js --token=lumen_xxxxx --server=wss://lumen.example.com/bridge
+ *   node bridge.js --token=lumen_xxxxx --oracle-usd=http://127.0.0.1:9021
+ *   node bridge.js --token=lumen_xxxxx --oracle-xau=http://127.0.0.1:9011
  */
 
 "use strict";
@@ -29,7 +31,7 @@ const NODE_TIMEOUT_MS = 12_000;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 const PING_INTERVAL_MS = 25_000;
-const BRIDGE_VERSION = "1.0.0";
+const BRIDGE_VERSION = "1.1.0";
 
 // Only these paths may be proxied (GET only).
 const ALLOWED_PATH_RULES = [
@@ -38,7 +40,17 @@ const ALLOWED_PATH_RULES = [
   { exact: "/transactions/unconfirmed" },
   { prefix: "/blocks/" }, // includes /blocks/lastHeaders/*
   { exact: "/blocks" }, // rare, but keep strict
+  // Oracle operator paths (virtual → local metrics; only if configured)
+  { exact: "/oracle/status" },
+  { exact: "/oracle/usd/metrics" },
+  { exact: "/oracle/xau/metrics" },
 ];
+
+/** Virtual path → oracle feed id */
+const ORACLE_METRICS_PATHS = {
+  "/oracle/usd/metrics": "erg-usd",
+  "/oracle/xau/metrics": "erg-xau",
+};
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -59,6 +71,19 @@ function parseArgs(argv) {
       process.env.LUMEN_BRIDGE_SERVER ||
       process.env.LUMEN_SERVER ||
       DEFAULT_SERVER,
+    /** Optional oracle-core metrics bases — configure only what you run */
+    oracleUsd:
+      process.env.LUMEN_ORACLE_USD ||
+      process.env.LUMEN_ORACLE_USD_METRICS ||
+      null,
+    oracleXau:
+      process.env.LUMEN_ORACLE_XAU ||
+      process.env.LUMEN_ORACLE_XAU_METRICS ||
+      null,
+    /** Allow non-loopback metrics URLs (default: loopback only) */
+    oracleAllowRemote:
+      process.env.LUMEN_ORACLE_ALLOW_REMOTE === "1" ||
+      process.env.LUMEN_ORACLE_ALLOW_REMOTE === "true",
     help: false,
     version: false,
   };
@@ -81,6 +106,11 @@ function parseArgs(argv) {
     if (key === "token") out.token = String(val);
     else if (key === "node") out.node = String(val);
     else if (key === "server") out.server = String(val);
+    else if (key === "oracle-usd" || key === "oracleUsd")
+      out.oracleUsd = String(val);
+    else if (key === "oracle-xau" || key === "oracleXau")
+      out.oracleXau = String(val);
+    else if (key === "oracle-allow-remote") out.oracleAllowRemote = true;
   }
 
   return out;
@@ -92,43 +122,82 @@ function printHelp() {
 Usage:
   node bridge.js --token=lumen_xxxxx
   node bridge.js --token=lumen_xxxxx --node=http://127.0.0.1:9053
-  node bridge.js --token=lumen_xxxxx --server=wss://lumen.example.com/bridge
+  node bridge.js --token=lumen_xxxxx --oracle-usd=http://127.0.0.1:9021
+  node bridge.js --token=lumen_xxxxx --oracle-xau=http://127.0.0.1:9011
+  # one oracle only is fine — set only the pool(s) you run
 
 Options:
-  --token=TOKEN     Bridge auth token (required).
-                    Env: LUMEN_BRIDGE_TOKEN or LUMEN_TOKEN
-  --node=URL        Local Ergo node REST URL (default: ${DEFAULT_NODE})
-                    Env: LUMEN_NODE_URL or LUMEN_NODE
-  --server=URL      Lumen Bridge WebSocket URL (default: ${DEFAULT_SERVER})
-                    Env: LUMEN_BRIDGE_SERVER or LUMEN_SERVER
-  --help, -h        Show this help
-  --version, -v     Show version
+  --token=TOKEN        Bridge auth token (required).
+                       Env: LUMEN_BRIDGE_TOKEN or LUMEN_TOKEN
+  --node=URL           Local Ergo node REST URL (default: ${DEFAULT_NODE})
+                       Env: LUMEN_NODE_URL or LUMEN_NODE
+  --server=URL         Lumen Bridge WebSocket URL (default: ${DEFAULT_SERVER})
+                       Env: LUMEN_BRIDGE_SERVER or LUMEN_SERVER
+  --oracle-usd=URL     Local ERG/USD oracle-core metrics base (optional)
+                       Env: LUMEN_ORACLE_USD or LUMEN_ORACLE_USD_METRICS
+  --oracle-xau=URL     Local ERG/XAU oracle-core metrics base (optional)
+                       Env: LUMEN_ORACLE_XAU or LUMEN_ORACLE_XAU_METRICS
+  --oracle-allow-remote  Allow non-loopback metrics URLs (default: loopback only)
+                       Env: LUMEN_ORACLE_ALLOW_REMOTE=1
+  --help, -h           Show this help
+  --version, -v        Show version
 
-Docker:
+Docker (node + USD oracle only example):
   docker run -d --name lumen-bridge --restart unless-stopped --network host \\
-    -e LUMEN_TOKEN=lumen_xxx -e LUMEN_SERVER=ws://host:3100/bridge lumen-bridge
-
-
-Protocol (JSON over WebSocket):
-  Client → Server (on open):
-    { "type": "hello", "token": "...", "version": "1.0.0" }
-
-  Server → Client (proxy request):
-    { "type": "request", "id": "<id>", "method": "GET", "path": "/info" }
-
-  Client → Server (proxy response):
-    { "type": "response", "id": "<id>", "status": 200, "body": <json|string>, "contentType": "..." }
-
-  Client → Server (error):
-    { "type": "error", "id": "<id>", "error": "forbidden|timeout|...", "message": "..." }
+    -e LUMEN_TOKEN=lumen_xxx \\
+    -e LUMEN_SERVER=wss://ergolumen.net/ws/bridge \\
+    -e LUMEN_ORACLE_USD=http://127.0.0.1:9021 \\
+    lumen-bridge
 
 Allowed GET paths:
-  /info
-  /peers/connected
-  /transactions/unconfirmed
-  /blocks/*
-  /blocks/lastHeaders/*
+  Node:   /info  /peers/connected  /transactions/unconfirmed  /blocks/*
+  Oracle: /oracle/status  /oracle/usd/metrics  /oracle/xau/metrics
+          (metrics only if the matching oracle URL is configured)
 `);
+}
+
+/** Metrics bases must be loopback unless explicitly allowed (security). */
+function isLoopbackHost(hostname) {
+  const h = String(hostname || "")
+    .toLowerCase()
+    .replace(/^\[|\]$/g, "");
+  return (
+    h === "localhost" ||
+    h === "127.0.0.1" ||
+    h === "::1" ||
+    h === "0:0:0:0:0:0:0:1"
+  );
+}
+
+/**
+ * Validate and normalize an oracle metrics base URL.
+ * @returns {{ ok: true, base: string } | { ok: false, error: string }}
+ */
+function validateOracleBase(raw, { allowRemote = false } = {}) {
+  if (!raw || typeof raw !== "string" || !raw.trim()) {
+    return { ok: false, error: "empty" };
+  }
+  let u;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return { ok: false, error: "invalid_url" };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { ok: false, error: "invalid_protocol" };
+  }
+  if (!allowRemote && !isLoopbackHost(u.hostname)) {
+    return {
+      ok: false,
+      error: "metrics_url_must_be_loopback",
+    };
+  }
+  // Strip path — we only ever fetch /metrics on the base
+  u.pathname = "/";
+  u.search = "";
+  u.hash = "";
+  const base = u.toString().replace(/\/$/, "");
+  return { ok: true, base };
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +266,7 @@ function nodeGet(nodeBase, pathWithQuery, timeoutMs = NODE_TIMEOUT_MS) {
         path: `${url.pathname}${url.search}`,
         method: "GET",
         headers: {
-          Accept: "application/json",
+          Accept: "application/json, text/plain, */*",
           "User-Agent": `lumen-bridge/${BRIDGE_VERSION}`,
         },
         timeout: timeoutMs,
@@ -293,10 +362,43 @@ function detectPublicIp(timeoutMs = 4000) {
 // ---------------------------------------------------------------------------
 
 class LumenBridge {
-  constructor({ token, node, server }) {
+  constructor({
+    token,
+    node,
+    server,
+    oracleUsd = null,
+    oracleXau = null,
+    oracleAllowRemote = false,
+  }) {
     this.token = token;
     this.node = node.replace(/\/$/, "");
     this.server = server;
+    this.oracleAllowRemote = !!oracleAllowRemote;
+    /** @type {Record<string, string>} feedId → validated metrics base */
+    this.oracleBases = {};
+    if (oracleUsd) {
+      const v = validateOracleBase(oracleUsd, {
+        allowRemote: this.oracleAllowRemote,
+      });
+      if (v.ok) this.oracleBases["erg-usd"] = v.base;
+      else
+        log(
+          "warn",
+          `ERG/USD oracle metrics ignored (${v.error}): ${oracleUsd}`
+        );
+    }
+    if (oracleXau) {
+      const v = validateOracleBase(oracleXau, {
+        allowRemote: this.oracleAllowRemote,
+      });
+      if (v.ok) this.oracleBases["erg-xau"] = v.base;
+      else
+        log(
+          "warn",
+          `ERG/XAU oracle metrics ignored (${v.error}): ${oracleXau}`
+        );
+    }
+    this.configuredOracles = Object.keys(this.oracleBases);
     this.publicIp = null;
     this.ws = null;
     this.closed = false;
@@ -312,6 +414,16 @@ class LumenBridge {
     log("info", `Node:   ${this.node}`);
     log("info", `Server: ${this.server}`);
     log("info", `Token:  ${maskToken(this.token)}`);
+    if (this.configuredOracles.length === 0) {
+      log(
+        "info",
+        "Oracles: none configured (optional — set LUMEN_ORACLE_USD / LUMEN_ORACLE_XAU)"
+      );
+    } else {
+      for (const id of this.configuredOracles) {
+        log("info", `Oracle ${id}: ${this.oracleBases[id]} → /metrics`);
+      }
+    }
     this.publicIp = await detectPublicIp();
     if (this.publicIp) log("info", `Public IP: ${this.publicIp} (for map pin)`);
     else log("info", "Public IP: unknown — hub may use TCP remote address");
@@ -364,6 +476,15 @@ class LumenBridge {
     ws.on("open", () => {
       this.reconnectAttempt = 0;
       log("info", "Connected. Sending hello…");
+      const paths = [
+        "/info",
+        "/peers/connected",
+        "/transactions/unconfirmed",
+        "/blocks/*",
+        "/oracle/status",
+      ];
+      if (this.oracleBases["erg-usd"]) paths.push("/oracle/usd/metrics");
+      if (this.oracleBases["erg-xau"]) paths.push("/oracle/xau/metrics");
       const hello = {
         type: "hello",
         token: this.token,
@@ -371,12 +492,8 @@ class LumenBridge {
         node: this.node,
         capabilities: {
           methods: ["GET"],
-          paths: [
-            "/info",
-            "/peers/connected",
-            "/transactions/unconfirmed",
-            "/blocks/*",
-          ],
+          paths,
+          oracles: this.configuredOracles.slice(),
         },
       };
       if (this.publicIp) hello.publicIp = this.publicIp;
@@ -539,6 +656,80 @@ class LumenBridge {
       if (q) pathWithQuery = `${pathOnly}?${q}`;
     }
 
+    // ── Virtual oracle routes (never forwarded to Ergo node) ──
+    if (pathOnly === "/oracle/status") {
+      const oracles = {};
+      for (const id of ["erg-usd", "erg-xau"]) {
+        const base = this.oracleBases[id] || null;
+        oracles[id] = {
+          configured: !!base,
+          // host:port only — never leak credentials
+          endpoint: base
+            ? (() => {
+                try {
+                  const u = new URL(base);
+                  return `${u.hostname}${u.port ? `:${u.port}` : ""}`;
+                } catch {
+                  return "configured";
+                }
+              })()
+            : null,
+        };
+      }
+      this.send({
+        type: "response",
+        id,
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: {
+          version: BRIDGE_VERSION,
+          node: this.node,
+          oracles,
+          configured: this.configuredOracles.slice(),
+        },
+      });
+      log("info", `← 200 /oracle/status (${this.configuredOracles.join(",") || "none"})`);
+      return;
+    }
+
+    const oracleFeed = ORACLE_METRICS_PATHS[pathOnly];
+    if (oracleFeed) {
+      const base = this.oracleBases[oracleFeed];
+      if (!base) {
+        this.send({
+          type: "error",
+          id,
+          error: "oracle_not_configured",
+          message: `Oracle ${oracleFeed} metrics not configured on this bridge agent`,
+        });
+        log("warn", `Oracle path ${pathOnly} — not configured`);
+        return;
+      }
+      log("info", `→ GET ${base}/metrics (${oracleFeed})`);
+      try {
+        const result = await nodeGet(base, "/metrics", NODE_TIMEOUT_MS);
+        this.send({
+          type: "response",
+          id,
+          status: result.status,
+          contentType: result.contentType || "text/plain; charset=utf-8",
+          body: result.body,
+        });
+        log("info", `← ${result.status} ${pathOnly}`);
+      } catch (err) {
+        const message = err && err.message ? err.message : String(err);
+        const isTimeout = /timeout/i.test(message);
+        this.send({
+          type: "error",
+          id,
+          error: isTimeout ? "timeout" : "upstream_unreachable",
+          message,
+        });
+        log("error", `Oracle metrics failed: ${message}`);
+      }
+      return;
+    }
+
     log("info", `→ GET ${pathWithQuery}`);
 
     try {
@@ -628,6 +819,9 @@ function main() {
     token: args.token,
     node: args.node,
     server: args.server,
+    oracleUsd: args.oracleUsd,
+    oracleXau: args.oracleXau,
+    oracleAllowRemote: args.oracleAllowRemote,
   });
 
   bridge.start();
@@ -649,6 +843,9 @@ module.exports = {
   nodeGet,
   LumenBridge,
   ALLOWED_PATH_RULES,
+  ORACLE_METRICS_PATHS,
+  validateOracleBase,
+  isLoopbackHost,
   BRIDGE_VERSION,
 };
 

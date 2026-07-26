@@ -459,10 +459,14 @@ function OracleBlock({
           <CornerChip
             corner="tl"
             label="Consensus"
-            value={`${live}/${total}`}
+            value={
+              feed.activeOracles != null && feed.requiredOracles != null
+                ? `${feed.activeOracles}/${feed.requiredOracles}`
+                : `${live}/${total || "—"}`
+            }
             sub={
               feed.requiredOracles != null
-                ? `need ${feed.requiredOracles}`
+                ? "active / need"
                 : "operators"
             }
             accent={st.color}
@@ -666,10 +670,18 @@ export default function OraclesDualView({
     );
   }
 
+  const dual = panes.length > 1;
+
   return (
     <div className="flex flex-col gap-5 sm:gap-6 w-full min-w-0">
-      {/* Side-by-side dual panels — equal columns (minmax 0 prevents content stretch) */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:gap-5 lg:gap-6 items-stretch w-full">
+      {/* 1 pool = full width; 2 pools = equal dual columns */}
+      <div
+        className={
+          dual
+            ? "grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-4 sm:gap-5 lg:gap-6 items-stretch w-full"
+            : "grid grid-cols-1 max-w-3xl mx-auto w-full gap-4"
+        }
+      >
         {panes.map((feed) => (
           <div key={feed.id} className="min-w-0 w-full h-full">
             <OracleBlock feed={feed} tipHeight={data?.tipHeight ?? null} />

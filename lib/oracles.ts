@@ -142,7 +142,28 @@ export interface OraclesResponse {
   tipHeight: number | null;
   avgBlockMs: number;
   feeds: OracleFeedSnapshot[];
+  /** network = public explorer + host metrics; my = explorer + bridge operator metrics */
+  view?: "network" | "my";
+  bridge?: {
+    connected: boolean;
+    version?: string | null;
+    oraclesConfigured: string[];
+    error?: string;
+  };
+  error?: string;
 }
+
+export type LoadOraclesOptions = {
+  /** When set, use this metrics text per feed instead of local ports */
+  metricsByFeed?: Partial<Record<OracleFeedId, string | null>>;
+  /** Only include these feeds (e.g. personal agent with USD only) */
+  onlyFeeds?: OracleFeedId[];
+  tipHeightOverride?: number | null;
+  view?: "network" | "my";
+  bridge?: OraclesResponse["bridge"];
+  /** Skip local metrics ports (used for pure explorer or bridge-only enrichment) */
+  skipLocalMetrics?: boolean;
+};
 
 const HISTORY_PATH = path.join(
   process.cwd(),
@@ -361,6 +382,8 @@ type MetricsHealth = {
   poolHealthy: boolean | null;
   requiredOracles: number | null;
   poolRewardTokens: number | null;
+  /** Official ergo_oracle_active_oracle_count from protocol */
+  protocolActive?: number | null;
 };
 
 function gauge(text: string, name: string): number | null {
@@ -371,7 +394,87 @@ function gauge(text: string, name: string): number | null {
 }
 
 /**
- * Optional: parse local oracle-core Prometheus metrics for per-operator
+ * Parse oracle-core Prometheus metrics text (local port or bridge-proxied).
+ */
+export function parseMetricsHealth(
+  text: string,
+  tipHeight: number | null,
+  epochLength: number
+): MetricsHealth | null {
+  if (!text || typeof text !== "string") return null;
+
+  const posted = new Map<string, number>();
+  const collected = new Map<string, number>();
+  const rewards = new Map<string, number>();
+
+  let m: RegExpExecArray | null;
+  const rePosted =
+    /ergo_oracle_active_oracle_box_height\{box_type="posted",oracle_address="([^"]+)"\}\s+(\d+)/g;
+  while ((m = rePosted.exec(text))) {
+    posted.set(m[1], Number(m[2]));
+  }
+  const reCollected =
+    /ergo_oracle_active_oracle_box_height\{box_type="collected",oracle_address="([^"]+)"\}\s+(\d+)/g;
+  while ((m = reCollected.exec(text))) {
+    collected.set(m[1], Number(m[2]));
+  }
+  const reReward =
+    /ergo_oracle_all_oracle_claimable_rewards\{oracle_address="([^"]+)"\}\s+(\d+(?:\.\d+)?)/g;
+  while ((m = reReward.exec(text))) {
+    rewards.set(m[1], Number(m[2]));
+  }
+
+  const addresses = new Set<string>([...posted.keys(), ...collected.keys()]);
+  if (addresses.size === 0 && !text.includes("ergo_oracle_")) return null;
+
+  const nodes: OracleNodeInfo[] = [];
+  for (const address of addresses) {
+    const height = posted.has(address) ? posted.get(address)! : null;
+    const coll = collected.has(address) ? collected.get(address)! : null;
+    const reward = rewards.has(address) ? rewards.get(address)! : null;
+    const age =
+      tipHeight != null && height != null && Number.isFinite(height)
+        ? Math.max(0, tipHeight - height)
+        : null;
+    const status: OracleStatus =
+      height == null
+        ? "offline"
+        : age == null
+          ? "live"
+          : statusFromAge(age, epochLength, true);
+    nodes.push({
+      address,
+      height: height != null && Number.isFinite(height) ? height : null,
+      collectedHeight: coll != null && Number.isFinite(coll) ? coll : null,
+      rewardTokens: reward != null && Number.isFinite(reward) ? reward : null,
+      status,
+    });
+  }
+  nodes.sort((a, b) => a.address.localeCompare(b.address));
+  const active = nodes.filter((n) => n.status === "live").length;
+
+  const poolHealthyN = gauge(text, "ergo_oracle_pool_is_healthy");
+  const requiredOracles = gauge(text, "ergo_oracle_required_oracle_count");
+  const protocolActive = gauge(text, "ergo_oracle_active_oracle_count");
+  const poolRewardTokens = gauge(
+    text,
+    "ergo_oracle_pool_box_reward_token_amount"
+  );
+
+  return {
+    active,
+    total: nodes.length || (protocolActive != null ? protocolActive : 0),
+    nodes,
+    poolHealthy:
+      poolHealthyN == null ? null : poolHealthyN >= 1 ? true : false,
+    requiredOracles,
+    poolRewardTokens,
+    protocolActive: protocolActive ?? null,
+  };
+}
+
+/**
+ * Optional: fetch local oracle-core Prometheus metrics for per-operator
  * posts, rewards, and pool health — drives live constellation events.
  */
 async function fetchMetricsHealth(
@@ -390,77 +493,7 @@ async function fetchMetricsHealth(
     clearTimeout(t);
     if (!res.ok) return null;
     const text = await res.text();
-
-    const posted = new Map<string, number>();
-    const collected = new Map<string, number>();
-    const rewards = new Map<string, number>();
-
-    let m: RegExpExecArray | null;
-    const rePosted =
-      /ergo_oracle_active_oracle_box_height\{box_type="posted",oracle_address="([^"]+)"\}\s+(\d+)/g;
-    while ((m = rePosted.exec(text))) {
-      posted.set(m[1], Number(m[2]));
-    }
-    const reCollected =
-      /ergo_oracle_active_oracle_box_height\{box_type="collected",oracle_address="([^"]+)"\}\s+(\d+)/g;
-    while ((m = reCollected.exec(text))) {
-      collected.set(m[1], Number(m[2]));
-    }
-    const reReward =
-      /ergo_oracle_all_oracle_claimable_rewards\{oracle_address="([^"]+)"\}\s+(\d+(?:\.\d+)?)/g;
-    while ((m = reReward.exec(text))) {
-      rewards.set(m[1], Number(m[2]));
-    }
-
-    // Union addresses seen in posted (primary) + rewards for completeness
-    const addresses = new Set<string>([
-      ...posted.keys(),
-      ...collected.keys(),
-    ]);
-    if (addresses.size === 0) return null;
-
-    const nodes: OracleNodeInfo[] = [];
-    for (const address of addresses) {
-      const height = posted.has(address) ? posted.get(address)! : null;
-      const coll = collected.has(address) ? collected.get(address)! : null;
-      const reward = rewards.has(address) ? rewards.get(address)! : null;
-      const age =
-        tipHeight != null && height != null && Number.isFinite(height)
-          ? Math.max(0, tipHeight - height)
-          : null;
-      const status: OracleStatus =
-        height == null
-          ? "offline"
-          : age == null
-            ? "live"
-            : statusFromAge(age, epochLength, true);
-      nodes.push({
-        address,
-        height: height != null && Number.isFinite(height) ? height : null,
-        collectedHeight: coll != null && Number.isFinite(coll) ? coll : null,
-        rewardTokens: reward != null && Number.isFinite(reward) ? reward : null,
-        status,
-      });
-    }
-    nodes.sort((a, b) => a.address.localeCompare(b.address));
-    const active = nodes.filter((n) => n.status === "live").length;
-
-    const poolHealthyN = gauge(text, "ergo_oracle_pool_is_healthy");
-    const requiredOracles = gauge(text, "ergo_oracle_required_oracle_count");
-    const poolRewardTokens = gauge(
-      text,
-      "ergo_oracle_pool_box_reward_token_amount"
-    );
-
-    return {
-      active,
-      total: nodes.length,
-      nodes,
-      poolHealthy:
-        poolHealthyN == null ? null : poolHealthyN >= 1 ? true : false,
-      requiredOracles,
-      poolRewardTokens,
-    };
+    return parseMetricsHealth(text, tipHeight, epochLength);
   } catch {
     return null;
   }
@@ -615,14 +648,23 @@ function displayForFeed(
   };
 }
 
-export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
+export async function loadOraclesSnapshot(
+  opts: LoadOraclesOptions = {}
+): Promise<OraclesResponse> {
   const generatedAt = Date.now();
-  const tipHeight = await fetchTipHeight();
+  const tipHeight =
+    opts.tipHeightOverride !== undefined
+      ? opts.tipHeightOverride
+      : await fetchTipHeight();
   const historyFile = readHistory();
   let historyDirty = false;
 
+  const feedCfgs = opts.onlyFeeds?.length
+    ? ORACLE_FEEDS.filter((c) => opts.onlyFeeds!.includes(c.id))
+    : ORACLE_FEEDS;
+
   const feeds: OracleFeedSnapshot[] = await Promise.all(
-    ORACLE_FEEDS.map(async (cfg) => {
+    feedCfgs.map(async (cfg) => {
       const base: OracleFeedSnapshot = {
         id: cfg.id,
         pair: cfg.pair,
@@ -678,11 +720,17 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
         const hist = pushHistory(historyFile, cfg.id, point);
         if (hist !== base.history) historyDirty = true;
 
-        const health = await fetchMetricsHealth(
-          cfg.metricsPort,
-          tipHeight,
-          cfg.epochLength
-        );
+        let health: MetricsHealth | null = null;
+        const injected = opts.metricsByFeed?.[cfg.id];
+        if (typeof injected === "string" && injected.length > 0) {
+          health = parseMetricsHealth(injected, tipHeight, cfg.epochLength);
+        } else if (!opts.skipLocalMetrics) {
+          health = await fetchMetricsHealth(
+            cfg.metricsPort,
+            tipHeight,
+            cfg.epochLength
+          );
+        }
 
         const nodes = health?.nodes ?? [];
         const liveEvents = computeLiveEvents(
@@ -695,6 +743,12 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
           },
           generatedAt
         );
+
+        // Consensus chip: prefer protocol active when known; else live-by-age count
+        const activeOracles =
+          health?.protocolActive != null
+            ? health.protocolActive
+            : health?.active ?? null;
 
         return {
           ...base,
@@ -714,7 +768,7 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
           explorerUrl: box.boxId
             ? `https://explorer.ergoplatform.com/en/boxes/${box.boxId}`
             : base.explorerUrl,
-          activeOracles: health?.active ?? null,
+          activeOracles,
           totalOracles: health?.total ?? null,
           nodes,
           liveEvents,
@@ -722,7 +776,7 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
           requiredOracles: health?.requiredOracles ?? null,
           poolRewardTokens: health?.poolRewardTokens ?? null,
           history: hist,
-          source: "explorer" as const,
+          source: health ? ("metrics" as const) : ("explorer" as const),
         };
       } catch (e: any) {
         return {
@@ -741,5 +795,7 @@ export async function loadOraclesSnapshot(): Promise<OraclesResponse> {
     tipHeight,
     avgBlockMs: DEFAULT_BLOCK_MS,
     feeds,
+    view: opts.view || "network",
+    bridge: opts.bridge,
   };
 }

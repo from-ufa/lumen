@@ -1,12 +1,16 @@
 "use strict";
 
-/** Same rules as lumen-bridge client (v1). */
+/** Same rules as lumen-bridge client (v1.1). */
 const ALLOWED_PATH_RULES = [
   { exact: "/info" },
   { exact: "/peers/connected" },
   { exact: "/transactions/unconfirmed" },
   { prefix: "/blocks/" },
   { exact: "/blocks" },
+  // Oracle operator (virtual paths on agent)
+  { exact: "/oracle/status" },
+  { exact: "/oracle/usd/metrics" },
+  { exact: "/oracle/xau/metrics" },
 ];
 
 function normalizePath(rawPath) {

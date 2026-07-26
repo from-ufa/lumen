@@ -97,13 +97,20 @@ export function bridgeRunCommand(token: string, wsUrl?: string): string {
  */
 export function bridgeDockerCommand(
   token: string,
-  opts?: { wsUrl?: string; nodeUrl?: string; dockerContext?: string }
+  opts?: {
+    wsUrl?: string;
+    nodeUrl?: string;
+    dockerContext?: string;
+    /** Optional ERG/USD metrics base (loopback). Omit if you don't run USD. */
+    oracleUsd?: string | null;
+    /** Optional ERG/XAU metrics base (loopback). Omit if you don't run XAU. */
+    oracleXau?: string | null;
+  }
 ): string {
   const server = opts?.wsUrl || bridgeWsUrlForClient();
   const node = opts?.nodeUrl || "http://127.0.0.1:9053";
   const context = opts?.dockerContext || GITHUB_BRIDGE_DOCKER_CONTEXT;
-  // Multi-line, ready to paste. Rebuilds when GitHub bridge/ changes; run is restart-safe.
-  return [
+  const lines = [
     `docker build -t lumen-bridge ${context} && \\`,
     `docker rm -f lumen-bridge 2>/dev/null; \\`,
     `docker run -d --name lumen-bridge --restart unless-stopped \\`,
@@ -111,8 +118,26 @@ export function bridgeDockerCommand(
     `  -e LUMEN_TOKEN=${token} \\`,
     `  -e LUMEN_SERVER=${server} \\`,
     `  -e LUMEN_NODE=${node} \\`,
-    `  lumen-bridge`,
-  ].join("\n");
+  ];
+  if (opts?.oracleUsd) {
+    lines.push(`  -e LUMEN_ORACLE_USD=${opts.oracleUsd} \\`);
+  }
+  if (opts?.oracleXau) {
+    lines.push(`  -e LUMEN_ORACLE_XAU=${opts.oracleXau} \\`);
+  }
+  lines.push(`  lumen-bridge`);
+  return lines.join("\n");
+}
+
+/** Docker one-liner for oracle operators — set only pools you run. */
+export function bridgeDockerOracleCommand(
+  token: string,
+  pools: { usd?: boolean; xau?: boolean }
+): string {
+  return bridgeDockerCommand(token, {
+    oracleUsd: pools.usd ? "http://127.0.0.1:9021" : null,
+    oracleXau: pools.xau ? "http://127.0.0.1:9011" : null,
+  });
 }
 
 export function loadNodeMode(): NodeMode {

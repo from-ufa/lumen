@@ -191,6 +191,9 @@ class BridgeRegistry {
       remoteAddress: meta.remoteAddress,
       /** Optional public IPv4 reported by the agent (hello.publicIp) */
       publicIp: meta.publicIp || null,
+      /** From hello.capabilities.oracles — e.g. ["erg-usd"] */
+      oracles: Array.isArray(meta.oracles) ? meta.oracles.slice() : [],
+      capabilities: meta.capabilities || null,
       pending: new Map(),
     };
     this.connections.set(token, session);
@@ -248,6 +251,7 @@ class BridgeRegistry {
       node: open ? conn.node : null,
       remoteAddress: open ? conn.remoteAddress : null,
       publicIp: open ? conn.publicIp || null : null,
+      oracles: open ? conn.oracles || [] : [],
       pendingRequests: open ? conn.pending.size : 0,
     };
   }

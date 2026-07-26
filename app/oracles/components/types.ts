@@ -69,5 +69,12 @@ export interface OraclesApiResponse {
   tipHeight: number | null;
   avgBlockMs: number;
   feeds: OracleFeedData[];
+  view?: "network" | "my";
+  bridge?: {
+    connected: boolean;
+    version?: string | null;
+    oraclesConfigured: string[];
+    error?: string;
+  };
   error?: string;
 }

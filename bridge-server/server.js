@@ -432,16 +432,24 @@ wss.on("connection", (ws, req) => {
         typeof msg.publicIp === "string" && msg.publicIp.trim()
           ? msg.publicIp.trim()
           : null;
+      const caps = msg.capabilities && typeof msg.capabilities === "object"
+        ? msg.capabilities
+        : null;
+      const oracles = Array.isArray(caps?.oracles)
+        ? caps.oracles.filter((x) => typeof x === "string")
+        : [];
       registry.registerConnection(t, ws, {
         version: msg.version,
         node: msg.node,
         remoteAddress: remote,
         publicIp,
+        oracles,
+        capabilities: caps,
       });
 
       log(
         "info",
-        `Bridge online token=${tokenPreview(t)} version=${msg.version || "?"} node=${msg.node || "?"} remote=${remote} publicIp=${publicIp || "—"}`
+        `Bridge online token=${tokenPreview(t)} version=${msg.version || "?"} node=${msg.node || "?"} oracles=${oracles.join(",") || "—"} remote=${remote} publicIp=${publicIp || "—"}`
       );
       ws.send(
         JSON.stringify({
