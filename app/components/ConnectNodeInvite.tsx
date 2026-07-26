@@ -66,8 +66,9 @@ export default function ConnectNodeInvite({
 
   if (!ready || dismissed || !enabled) return null;
 
+  // No min-height when closed — must not disturb badge → toggle spacing
   return (
-    <div className="relative flex justify-end min-h-[2.5rem] w-full md:w-auto md:min-w-[12rem]">
+    <div className="relative flex justify-end w-full">
       <AnimatePresence mode="wait">
         {open && (
           <motion.div
@@ -97,7 +98,7 @@ export default function ConnectNodeInvite({
               opacity: { duration: 0.45 },
               filter: { duration: 0.55 },
             }}
-            style={{ originX: 1, originY: 0.5, transformOrigin: "right center" }}
+            style={{ originX: 1, originY: 1, transformOrigin: "right bottom" }}
             className="relative w-full max-w-[min(100%,22rem)] md:max-w-[22rem]"
           >
             {/* Soft bloom behind card */}
@@ -196,7 +197,7 @@ export default function ConnectNodeInvite({
         )}
       </AnimatePresence>
 
-      {/* Seed point before expand — subtle pulse so timing feels intentional */}
+      {/* Seed sits in-flow only as 0×0 — no layout reserve */}
       <AnimatePresence>
         {!open && enabled && !dismissed && (
           <motion.div
@@ -205,12 +206,12 @@ export default function ConnectNodeInvite({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.6 }}
             transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"
+            className="absolute right-2 bottom-0 pointer-events-none w-0 h-0"
             aria-hidden
           >
-            <span className="relative flex h-2.5 w-2.5">
+            <span className="relative flex h-2 w-2 -translate-y-1">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#FF7A3D]/45" />
-              <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#FF7A3D] shadow-[0_0_12px_rgba(255,122,61,0.8)]" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#FF7A3D] shadow-[0_0_12px_rgba(255,122,61,0.8)]" />
             </span>
           </motion.div>
         )}

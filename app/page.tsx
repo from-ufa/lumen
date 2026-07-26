@@ -605,8 +605,8 @@ export default function LumenDashboard() {
       </div>
 
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
-        {/* HERO — copy only; heights live with the viz window */}
-        <div className="mb-5 sm:mb-6 min-w-0">
+        {/* HERO — same bottom rhythm as pre-layout: mb-6 sm:mb-8 → toggle */}
+        <div className="mb-6 sm:mb-8 min-w-0">
           <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#FF7A3D] mb-1">ERGO NODE VISUALIZER</div>
           <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05]">
             The living network.
@@ -669,67 +669,71 @@ export default function LumenDashboard() {
           )}
         </div>
 
-        {/* === VIZ CHROME: toggle + invite + heights (aligned with map / orbit) === */}
-        <div className="mb-3 md:mb-4 flex flex-col gap-3 md:gap-3">
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 md:gap-6">
-            {/* Desktop view toggle */}
-            <div className="hidden md:flex items-center gap-2 min-w-0">
-              <div className="inline-flex p-1 rounded-2xl glass border border-white/10">
-                <button
-                  onClick={() => setViewMode('constellation')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
-                    viewMode === 'constellation'
-                      ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
-                      : 'text-[#A0A0B0] hover:text-white'
-                  }`}
-                >
-                  <Orbit className="w-3.5 h-3.5" /> NETWORK ORBIT
-                </button>
-                <button
-                  onClick={() => setViewMode('map')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
-                    viewMode === 'map'
-                      ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'
-                      : 'text-[#A0A0B0] hover:text-white'
-                  }`}
-                >
-                  <Globe2 className="w-3.5 h-3.5" /> WORLD MAP
-                </button>
-              </div>
-              <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest hidden lg:inline">
-                {viewMode === 'map'
-                  ? 'PEERS BY GEOIP · CITY-LEVEL ACCURACY'
-                  : 'NETWORK ORBIT · EARTH CORE · ORBITAL PEERS'}
-              </span>
+        {/*
+          Same spacing as before: hero mb-6/8 → this row mb-4 → viz.
+          Heights sit on the right of the mode switcher; invite floats above
+          heights without reserving gap when closed.
+        */}
+        <div className="mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-6">
+          {/* Desktop view toggle — same shell as historical VIEW TOGGLE */}
+          <div className="hidden md:flex items-center gap-2 min-w-0">
+            <div className="inline-flex p-1 rounded-2xl glass border border-white/10">
+              <button
+                onClick={() => setViewMode('constellation')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
+                  viewMode === 'constellation'
+                    ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
+                    : 'text-[#A0A0B0] hover:text-white'
+                }`}
+              >
+                <Orbit className="w-3.5 h-3.5" /> NETWORK ORBIT
+              </button>
+              <button
+                onClick={() => setViewMode('map')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
+                  viewMode === 'map'
+                    ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'
+                    : 'text-[#A0A0B0] hover:text-white'
+                }`}
+              >
+                <Globe2 className="w-3.5 h-3.5" /> WORLD MAP
+              </button>
             </div>
+            <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest">
+              {viewMode === 'map'
+                ? 'PEERS BY GEOIP · CITY-LEVEL ACCURACY'
+                : 'NETWORK ORBIT · EARTH CORE · ORBITAL PEERS'}
+            </span>
+          </div>
 
-            {/* Right: invite (above) + chain height (at viz level) */}
-            <div className="flex flex-col items-stretch md:items-end gap-2.5 shrink-0">
-              <ConnectNodeInvite
-                enabled={nodeMode === "lumen"}
-                delayMs={5000}
-                onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
-              />
-              <div className="flex items-end justify-end gap-3 sm:gap-6 text-sm">
-                <div className="text-right">
-                  <div className="text-[#A0A0B0] text-[9px] sm:text-[10px] tracking-[0.18em] font-mono">
-                    HEADERS
-                  </div>
-                  <div className="font-mono text-2xl sm:text-4xl lg:text-5xl tracking-[-1.2px] tabular-nums text-white mt-0.5 leading-none">
-                    {(effectiveInfo?.headersHeight || 0).toLocaleString()}
-                  </div>
-                </div>
-                <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest self-end pb-1 sm:pb-1.5 font-mono">
-                  /
-                </div>
-                <div className="text-right">
-                  <div className="text-[#A0A0B0] text-[9px] sm:text-[10px] tracking-[0.18em] font-mono">
-                    FULL HEIGHT
-                  </div>
-                  <div className="font-mono text-2xl sm:text-4xl lg:text-5xl tracking-[-1.2px] tabular-nums text-[#FF7A3D] mt-0.5 leading-none">
-                    {(effectiveInfo?.fullHeight || 0).toLocaleString()}
-                  </div>
-                </div>
+          {/* Heights + invite (invite absolute so closed state = zero extra gap) */}
+          <div className="relative flex items-end justify-end gap-3 sm:gap-6 text-sm shrink-0 self-end md:self-auto">
+            <div className="absolute bottom-full right-0 mb-2.5 z-20 w-[min(100vw-1.5rem,22rem)] flex justify-end pointer-events-none">
+              <div className="pointer-events-auto w-full flex justify-end">
+                <ConnectNodeInvite
+                  enabled={nodeMode === "lumen"}
+                  delayMs={5000}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+                />
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest font-mono">
+                HEADERS
+              </div>
+              <div className="font-mono text-3xl sm:text-5xl tracking-[-1.5px] tabular-nums text-white mt-0.5 leading-none">
+                {(effectiveInfo?.headersHeight || 0).toLocaleString()}
+              </div>
+            </div>
+            <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest self-end pb-1.5 sm:pb-2 font-mono">
+              /
+            </div>
+            <div className="text-right">
+              <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest font-mono">
+                FULL HEIGHT
+              </div>
+              <div className="font-mono text-3xl sm:text-5xl tracking-[-1.5px] tabular-nums text-[#FF7A3D] mt-0.5 leading-none">
+                {(effectiveInfo?.fullHeight || 0).toLocaleString()}
               </div>
             </div>
           </div>
