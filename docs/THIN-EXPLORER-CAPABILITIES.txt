@@ -1,15 +1,14 @@
 ================================================================================
-THIN EXPLORER + CHAIN PULSE — CAPABILITIES (copy for next product prompt)
+THIN EXPLORER — DATA PLANE (copy for next product prompt)
 Project: lumen | path: /home/lumen | live: https://ergolumen.net
-Tab: CHAIN PULSE | API: /api/chain/*
+API: /api/chain/*  |  Chain visualization UI: NONE (clean slate)
 ================================================================================
 
 ONE-LINER
 ---------
 lumen has a thin local Ergo explorer API (/api/chain/*) over mainnet node
-(extraIndex + boxByTokenId) plus Chain Pulse 3D viz: mempool/token particles,
-tip seal animation, recent block stack, address focus with token name cache.
-Build the next product ON this data plane; do not re-implement node access.
+(extraIndex + boxByTokenId). No chain visualization UI — design from zero.
+Build product UI on this data plane; do not re-implement node access.
 
 
 WHAT IT IS
@@ -17,7 +16,7 @@ WHAT IT IS
 - Thin API layer: Next.js /api/chain/* -> local Ergo REST (127.0.0.1:9053)
 - Normalized JSON for UI: blocks, txs, mempool, address balances, tokens
 - Primary source = LOCAL NODE (not public explorer)
-- Built for product UI / visualization
+- Built for product UI / visualization (when we invent the look)
 
 WHAT IT IS NOT
 --------------
@@ -25,6 +24,7 @@ WHAT IT IS NOT
 - NFT image CDN / market prices
 - Standalone public explorer domain (unless added later)
 - Guaranteed multi-year address history without extra archival indexing
+- Any prescribed 3D / chain graphic (previous Chain Pulse / Genesis removed)
 
 
 NODE ASSUMPTIONS
@@ -49,54 +49,13 @@ All force-dynamic, Cache-Control: no-store.
 Error shape: 502 { "error": "chain_unavailable", "detail": "..." }
 
 
-BACKEND CAPABILITIES
---------------------
-STATUS
-- node name, network, fullHeight, headersHeight
-- indexedHeight
-- peersCount, unconfirmedCount
-- confirms source is local
+FEED SHAPE (for any future UI)
+------------------------------
+GET /api/chain/feed returns particles + optional address focus + tip meta.
 
-BLOCKS
-- recent N blocks by height
-- block by header id OR height
-- fields: id, height, timestamp, size, txCount
-- each tx: id, input/output counts, total ERG nano, tokens[{tokenId, amount}]
-
-MEMPOOL
-- unconfirmed txs from local node
-- same normalized shape as confirmed
-- pending flag for visualization
-
-ADDRESS
-- confirmed nanoERG balance
-- token balances: tokenId, amount, name, decimals (when node provides)
-
-TOKEN METADATA
-- name, decimals, description, emission (as node provides)
-- in-process server cache of token names (process lifetime, capped size)
-
-FEED (main product endpoint for viz)
-- tip + recent blocks
-- mempool txs
-- particles[] flattened for 3D
-- optional focus address snapshot
-- tokenNames map { tokenId: displayName }
-- source, heights, generatedAt
-
-
-PARTICLE MODEL (for visualization / next UI)
---------------------------------------------
-Each particle:
-- kind: "erg" | "token"
-- stage: "mempool" | "assembling" | "sealed" | "focus"
-- tokenId? label, name?, amount
-- color (stable hash from tokenId; ERG = brand orange #FF7A3D)
-- txId, pending, weight (0..1 size hint)
-
-Stages:
-- mempool     = unconfirmed, outer orbit, brighter
-- assembling  = pull-to-core on new tip pulse
+Particle stages (data tags only — not a visual design):
+- mempool     = unconfirmed
+- assembling  = in tip formation (if used by feed)
 - sealed      = already in tip block
 - focus       = address-owned ERG/tokens (address focus mode)
 
@@ -104,40 +63,18 @@ Normalization:
 - ERG = sum of output values (nanoERG)
 - tokens = aggregate assets across outputs by tokenId
 - performance caps: particles per feed, tokens per tx, names resolved per feed
+- feed may include txGroups[] for per-tx inputs/outputs/erg/tokens
 
-
-CHAIN PULSE UI CAPABILITIES
----------------------------
-DASHBOARD
-- third viz tab: NETWORK ORBIT | CHAIN PULSE | WORLD MAP
-- live poll ~4s (react-query)
-
-VISUALIZATION
-- soft circular additive sprites (gaussian falloff, not hard mesh balls)
-- mempool particles: outer bright orbit
-- sealed particles: inner orbit from tip txs
-- assemble pulse on new tip: pull + camera dolly
-- sealed stack: recent block discs under core
-- soft block core (icosahedron + wire + ring + lights)
-- stars / fog / nebula depth
-- optional soft chime on new tip (SOUND ON/OFF)
-
-ADDRESS FOCUS
-- paste Ergo address -> FOCUS
-- loads balance + tokens into focus particle shell
-- dims non-focus feed
-- HUD: ERG total, token count, named token list with amounts
-- CLEAR resets focus
-
-TIMELINE HUD
-- chips: MEMPOOL -> ASSEMBLE -> SEALED · FOCUS
-- particle counts per stage
-- tip card: height, tx count, ERG sum, short block id
-
-TOKEN NAMING UX
+Token naming:
 - prefers node token name (e.g. AUGERG, ERGUSD-NFT)
 - fallback short id xxxx…yyyy
-- color fixed per tokenId
+
+
+DASHBOARD TODAY (unrelated to chain viz)
+----------------------------------------
+- Tabs: NETWORK ORBIT | WORLD MAP only
+- Sidebar: BlocksTimeline + MempoolFlow (simple lists, not chain graphic)
+- Network Orbit = peer constellation (Constellation3D) — peers, not chain
 
 
 FILE MAP
@@ -150,47 +87,33 @@ app/api/chain/block/[id]/route.ts
 app/api/chain/mempool/route.ts
 app/api/chain/address/[address]/route.ts
 app/api/chain/token/[id]/route.ts
-app/components/ChainPulse.tsx
-app/page.tsx  (viewMode: "chain")
+(no ChainPulse / chain 3D component)
 
 
-NATURAL NEXT PRODUCT DIRECTIONS
--------------------------------
-1. Deeper tx storyboard (inputs -> outputs -> seal per tx)
-2. Watchlist of addresses / tokens
-3. Unified search: address / token / block
-4. Historical window (last N hours of blocks, not only tip)
-5. Public OpenAPI docs for thin explorer
-6. Hybrid fallback to api.ergoplatform.com when local index lags
-7. Share card / embed of Chain Pulse scene
-8. Mobile-first timeline UI / non-WebGL fallback
+VISUALIZATION STATUS
+--------------------
+REMOVED: Chain Pulse tab, Crystallogenesis / Block Genesis UI, all prior
+look decisions (sprites, dock, crystal core, seal animation, etc.)
+See docs/CHAIN-VIZ-RESET.txt
+
+NEXT: invent look from zero on /api/chain/* — no carry-over of old graphic.
 
 
 PROMPT STARTER (paste into next task)
 -------------------------------------
-Context: lumen (/home/lumen, ergolumen.net) already has Thin Explorer + Chain Pulse:
+Context: lumen (/home/lumen, ergolumen.net) thin explorer data plane only:
 
 - Local Ergo node with extraIndex + boxByTokenId
 - API: /api/chain/status|feed|blocks|block|mempool|address|token
-- Feed particles with stages mempool|assembling|sealed|focus
-- Token name server cache; address focus; 3D Chain Pulse tab
+- Feed particles + stages as data tags; token name cache; address focus
+- NO chain visualization UI — design graphics from a clean slate
 
-Do NOT reimplement node access. Extend this data plane.
+Do NOT reimplement node access. Do NOT revive old Chain Pulse / Genesis look
+unless explicitly requested.
 
-Task: <DESCRIBE NEXT PRODUCT HERE>
+Task: <DESCRIBE NEW VISUAL + PRODUCT HERE>
 
 
 ================================================================================
 end of capabilities dump
 ================================================================================
-
---------------------------------------------------------------------------------
-BLOCK GENESIS (2026-07-26)
---------------------------------------------------------------------------------
-Evolution of Chain Pulse tab:
-- feed.txGroups[]: per-tx constellation data (inputs/outputs/erg/tokens/particleIds)
-- Client stages: mempool constellations → capture → crystallize → seal → dock
-- Click TX nucleus → dolly + storyboard HUD
-- Click sealed stack disc → block card
-- Frosted glass crystal core, metal seal, soft chime + thud
-- Still only /api/chain/feed data plane

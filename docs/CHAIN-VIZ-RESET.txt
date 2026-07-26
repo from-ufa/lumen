@@ -1,12 +1,24 @@
 CHAIN VISUALIZATION — CLEAN SLATE (2026-07-26)
 ==============================================
 
-REMOVED (graphics only):
-- app/components/ChainPulse.tsx (Block Genesis / Crystallogenesis / all 3D chain UI)
+STATUS: blank page for graphics + look decisions.
+
+REMOVED (graphics / look only):
+- app/components/ChainPulse.tsx
 - Dashboard tab CHAIN PULSE
+- All prior visual concepts (Block Genesis, Crystallogenesis, soft sprites,
+  crystal core, sealed stack dock, assemble pulse, chime, storyboard HUD, …)
+- Design prescriptions purged from THIN-EXPLORER-CAPABILITIES.txt
 
 KEPT (data plane — thin explorer):
 - lib/chain.ts
 - app/api/chain/*  (status, feed, blocks, block, mempool, address, token)
 
-Next: design new chain visualization from zero on top of existing /api/chain/feed.
+ALSO KEPT (not chain viz):
+- Network Orbit (Constellation3D) + World Map
+- BlocksTimeline / MempoolFlow sidebar lists
+
+RULE: next chain visual starts from zero. Data tags (mempool/sealed/focus)
+are API shape only — not a mandate for how anything looks.
+
+Next: design new chain visualization when product direction is set.
