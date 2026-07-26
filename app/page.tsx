@@ -17,6 +17,7 @@ import MetricsCards from './components/MetricsCards';
 import BlocksTimeline from './components/BlocksTimeline';
 import MempoolFlow from './components/MempoolFlow';
 import ConnectionSettings from './components/ConnectionSettings';
+import ConnectNodeInvite from './components/ConnectNodeInvite';
 import CrystalIcon from './components/CrystalIcon';
 import LumenWordmark from './components/LumenWordmark';
 import {
@@ -589,6 +590,7 @@ export default function LumenDashboard() {
                 bridgeStatus={bridgeStatus}
                 bridgeStatusLoading={bridgeStatusLoading}
                 onRefreshBridgeStatus={onRefreshBridgeStatus}
+                openKey={settingsOpenKey}
               />
 
               <HeaderIconButton
@@ -603,117 +605,134 @@ export default function LumenDashboard() {
       </div>
 
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
-        {/* HERO STATUS */}
-        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-y-4 mb-6 sm:mb-8">
-          <div className="min-w-0">
-            <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#FF7A3D] mb-1">ERGO NODE VISUALIZER</div>
-            <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05]">
-              The living network.
-            </h1>
-            <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1">
-              Your node. Your peers. Real-time beauty.
-            </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
+        {/* HERO — copy only; heights live with the viz window */}
+        <div className="mb-5 sm:mb-6 min-w-0">
+          <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#FF7A3D] mb-1">ERGO NODE VISUALIZER</div>
+          <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05]">
+            The living network.
+          </h1>
+          <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1">
+            Your node. Your peers. Real-time beauty.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider">
+            <span
+              title={
+                isOnline
+                  ? nodeMode === "my"
+                    ? "Live — your node via bridge"
+                    : "Live — source lumen"
+                  : nodeMode === "my"
+                    ? "Offline — bridge / node"
+                    : "Offline — source lumen"
+              }
+              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
+                isOnline
+                  ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                  : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
+              }`}
+            >
               <span
-                title={
+                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                   isOnline
-                    ? nodeMode === "my"
-                      ? "Live — your node via bridge"
-                      : "Live — source lumen"
-                    : nodeMode === "my"
-                      ? "Offline — bridge / node"
-                      : "Offline — source lumen"
-                }
-                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
-                  isOnline
-                    ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                    : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
+                    ? "bg-[#10B981] status-dot"
+                    : "bg-[#EF4444]"
                 }`}
-              >
-                <span
-                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                    isOnline
-                      ? "bg-[#10B981] status-dot"
-                      : "bg-[#EF4444]"
-                  }`}
-                  aria-hidden
-                />
-                {nodeMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
-                {isOnline && (
-                  <span className="text-[9px] tracking-[0.14em] opacity-80">
-                    LIVE
-                  </span>
-                )}
+                aria-hidden
+              />
+              {nodeMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
+              {isOnline && (
+                <span className="text-[9px] tracking-[0.14em] opacity-80">
+                  LIVE
+                </span>
+              )}
+            </span>
+            {effectiveInfo?.name && (
+              <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
+                NODE · {effectiveInfo.name}
+                {infoFetching ? " …" : ""}
               </span>
-              {effectiveInfo?.name && (
-                <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
-                  NODE · {effectiveInfo.name}
-                  {infoFetching ? " …" : ""}
-                </span>
-              )}
-              {nodeMode === "my" && (
-                <span className="text-[10px] text-[#A0A0B0]/70 tracking-widest">
-                  via /api/bridge/node
-                </span>
-              )}
-            </div>
-            {nodeMode === "my" && !isOnline && (
-              <p className="mt-3 text-[11px] sm:text-sm font-mono tracking-wide text-[#F59E0B] max-w-xl">
-                {bridgeToken
-                  ? bridgeOnline
-                    ? "Bridge is online but node data is not ready yet — check Ergo REST on the agent side."
-                    : "My Node mode: Bridge offline. Open NODE SETTINGS → run the Bridge command next to your node."
-                  : "My Node mode: no Bridge token. Open NODE SETTINGS → Connect my node."}
-              </p>
+            )}
+            {nodeMode === "my" && (
+              <span className="text-[10px] text-[#A0A0B0]/70 tracking-widest">
+                via /api/bridge/node
+              </span>
             )}
           </div>
-
-          <div className="flex items-end gap-4 sm:gap-8 text-sm flex-wrap">
-            <div>
-              <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest">HEADERS</div>
-              <div className="font-mono text-3xl sm:text-5xl tracking-[-1.5px] tabular-nums text-white mt-0.5">
-                {(effectiveInfo?.headersHeight || 0).toLocaleString()}
-              </div>
-            </div>
-            <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest self-end pb-1.5 sm:pb-2">/</div>
-            <div>
-              <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest">FULL HEIGHT</div>
-              <div className="font-mono text-3xl sm:text-5xl tracking-[-1.5px] tabular-nums text-[#FF7A3D]">
-                {(effectiveInfo?.fullHeight || 0).toLocaleString()}
-              </div>
-            </div>
-          </div>
+          {nodeMode === "my" && !isOnline && (
+            <p className="mt-3 text-[11px] sm:text-sm font-mono tracking-wide text-[#F59E0B] max-w-xl">
+              {bridgeToken
+                ? bridgeOnline
+                  ? "Bridge is online but node data is not ready yet — check Ergo REST on the agent side."
+                  : "My Node mode: Bridge offline. Open NODE SETTINGS → run the Bridge command next to your node."
+                : "My Node mode: no Bridge token. Open NODE SETTINGS → Connect my node."}
+            </p>
+          )}
         </div>
 
-        {/* === VIEW TOGGLE (desktop: above viz) === */}
-        <div className="hidden md:flex mb-4 items-center gap-2">
-          <div className="inline-flex p-1 rounded-2xl glass border border-white/10">
-            <button
-              onClick={() => setViewMode('constellation')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
-                viewMode === 'constellation'
-                  ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
-                  : 'text-[#A0A0B0] hover:text-white'
-              }`}
-            >
-              <Orbit className="w-3.5 h-3.5" /> NETWORK ORBIT
-            </button>
-            <button
-              onClick={() => setViewMode('map')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
-                viewMode === 'map'
-                  ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'
-                  : 'text-[#A0A0B0] hover:text-white'
-              }`}
-            >
-              <Globe2 className="w-3.5 h-3.5" /> WORLD MAP
-            </button>
+        {/* === VIZ CHROME: toggle + invite + heights (aligned with map / orbit) === */}
+        <div className="mb-3 md:mb-4 flex flex-col gap-3 md:gap-3">
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3 md:gap-6">
+            {/* Desktop view toggle */}
+            <div className="hidden md:flex items-center gap-2 min-w-0">
+              <div className="inline-flex p-1 rounded-2xl glass border border-white/10">
+                <button
+                  onClick={() => setViewMode('constellation')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
+                    viewMode === 'constellation'
+                      ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
+                      : 'text-[#A0A0B0] hover:text-white'
+                  }`}
+                >
+                  <Orbit className="w-3.5 h-3.5" /> NETWORK ORBIT
+                </button>
+                <button
+                  onClick={() => setViewMode('map')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
+                    viewMode === 'map'
+                      ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'
+                      : 'text-[#A0A0B0] hover:text-white'
+                  }`}
+                >
+                  <Globe2 className="w-3.5 h-3.5" /> WORLD MAP
+                </button>
+              </div>
+              <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest hidden lg:inline">
+                {viewMode === 'map'
+                  ? 'PEERS BY GEOIP · CITY-LEVEL ACCURACY'
+                  : 'NETWORK ORBIT · EARTH CORE · ORBITAL PEERS'}
+              </span>
+            </div>
+
+            {/* Right: invite (above) + chain height (at viz level) */}
+            <div className="flex flex-col items-stretch md:items-end gap-2.5 shrink-0">
+              <ConnectNodeInvite
+                enabled={nodeMode === "lumen"}
+                delayMs={5000}
+                onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+              />
+              <div className="flex items-end justify-end gap-3 sm:gap-6 text-sm">
+                <div className="text-right">
+                  <div className="text-[#A0A0B0] text-[9px] sm:text-[10px] tracking-[0.18em] font-mono">
+                    HEADERS
+                  </div>
+                  <div className="font-mono text-2xl sm:text-4xl lg:text-5xl tracking-[-1.2px] tabular-nums text-white mt-0.5 leading-none">
+                    {(effectiveInfo?.headersHeight || 0).toLocaleString()}
+                  </div>
+                </div>
+                <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest self-end pb-1 sm:pb-1.5 font-mono">
+                  /
+                </div>
+                <div className="text-right">
+                  <div className="text-[#A0A0B0] text-[9px] sm:text-[10px] tracking-[0.18em] font-mono">
+                    FULL HEIGHT
+                  </div>
+                  <div className="font-mono text-2xl sm:text-4xl lg:text-5xl tracking-[-1.2px] tabular-nums text-[#FF7A3D] mt-0.5 leading-none">
+                    {(effectiveInfo?.fullHeight || 0).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-          <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest">
-            {viewMode === 'map'
-              ? 'PEERS BY GEOIP · CITY-LEVEL ACCURACY'
-              : 'NETWORK ORBIT · EARTH CORE · ORBITAL PEERS'}
-          </span>
         </div>
 
         <div className="mb-3 md:mb-8 relative">
