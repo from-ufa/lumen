@@ -215,16 +215,16 @@ function EpochAside({
       </div>
 
       {/* Text to the right of the ring — keeps header short */}
-      <div className="min-w-0 max-w-[9.5rem] sm:max-w-[11rem]">
-        <div className="text-[11px] font-medium text-[#D8D8E0] tracking-tight leading-snug">
+      <div className="min-w-0 max-w-[7.5rem] sm:max-w-[9rem]">
+        <div className="text-[10px] sm:text-[11px] font-medium text-[#D8D8E0] tracking-tight leading-snug">
           Pool epoch
         </div>
-        <div className="mt-0.5 text-[10px] text-[#8B8B9A] leading-snug">
+        <div className="mt-0.5 text-[9px] sm:text-[10px] text-[#8B8B9A] leading-snug">
           {freshness}
         </div>
         {ageBlocks != null && liveMax != null && (
-          <div className="mt-1 text-[10px] font-mono text-[#6B6B78] tabular-nums">
-            {ageBlocks} / {liveMax} blocks
+          <div className="mt-0.5 text-[9px] sm:text-[10px] font-mono text-[#6B6B78] tabular-nums">
+            {ageBlocks} / {liveMax} blk
           </div>
         )}
       </div>
@@ -357,7 +357,7 @@ function OracleBlock({
 
   return (
     <section
-      className="rounded-2xl sm:rounded-[1.35rem] border overflow-hidden"
+      className="h-full min-h-0 flex flex-col rounded-2xl sm:rounded-[1.35rem] border overflow-hidden"
       style={{
         borderColor: theme.border,
         background: `linear-gradient(180deg, ${theme.surface} 0%, rgba(9,9,12,0.98) 45%)`,
@@ -365,8 +365,8 @@ function OracleBlock({
       }}
     >
       {/* Compact header: title left · epoch ring+copy right */}
-      <header className="flex items-center justify-between gap-3 sm:gap-5 px-4 sm:px-6 py-3 sm:py-3.5 border-b border-white/[0.06]">
-        <div className="min-w-0 flex items-center gap-2.5">
+      <header className="shrink-0 flex items-center justify-between gap-2.5 sm:gap-3 px-3.5 sm:px-4 lg:px-5 py-3 border-b border-white/[0.06] min-h-[4.75rem]">
+        <div className="min-w-0 flex items-center gap-2">
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0"
             style={{
@@ -376,13 +376,13 @@ function OracleBlock({
             }}
           />
           <h2
-            className="text-lg sm:text-xl font-semibold tracking-[-0.03em] leading-none truncate"
+            className="text-base sm:text-lg font-semibold tracking-[-0.03em] leading-none truncate"
             style={{ color: theme.label }}
           >
             {feed.pair}
           </h2>
           <span
-            className="shrink-0 text-[9px] sm:text-[10px] font-mono tracking-[0.14em] uppercase px-2 py-0.5 rounded-full border"
+            className="shrink-0 text-[9px] font-mono tracking-[0.14em] uppercase px-1.5 py-0.5 rounded-full border"
             style={{
               color: st.color,
               borderColor: `${st.color}40`,
@@ -402,9 +402,9 @@ function OracleBlock({
         />
       </header>
 
-      {/* Human status strip */}
-      <div className="px-4 sm:px-6 py-2.5 border-b border-white/[0.04] bg-black/20">
-        <p className="text-[12px] sm:text-[13px] text-[#B0B0BC] leading-snug max-w-3xl">
+      {/* Human status strip — fixed min-height so dual panes align */}
+      <div className="shrink-0 px-3.5 sm:px-4 lg:px-5 py-2 border-b border-white/[0.04] bg-black/20 min-h-[3.25rem] flex items-center">
+        <p className="text-[11px] sm:text-[12px] text-[#B0B0BC] leading-snug line-clamp-2">
           <span className="font-medium" style={{ color: st.color }}>
             {st.label}
           </span>
@@ -416,24 +416,22 @@ function OracleBlock({
               <span style={{ color: health.color }}>{health.label}</span>
               <span className="text-[#8B8B9A]">
                 {" "}
-                means the local oracle agent sees protocol trouble, even if a
-                price still exists on-chain.
+                — local agent sees protocol trouble.
               </span>
             </>
           )}
         </p>
       </div>
 
-      {/* Map stage */}
-      <div className="px-3 sm:px-5 pt-3 sm:pt-4">
+      {/* Map stage — flex-grow keeps dual panes same height */}
+      <div className="flex-1 min-h-0 flex flex-col px-3 sm:px-4 pt-3 sm:pt-3.5">
         <div
-          className="relative rounded-2xl overflow-hidden border border-white/[0.06]"
+          className="relative flex-1 min-h-0 rounded-2xl overflow-hidden border border-white/[0.06]"
           style={{
             background: "#050508",
             boxShadow: `inset 0 0 80px ${theme.accentDim}`,
           }}
         >
-          {/* Brief “publishing” flash over the map when datapoints fire */}
           {publishPulse > 0 && (
             <div
               className="absolute top-3 left-1/2 z-30 -translate-x-1/2 pointer-events-none"
@@ -455,7 +453,7 @@ function OracleBlock({
             </div>
           )}
 
-          <div className="lumen-oracle-panel relative w-full">
+          <div className="lumen-oracle-panel lumen-oracle-panel--dual relative w-full h-full">
             <OracleConstellation
               feed={feed}
               compact
@@ -464,7 +462,11 @@ function OracleBlock({
               hideCenterPrice
               onActivity={(rows) => {
                 setActivity(rows);
-                if (rows.some((r) => r.kind === "datapoint" || r.kind === "pool_refresh")) {
+                if (
+                  rows.some(
+                    (r) => r.kind === "datapoint" || r.kind === "pool_refresh"
+                  )
+                ) {
                   setPublishPulse((n) => n + 1);
                 }
               }}
@@ -499,7 +501,11 @@ function OracleBlock({
             corner="bl"
             label="Health"
             value={health.label === "—" ? "—" : health.label}
-            sub={tipHeight != null ? `tip ${tipHeight.toLocaleString()}` : undefined}
+            sub={
+              tipHeight != null
+                ? `tip ${tipHeight.toLocaleString()}`
+                : undefined
+            }
             accent={health.color}
           />
           <CornerChip
@@ -515,25 +521,24 @@ function OracleBlock({
         </div>
       </div>
 
-      {/* Single price + activity + legend */}
-      <div className="px-4 sm:px-5 py-4 sm:py-5 grid lg:grid-cols-12 gap-3 sm:gap-4">
-        {/* Price — the only price surface */}
-        <div className="lg:col-span-4 rounded-2xl border border-white/[0.07] bg-black/40 px-4 py-4 flex flex-col justify-center min-h-[120px]">
-          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2">
+      {/* Single price + activity + legend — stacked for dual-column rhythm */}
+      <div className="shrink-0 px-3 sm:px-4 py-3 sm:py-3.5 grid grid-cols-1 gap-2.5 sm:gap-3">
+        <div className="rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center min-h-[88px]">
+          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-1.5">
             On-chain price
           </div>
           <div
-            className="font-mono text-[1.65rem] sm:text-[1.85rem] font-semibold tabular-nums tracking-tight leading-none"
+            className="font-mono text-[1.35rem] sm:text-[1.5rem] font-semibold tabular-nums tracking-tight leading-none"
             style={{ color: theme.label }}
           >
             {feed.priceLabel || "—"}
           </div>
-          <div className="mt-1.5 text-[11px] text-[#8B8B9A] font-mono">
+          <div className="mt-1 text-[10px] text-[#8B8B9A] font-mono">
             {feed.unitLabel}
           </div>
           {feed.priceAlt && (
             <div
-              className="mt-2 text-[12px] font-mono"
+              className="mt-1.5 text-[11px] font-mono"
               style={{ color: `${theme.accent}dd` }}
             >
               {feed.priceAlt}
@@ -541,9 +546,8 @@ function OracleBlock({
           )}
         </div>
 
-        {/* Live publish feed */}
-        <div className="lg:col-span-4 rounded-2xl border border-white/[0.07] bg-black/40 px-4 py-4 min-h-[120px] flex flex-col">
-          <div className="flex items-center justify-between mb-2.5">
+        <div className="rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 min-h-[88px] flex flex-col">
+          <div className="flex items-center justify-between mb-2">
             <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase">
               Publish activity
             </div>
@@ -558,16 +562,16 @@ function OracleBlock({
           </div>
           <div className="flex-1 min-h-0">
             {activity.length === 0 ? (
-              <p className="text-[12px] text-[#5C5C6A] leading-relaxed">
-                When an operator posts a datapoint, you will see a diamond fly
-                from their node into the pool core.
+              <p className="text-[11px] text-[#5C5C6A] leading-relaxed">
+                When an operator posts a datapoint, a diamond flies from their
+                node into the pool core.
               </p>
             ) : (
-              <ul className="space-y-1.5 max-h-[100px] overflow-hidden">
-                {activity.slice(0, 5).map((row) => (
+              <ul className="space-y-1 max-h-[72px] overflow-hidden">
+                {activity.slice(0, 4).map((row) => (
                   <li
                     key={row.id}
-                    className="text-[11px] font-mono truncate leading-snug"
+                    className="text-[10px] sm:text-[11px] font-mono truncate leading-snug"
                     style={{
                       color:
                         row.kind === "datapoint"
@@ -586,7 +590,10 @@ function OracleBlock({
                         : row.kind === "pool_refresh"
                           ? "⬡ pool "
                           : "· "}
-                    {row.message.replace(/^(POST|REWARD|POOL REFRESH|RATE)\s*/i, "")}
+                    {row.message.replace(
+                      /^(POST|REWARD|POOL REFRESH|RATE)\s*/i,
+                      ""
+                    )}
                   </li>
                 ))}
               </ul>
@@ -594,12 +601,11 @@ function OracleBlock({
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="lg:col-span-4 rounded-2xl border border-white/[0.07] bg-black/40 px-4 py-4 min-h-[120px]">
-          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-3">
+        <div className="rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3">
+          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2.5">
             Map legend
           </div>
-          <div className="grid grid-cols-1 gap-2.5">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2">
             <LegendItem
               shape="hex"
               color={theme.accent}
@@ -616,13 +622,13 @@ function OracleBlock({
               shape="diamond"
               color="#2DD4BF"
               label="Datapoint"
-              hint="A live publish shot into the core"
+              hint="Publish shot into the core"
             />
             <LegendItem
               shape="star"
               color={theme.accent}
               label="Reward"
-              hint="Claimable reward credit to an operator"
+              hint="Claimable credit to operator"
             />
           </div>
         </div>
@@ -644,13 +650,15 @@ export default function OraclesDualView({
 
   if (isLoading && !data) {
     return (
-      <div className="flex flex-col gap-6 sm:gap-8">
-        {[0, 1].map((i) => (
-          <div
-            key={i}
-            className="rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] h-[520px] animate-pulse"
-          />
-        ))}
+      <div className="flex flex-col gap-5 sm:gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 lg:gap-6 items-stretch">
+          {[0, 1].map((i) => (
+            <div
+              key={i}
+              className="rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] h-[640px] animate-pulse"
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -673,8 +681,19 @@ export default function OraclesDualView({
   }
 
   return (
-    <div className="flex flex-col gap-6 sm:gap-8">
-      {/* Status dictionary — once for the page */}
+    <div className="flex flex-col gap-5 sm:gap-6">
+      {/* Side-by-side dual panels — equal height, shared rhythm */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 lg:gap-6 items-stretch">
+        {panes.map((feed) => (
+          <OracleBlock
+            key={feed.id}
+            feed={feed}
+            tipHeight={data?.tipHeight ?? null}
+          />
+        ))}
+      </div>
+
+      {/* Status dictionary — footer, once for the page */}
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] px-4 sm:px-5 py-3.5 sm:py-4">
         <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-3">
           What the statuses mean
@@ -716,14 +735,6 @@ export default function OraclesDualView({
           ))}
         </div>
       </div>
-
-      {panes.map((feed) => (
-        <OracleBlock
-          key={feed.id}
-          feed={feed}
-          tipHeight={data?.tipHeight ?? null}
-        />
-      ))}
     </div>
   );
 }
