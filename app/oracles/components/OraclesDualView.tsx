@@ -1,79 +1,52 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { RefreshCw } from "lucide-react";
 import OracleConstellation from "./OracleConstellation";
 import type { OraclesApiResponse } from "./types";
 
-async function fetchOracles(): Promise<OraclesApiResponse> {
-  const res = await fetch("/api/oracles", { cache: "no-store" });
-  if (!res.ok) throw new Error(`oracles ${res.status}`);
-  return res.json();
+interface Props {
+  data: OraclesApiResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  isFetching?: boolean;
+  onRetry: () => void;
 }
 
-export default function OraclesDualView() {
-  const { data, isLoading, isError, isFetching, refetch } = useQuery({
-    queryKey: ["oracles-constellation"],
-    queryFn: fetchOracles,
-    refetchInterval: 20_000,
-    staleTime: 8_000,
-  });
-
+export default function OraclesDualView({
+  data,
+  isLoading,
+  isError,
+  onRetry,
+}: Props) {
   const feeds = data?.feeds ?? [];
   const usd = feeds.find((f) => f.id === "erg-usd") || feeds[0];
   const xau = feeds.find((f) => f.id === "erg-xau") || feeds[1];
+  const panes = [usd, xau].filter(Boolean);
 
   if (isLoading && !data) {
     return (
-      <div
-        style={{
-          height: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontFamily: "ui-monospace, monospace",
-          fontSize: 12,
-          letterSpacing: "0.2em",
-          color: "rgba(160,160,176,0.8)",
-          background: "#05070A",
-        }}
-      >
-        LOADING ORACLE POOLS…
+      <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
+        {[0, 1].map((i) => (
+          <div
+            key={i}
+            className="canvas-container lumen-viz lumen-oracle-panel animate-pulse flex items-center justify-center font-mono text-[10px] tracking-[0.25em] text-[#A0A0B0]/60"
+          >
+            LOADING…
+          </div>
+        ))}
       </div>
     );
   }
 
   if (isError && !data) {
     return (
-      <div
-        style={{
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 12,
-          background: "#05070A",
-          color: "#EF4444",
-          fontFamily: "ui-monospace, monospace",
-        }}
-      >
-        <div style={{ letterSpacing: "0.15em", fontSize: 12 }}>
+      <div className="canvas-container lumen-viz flex flex-col items-center justify-center gap-4 border border-[#EF4444]/20 bg-[#EF4444]/[0.04]">
+        <p className="font-mono text-sm tracking-widest text-[#EF4444]">
           ORACLE API UNAVAILABLE
-        </div>
+        </p>
         <button
           type="button"
-          onClick={() => void refetch()}
-          style={{
-            padding: "8px 16px",
-            borderRadius: 10,
-            border: "1px solid rgba(255,255,255,0.12)",
-            background: "rgba(255,255,255,0.04)",
-            color: "#E8E8F0",
-            fontSize: 11,
-            letterSpacing: "0.12em",
-            cursor: "pointer",
-          }}
+          onClick={onRetry}
+          className="px-4 py-2 rounded-xl border border-white/10 text-xs font-mono tracking-widest text-[#E8E8F0] hover:bg-white/5 transition-colors"
         >
           RETRY
         </button>
@@ -82,148 +55,87 @@ export default function OraclesDualView() {
   }
 
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        background: "#05070A",
-        minHeight: 0,
-      }}
-    >
-      {/* status strip */}
-      <div
-        style={{
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "8px 14px",
-          borderBottom: "1px solid rgba(255,255,255,0.05)",
-          fontFamily: "ui-monospace, monospace",
-          fontSize: 10,
-          letterSpacing: "0.12em",
-          color: "rgba(160,160,176,0.85)",
-        }}
-      >
-        <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-          <span>
-            TIP{" "}
-            <span style={{ color: "#E8E8F0" }}>
-              {data?.tipHeight?.toLocaleString() ?? "—"}
-            </span>
-          </span>
-          <span>
-            SOURCE{" "}
-            <span style={{ color: "#00E5FF" }}>ON-CHAIN POOL · /api/oracles</span>
-          </span>
-          <span>AUTO 20s</span>
-        </div>
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          title="Refresh oracle data"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "6px 10px",
-            borderRadius: 8,
-            border: "1px solid rgba(255,255,255,0.08)",
-            background: "rgba(255,255,255,0.03)",
-            color: "#A0A0B0",
-            cursor: "pointer",
-          }}
-        >
-          <RefreshCw
-            size={12}
-            style={{
-              animation: isFetching ? "spin 0.8s linear infinite" : "none",
-            }}
-          />
-          SYNC
-        </button>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-
-      {/* dual windows */}
-      <div
-        className="oracles-dual-grid"
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 0,
-        }}
-      >
-        <style>{`
-          @media (max-width: 900px) {
-            .oracles-dual-grid {
-              grid-template-columns: 1fr !important;
-              grid-template-rows: 1fr 1fr;
-            }
-          }
-        `}</style>
-
-        {[usd, xau].filter(Boolean).map((feed, i) => (
-          <div
-            key={feed!.id}
-            style={{
-              position: "relative",
-              minHeight: 0,
-              borderRight:
-                i === 0 ? "1px solid rgba(255,255,255,0.06)" : undefined,
-              borderBottom: undefined,
-            }}
-          >
-            {/* pane title */}
-            <div
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                zIndex: 20,
-                pointerEvents: "none",
-                display: "flex",
-                justifyContent: "center",
-                paddingTop: 6,
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "ui-monospace, monospace",
-                  fontSize: 10,
-                  letterSpacing: "0.22em",
-                  color: "rgba(232,232,240,0.45)",
-                  background: "rgba(5,7,10,0.55)",
-                  border: "1px solid rgba(255,255,255,0.05)",
-                  borderRadius: 999,
-                  padding: "4px 12px",
-                }}
-              >
-                {feed!.pair}
+    <div className="space-y-4 sm:space-y-6">
+      <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
+        {panes.map((feed) => (
+          <div key={feed!.id} className="min-w-0">
+            {/* Panel chrome — matches dashboard viz cards */}
+            <div className="flex items-center justify-between gap-2 mb-2.5 px-0.5">
+              <div className="flex items-center gap-2 min-w-0">
                 <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
                   style={{
-                    marginLeft: 8,
-                    color:
+                    background:
                       feed!.status === "live"
-                        ? "#00D4AA"
+                        ? "#10B981"
                         : feed!.status === "stale"
-                          ? "#FBBF24"
+                          ? "#F59E0B"
                           : "#EF4444",
+                    boxShadow:
+                      feed!.status === "live"
+                        ? "0 0 8px #10B98188"
+                        : undefined,
                   }}
+                />
+                <span className="font-mono text-[11px] sm:text-xs tracking-[0.18em] text-[#E8E8F0]">
+                  {feed!.pair}
+                </span>
+                <span className="text-[10px] font-mono text-[#A0A0B0]/70 tracking-wide truncate">
+                  {feed!.subtitle || "Oracle Pool"}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 text-[10px] font-mono tracking-wider">
+                <span
+                  className={
+                    feed!.status === "live"
+                      ? "text-[#10B981]"
+                      : feed!.status === "stale"
+                        ? "text-[#F59E0B]"
+                        : "text-[#EF4444]"
+                  }
                 >
                   {feed!.status.toUpperCase()}
                 </span>
+                {feed!.epoch != null && (
+                  <span className="text-[#A0A0B0]/70">
+                    EP {feed!.epoch.toLocaleString()}
+                  </span>
+                )}
               </div>
             </div>
-            <OracleConstellation feed={feed!} compact />
+
+            <div className="canvas-container lumen-viz lumen-oracle-panel relative">
+              <OracleConstellation feed={feed!} compact />
+            </div>
+
+            {/* Foot meta row */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[10px] font-mono tracking-wide text-[#A0A0B0]/70">
+              <span className="text-[#E8E8F0] tabular-nums">
+                {feed!.priceLabel || "—"}
+              </span>
+              {feed!.unitLabel && <span>{feed!.unitLabel}</span>}
+              {feed!.ageBlocks != null && (
+                <span>lag {feed!.ageBlocks} blk</span>
+              )}
+              {(feed!.activeOracles != null || feed!.nodes?.length) && (
+                <span>
+                  {feed!.activeOracles ??
+                    feed!.nodes.filter((n) => n.status === "live").length}
+                  /
+                  {feed!.totalOracles ?? feed!.nodes?.length ?? "—"}{" "}
+                  oracles
+                </span>
+              )}
+            </div>
           </div>
         ))}
       </div>
+
+      <p className="text-center text-[10px] sm:text-[11px] font-mono tracking-wide text-[#A0A0B0]/50 max-w-2xl mx-auto leading-relaxed pt-2">
+        Prices and epochs from on-chain oracle pool boxes. Node statuses from
+        operator metrics when available. Visualization is live; not financial
+        advice.
+      </p>
     </div>
   );
 }

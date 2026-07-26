@@ -126,24 +126,30 @@ body {
   filter: drop-shadow(0 0 4px currentColor);
 }
 
-/* Consensus Singularity stage */
-.oracle-singularity {
-  width: 100%;
-  height: min(68dvh, 560px);
-  min-height: 360px;
-  max-height: 720px;
+/* Oracle Constellation panels — match dashboard viz density */
+.lumen-oracle-panel {
+  /* Slightly shorter than full map when side-by-side */
+  height: min(48dvh, 380px);
+  min-height: 280px;
+  max-height: 520px;
 }
 @media (min-width: 640px) {
-  .oracle-singularity {
-    height: min(72vh, 680px);
-    min-height: 480px;
+  .lumen-oracle-panel {
+    height: min(52vh, 460px);
+    min-height: 360px;
   }
 }
 @media (min-width: 1024px) {
-  .oracle-singularity {
-    min-height: 520px;
-    height: min(74vh, 720px);
+  .lumen-oracle-panel {
+    height: min(56vh, 500px);
+    min-height: 400px;
   }
+}
+/* Constellation fills the panel shell */
+.lumen-oracle-panel > div {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
 }
 
 .status-dot {
