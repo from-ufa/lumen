@@ -386,9 +386,15 @@ function ClusteredPeersLayer({
         (ver ? ` · v${ver}` : "") +
         ` · ${statusTip}`;
       // Hover tooltip only — sticky right-side card comes from onSelect click.
-      // No Leaflet popup (was a third floating window on click).
+      // No Leaflet popup; no native `title` (browser OS tooltip = ugly gray box).
       leafletMarker.unbindTooltip();
       leafletMarker.unbindPopup();
+      leafletMarker.options.title = "";
+      const el = leafletMarker.getElement?.() as HTMLElement | undefined;
+      if (el) {
+        el.removeAttribute("title");
+        el.querySelectorAll("[title]").forEach((n) => n.removeAttribute("title"));
+      }
       leafletMarker.bindTooltip(tip, {
         direction: "top",
         offset: [0, -12],
@@ -468,7 +474,9 @@ function ClusteredPeersLayer({
         lm = L.marker([m.lat, m.lon], {
           riseOnHover: true,
           keyboard: true,
-          title: m.name || m.ip,
+          // No native `title` — browser gray tooltip duplicated the Lumen tip
+          title: "",
+          alt: "",
         });
         lm.on("click", () => {
           const data = dataMapRef.current.get(m.id);
@@ -633,7 +641,8 @@ function MeMarkerLayer({
       zIndexOffset: 10000,
       riseOnHover: true,
       keyboard: true,
-      title: roleLabel,
+      title: "",
+      alt: "",
     });
 
     // Permanent role label only — detail lives in the side card on click.
