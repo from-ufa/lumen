@@ -468,7 +468,7 @@ export default function ConnectionSettings({
               <div className="flex justify-between items-start mb-6 sm:mb-7">
                 <div>
                   <div className="font-mono text-xs tracking-[4px] text-[#FF7A3D]">
-                    {isOracle ? "ORACLE SETTINGS" : "NODE SETTINGS"}
+                    SETTINGS
                   </div>
                   <div className="text-2xl sm:text-3xl font-semibold tracking-tighter mt-1">
                     {isOracle
@@ -937,10 +937,7 @@ export default function ConnectionSettings({
           className="lumen-header-pill inline-flex items-center justify-center gap-2 h-10 px-4 rounded-full border border-white/10 bg-white/[0.04] text-[#E8E8F0] text-[10px] font-mono font-medium tracking-[0.16em] uppercase hover:border-white/25 hover:bg-white/[0.07] transition-all duration-200 active:scale-[0.98] box-border"
         >
           <Settings className="w-3.5 h-3.5 shrink-0 opacity-90" />
-          <span className="sm:hidden truncate">SETTINGS</span>
-          <span className="hidden sm:inline">
-            {isOracle ? "ORACLE SETTINGS" : "NODE SETTINGS"}
-          </span>
+          <span>SETTINGS</span>
           {bridgeOnline && (
             <span
               className="hidden sm:inline-flex w-1.5 h-1.5 rounded-full bg-[#10B981] status-dot"

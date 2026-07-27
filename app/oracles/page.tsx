@@ -4,9 +4,7 @@ import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import {
   Zap,
-  RefreshCw,
   MoreHorizontal,
-  Home,
   Settings,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -22,11 +20,7 @@ import LumenPageHero from "../components/LumenPageHero";
 import VizModeChrome from "../components/VizModeChrome";
 import type { VizMode } from "../components/VizModeToggle";
 import { SoftLink, useSoftNavigate } from "../components/soft-nav";
-import {
-  HeaderActions,
-  HeaderIconButton,
-  HeaderPill,
-} from "../components/HeaderChrome";
+import { HeaderActions, HeaderIconButton } from "../components/HeaderChrome";
 import type { OraclesApiResponse } from "./components/types";
 import type { BridgeStatus, NodeMode, OracleViewMode } from "../lib/node-api";
 import {
@@ -234,19 +228,6 @@ export default function OraclesPage() {
                       transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                       className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[12rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
                     >
-                      <SoftLink
-                        href="/"
-                        role="menuitem"
-                        onClick={() => {
-                          setMobileMenuOpen(false);
-                          wakeOracleInvite();
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
-                      >
-                        <Home className="w-3.5 h-3.5 text-[#A0A0B0] shrink-0" />
-                        DASHBOARD
-                      </SoftLink>
-                      <div className="h-px bg-white/[0.06]" />
                       <button
                         type="button"
                         role="menuitem"
@@ -257,22 +238,8 @@ export default function OraclesPage() {
                         }}
                         className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
                       >
-                        <Settings className="w-3.5 h-3.5 text-[#FF7A3D] shrink-0" />
+                        <Settings className="w-3.5 h-3.5 text-[#A0A0B0] shrink-0" />
                         SETTINGS
-                      </button>
-                      <div className="h-px bg-white/[0.06]" />
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMobileMenuOpen(false);
-                          void refetch();
-                          wakeOracleInvite();
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
-                        SYNC
                       </button>
                     </motion.div>
                   )}
@@ -304,18 +271,6 @@ export default function OraclesPage() {
             </div>
 
             <HeaderActions>
-              <HeaderPill
-                as="link"
-                href="/"
-                tone="gold"
-                className="vt-lumen-nav-primary"
-                title="Node dashboard"
-                onClick={() => wakeOracleInvite()}
-              >
-                <Home className="w-3.5 h-3.5 shrink-0 opacity-90" />
-                DASHBOARD
-              </HeaderPill>
-
               <div className="hidden sm:contents">
                 <ConnectionSettings
                   variant="oracle"
@@ -338,18 +293,6 @@ export default function OraclesPage() {
                   openKey={settingsOpenKey}
                 />
               </div>
-
-              <HeaderIconButton
-                onClick={() => {
-                  void refetch();
-                  wakeOracleInvite();
-                }}
-                title="Refresh oracle data"
-              >
-                <RefreshCw
-                  className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`}
-                />
-              </HeaderIconButton>
             </HeaderActions>
           </div>
         </div>

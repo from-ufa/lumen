@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
-import { 
-  RefreshCw, Zap,
+import {
+  Zap,
   ExternalLink,
-  MoreHorizontal, Settings,
+  MoreHorizontal,
+  Settings,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -34,10 +35,7 @@ import {
   type VizMode,
 } from './components/VizModeToggle';
 import { useSoftNavigate } from './components/soft-nav';
-import {
-  HeaderActions,
-  HeaderIconButton,
-} from './components/HeaderChrome';
+import { HeaderActions } from './components/HeaderChrome';
 import type { NodeInfo, Peer, RecentBlock } from './types/ergo';
 import {
   openAddressOnSigmaSpace,
@@ -626,20 +624,6 @@ export default function LumenDashboard() {
                         <Settings className="w-3.5 h-3.5 text-[#A0A0B0] shrink-0" />
                         SETTINGS
                       </button>
-                      <div className="h-px bg-white/[0.06]" />
-                      <button
-                        type="button"
-                        role="menuitem"
-                        onClick={() => {
-                          setMobileMenuOpen(false);
-                          handleReconnect();
-                          wakeConnectInvite();
-                        }}
-                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left text-[11px] font-mono tracking-widest text-[#E8E8F0] hover:bg-white/[0.06] transition-colors"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
-                        SYNC
-                      </button>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -704,16 +688,6 @@ export default function LumenDashboard() {
                 onRefreshBridgeStatus={onRefreshBridgeStatus}
                 openKey={settingsOpenKey}
               />
-
-              <HeaderIconButton
-                onClick={() => {
-                  handleReconnect();
-                  wakeConnectInvite();
-                }}
-                title="Refresh data"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </HeaderIconButton>
             </HeaderActions>
           </div>
         </div>
