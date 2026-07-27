@@ -165,7 +165,7 @@ export default function OraclesPage() {
           <div className="sm:hidden flex items-center justify-between gap-2 min-w-0">
             <SoftLink
               href="/"
-              className="vt-lumen-brand flex items-center gap-2 min-w-0 flex-1"
+              className="vt-lumen-brand-mobile flex items-center gap-2 min-w-0 flex-1"
             >
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
                 <Zap className="w-4 h-4 text-black" />
@@ -259,7 +259,7 @@ export default function OraclesPage() {
             <div className="flex items-center gap-3 min-w-0">
               <SoftLink
                 href="/"
-                className="vt-lumen-brand flex items-center gap-3 min-w-0 group"
+                className="vt-lumen-brand-desktop flex items-center gap-3 min-w-0 group"
                 onClick={() => wakeOracleInvite()}
               >
                 <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">

@@ -801,13 +801,36 @@ body {
   mix-blend-mode: normal;
 }
 
-/* ── Named shared elements ─────────────────────────────────────────────── */
-.vt-lumen-brand {
-  view-transition-name: lumen-brand;
+/* ── Named shared elements ───────────────────────────────────────────────
+   IMPORTANT: only ONE live element per name. Mobile + desktop both had
+   .vt-lumen-brand → duplicate names abort morph. Scope by breakpoint.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* Desktop brand / nav (visible sm+) */
+@media (min-width: 640px) {
+  .vt-lumen-brand-desktop {
+    view-transition-name: lumen-brand;
+  }
+  .vt-lumen-nav-primary {
+    view-transition-name: lumen-nav-primary;
+  }
+  /* Kill mobile twins while desktop is shown */
+  .vt-lumen-brand-mobile {
+    view-transition-name: none;
+  }
 }
-.vt-lumen-nav-primary {
-  view-transition-name: lumen-nav-primary;
+
+/* Mobile brand (visible < sm) */
+@media (max-width: 639px) {
+  .vt-lumen-brand-mobile {
+    view-transition-name: lumen-brand;
+  }
+  .vt-lumen-brand-desktop,
+  .vt-lumen-nav-primary {
+    view-transition-name: none;
+  }
 }
+
 .vt-lumen-kicker {
   view-transition-name: lumen-kicker;
 }
@@ -818,7 +841,7 @@ body {
   view-transition-name: lumen-body;
 }
 
-/* Sticky shell: no name — stays put; morphing pieces live inside */
+/* Sticky shell: no whole-bar name — children morph independently */
 .vt-lumen-header {
   z-index: 40;
 }
@@ -925,7 +948,8 @@ body {
     animation: none !important;
   }
   .lumen-page-body,
-  .vt-lumen-brand,
+  .vt-lumen-brand-desktop,
+  .vt-lumen-brand-mobile,
   .vt-lumen-nav-primary,
   .vt-lumen-kicker,
   .vt-lumen-title {
