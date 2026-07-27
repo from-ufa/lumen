@@ -325,6 +325,7 @@ const earthFragment = /* glsl */ `
   uniform sampler2D uSpecular;
   uniform vec3 uLightDir;
   uniform float uTime;
+  uniform float uOpacity;
   varying vec2 vUv;
   varying vec3 vNormalW;
   varying vec3 vPosW;
@@ -356,7 +357,9 @@ const earthFragment = /* glsl */ `
     col *= 1.0 - rim * 0.18;
     col += vec3(0.35, 0.55, 0.85) * rim * 0.06;
 
-    gl_FragColor = vec4(col, 1.0);
+    float a = clamp(uOpacity, 0.0, 1.0);
+    // Premultiply-ish soft reveal (no hard cut-in when maps arrive)
+    gl_FragColor = vec4(col * a, a);
   }
 `;
 
@@ -410,18 +413,27 @@ function loadEarthTextures(): Promise<Record<string, THREE.Texture>> {
 
 /* ─── Earth ─────────────────────────────────────────────────────────────── */
 
+/** Soft reveal duration after day/night maps are ready (seconds). */
+const EARTH_FADE_SEC = 0.55;
+const CLOUDS_OPACITY = 0.38;
+
 function Earth({ spin }: { spin: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
   const earthRef = useRef<THREE.Mesh>(null!);
   const cloudsRef = useRef<THREE.Mesh>(null!);
   const earthAngle = useRef(0);
   const cloudAngle = useRef(0);
+  /** 0 → 1 ease after textures land */
+  const fadeRef = useRef(0);
   const [maps, setMaps] = useState<Record<string, THREE.Texture> | null>(null);
 
   useEffect(() => {
     let alive = true;
     loadEarthTextures().then((m) => {
-      if (alive) setMaps(m);
+      if (alive) {
+        fadeRef.current = 0;
+        setMaps(m);
+      }
     });
     return () => {
       alive = false;
@@ -433,6 +445,8 @@ function Earth({ spin }: { spin: boolean }) {
     return new THREE.ShaderMaterial({
       vertexShader: earthVertex,
       fragmentShader: earthFragment,
+      transparent: true,
+      depthWrite: true,
       uniforms: {
         uDay: { value: maps.day },
         uNight: { value: maps.night },
@@ -440,6 +454,7 @@ function Earth({ spin }: { spin: boolean }) {
         // Light from viewer side — updated each frame from camera
         uLightDir: { value: new THREE.Vector3(0, 0.35, 1).normalize() },
         uTime: { value: 0 },
+        uOpacity: { value: 0 },
       },
     });
   }, [maps]);
@@ -463,6 +478,25 @@ function Earth({ spin }: { spin: boolean }) {
       earthMat.uniforms.uTime.value = state.clock.elapsedTime;
       // Key light always from viewing side (camera → Earth)
       earthMat.uniforms.uLightDir.value.copy(state.camera.position).normalize();
+
+      // Soft fade-in when maps first become available (no hard pop-in)
+      if (fadeRef.current < 1) {
+        fadeRef.current = Math.min(1, fadeRef.current + dt / EARTH_FADE_SEC);
+        // smoothstep ease
+        const t = fadeRef.current;
+        const eased = t * t * (3 - 2 * t);
+        earthMat.uniforms.uOpacity.value = eased;
+        const cloudMat = cloudsRef.current?.material as
+          | THREE.MeshStandardMaterial
+          | undefined;
+        if (cloudMat) cloudMat.opacity = CLOUDS_OPACITY * eased;
+        // Fully opaque: drop transparency path for cleaner depth
+        if (fadeRef.current >= 1) {
+          earthMat.uniforms.uOpacity.value = 1;
+          earthMat.transparent = false;
+          earthMat.needsUpdate = true;
+        }
+      }
     }
   });
 
@@ -472,9 +506,8 @@ function Earth({ spin }: { spin: boolean }) {
       <pointLight position={[-2.5, 0.4, -1.5]} intensity={0.18} color="#1a3a6a" distance={10} />
 
       {/*
-        No solid placeholder while textures load — a blue meshStandard sphere
-        flashed for ~0.5s as a hard circle. Until maps are ready: empty group
-        (stars / peers still draw). Earth appears only with real day/night maps.
+        No solid placeholder while textures load. When maps arrive, Earth +
+        clouds fade in (~0.55s smoothstep) instead of popping opaque.
       */}
       {earthMat ? (
         <mesh ref={earthRef} geometry={GEO_EARTH} material={earthMat} />
@@ -486,7 +519,7 @@ function Earth({ spin }: { spin: boolean }) {
           <meshStandardMaterial
             map={maps.clouds}
             transparent
-            opacity={0.38}
+            opacity={0}
             depthWrite={false}
             roughness={1}
             metalness={0}
