@@ -20,10 +20,13 @@ export default function ConnectNodeInvite({
   enabled,
   onOpenSettings,
   delayMs = 5000,
+  onFirstComplete,
 }: {
   enabled: boolean;
   onOpenSettings: () => void;
   delayMs?: number;
+  /** After first type-out finishes (for stacking bridge node stats). */
+  onFirstComplete?: () => void;
 }) {
   return (
     <TypewriterInvite
@@ -32,6 +35,7 @@ export default function ConnectNodeInvite({
       fullText={FULL_TEXT}
       wakeEvent={WAKE_EVENT}
       delayMs={delayMs}
+      onFirstComplete={onFirstComplete}
       ariaLabel="Open settings to connect your Ergo node"
     />
   );

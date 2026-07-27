@@ -21,6 +21,7 @@ import ConnectionSettings from './components/ConnectionSettings';
 import ConnectNodeInvite, {
   wakeConnectInvite,
 } from './components/ConnectNodeInvite';
+import BridgeOperatorsInvite from './components/BridgeOperatorsInvite';
 import CrystalIcon from './components/CrystalIcon';
 import LumenPageBody from './components/LumenPageBody';
 import LumenPageHero from './components/LumenPageHero';
@@ -95,6 +96,9 @@ export default function LumenDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  /** Second typewriter — bridge node counts, 3s after first finishes */
+  const [bridgeNodeInviteReady, setBridgeNodeInviteReady] = useState(false);
+  const nodeInviteEnabled = nodeMode === "lumen";
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -110,6 +114,21 @@ export default function LumenDashboard() {
       document.removeEventListener("touchstart", onDown);
     };
   }, [mobileMenuOpen]);
+
+  useEffect(() => {
+    // First invite hidden (My Node mode) → still show bridge stats after 3s
+    if (nodeInviteEnabled) {
+      setBridgeNodeInviteReady(false);
+      return;
+    }
+    setBridgeNodeInviteReady(false);
+    const t = window.setTimeout(() => setBridgeNodeInviteReady(true), 3000);
+    return () => window.clearTimeout(t);
+  }, [nodeInviteEnabled]);
+
+  const onNodeInviteTyped = useCallback(() => {
+    window.setTimeout(() => setBridgeNodeInviteReady(true), 3000);
+  }, []);
 
   const setNodeMode = useCallback((mode: NodeMode) => {
     setNodeModeState(mode);
@@ -708,13 +727,22 @@ export default function LumenDashboard() {
           title="The living network."
           subtitle="Your node. Your peers. Real-time beauty."
           invite={
-            nodeMode === "lumen" ? (
-              <ConnectNodeInvite
-                enabled
-                delayMs={5000}
+            <div className="flex w-full flex-col items-end gap-2">
+              {nodeInviteEnabled ? (
+                <ConnectNodeInvite
+                  enabled
+                  delayMs={5000}
+                  onFirstComplete={onNodeInviteTyped}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+                />
+              ) : null}
+              <BridgeOperatorsInvite
+                variant="node"
+                enabled={bridgeNodeInviteReady}
+                delayMs={0}
                 onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
               />
-            ) : null
+            </div>
           }
           badges={
             <>
