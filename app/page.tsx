@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { 
   RefreshCw, Zap,
-  ExternalLink, Orbit, Globe2,
+  ExternalLink,
   MoreHorizontal, Settings,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -23,6 +23,8 @@ import ConnectNodeInvite, {
 import CrystalIcon from './components/CrystalIcon';
 import LumenPageHero from './components/LumenPageHero';
 import LumenWordmark from './components/LumenWordmark';
+import VizCrossfade from './components/VizCrossfade';
+import VizModeToggle, { softSetViewMode } from './components/VizModeToggle';
 import {
   HeaderActions,
   HeaderIconButton,
@@ -438,7 +440,7 @@ export default function LumenDashboard() {
   return (
     <div className="min-h-screen min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
       {/* === HERO / TOP BAR === */}
-      <div className="border-b border-white/10 bg-[#0A0A0F]/95 backdrop-blur-xl sticky top-0 z-40 pt-[env(safe-area-inset-top)]">
+      <div className="vt-lumen-header border-b border-white/10 bg-[#0A0A0F]/95 backdrop-blur-xl sticky top-0 z-40 pt-[env(safe-area-inset-top)]">
         <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           {/* ── Mobile header: one row — logo left · LIVE + ··· right ── */}
           <div className="sm:hidden flex items-center justify-between gap-2 min-w-0">
@@ -706,34 +708,13 @@ export default function LumenDashboard() {
         {/* Mode switcher + heights — same mb-4 → viz as before */}
         <div className="mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-6">
           <div className="hidden md:flex items-center gap-2 min-w-0">
-            <div className="inline-flex p-1 rounded-2xl glass border border-white/10">
-              <button
-                onClick={() => {
-                  setViewMode('constellation');
-                  wakeConnectInvite();
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
-                  viewMode === 'constellation'
-                    ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
-                    : 'text-[#A0A0B0] hover:text-white'
-                }`}
-              >
-                <Orbit className="w-3.5 h-3.5" /> NETWORK ORBIT
-              </button>
-              <button
-                onClick={() => {
-                  setViewMode('map');
-                  wakeConnectInvite();
-                }}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-mono tracking-widest transition-all ${
-                  viewMode === 'map'
-                    ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'
-                    : 'text-[#A0A0B0] hover:text-white'
-                }`}
-              >
-                <Globe2 className="w-3.5 h-3.5" /> WORLD MAP
-              </button>
-            </div>
+            <VizModeToggle
+              mode={viewMode}
+              onChange={(m) => {
+                softSetViewMode(m, setViewMode);
+                wakeConnectInvite();
+              }}
+            />
             <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest">
               {viewMode === 'map'
                 ? 'PEERS BY GEOIP · CITY-LEVEL ACCURACY'
@@ -764,25 +745,33 @@ export default function LumenDashboard() {
           </div>
         </div>
 
-        <div className="mb-3 md:mb-8 relative">
-          {viewMode === 'constellation' ? (
+        <VizCrossfade
+          mode={viewMode}
+          orbit={
             <Constellation3D
               key={`3d-${nodeMode}-${bridgeToken || "lumen"}`}
               peers={effectivePeers}
-              myNodeHeight={effectiveInfo?.fullHeight || effectiveInfo?.headersHeight || 0}
+              myNodeHeight={
+                effectiveInfo?.fullHeight ||
+                effectiveInfo?.headersHeight ||
+                0
+              }
               isOnline={isOnline}
-              lastBlockHeight={lastBlockHeight || (effectiveInfo?.fullHeight || 0)}
+              lastBlockHeight={
+                lastBlockHeight || (effectiveInfo?.fullHeight || 0)
+              }
               hideControls={isAnyModalOpen}
               centerLabel={nodeMode === "my" ? "My Node" : "lumen node"}
               onSimulateBlock={() => {
                 if ((window as any).__lumenSimulateBlock) {
                   (window as any).__lumenSimulateBlock();
                 } else {
-                  toast('Block wave simulation triggered in 3D scene');
+                  toast("Block wave simulation triggered in 3D scene");
                 }
               }}
             />
-          ) : (
+          }
+          map={
             <PeerMap
               blockHeight={
                 lastBlockHeight ||
@@ -790,47 +779,24 @@ export default function LumenDashboard() {
                 effectiveInfo?.headersHeight ||
                 0
               }
-              lastBlockAt={
-                recentBlocks[0]?.timestamp ??
-                null
-              }
+              lastBlockAt={recentBlocks[0]?.timestamp ?? null}
               hideControls={isAnyModalOpen}
               nodeMode={nodeMode}
               bridgeToken={bridgeToken}
             />
-          )}
-        </div>
+          }
+        />
 
         {/* === VIEW TOGGLE (mobile: BELOW viz) === */}
         <div className="md:hidden mb-8 space-y-2">
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl glass border border-white/10">
-            <button
-              onClick={() => {
-                setViewMode('constellation');
-                wakeConnectInvite();
-              }}
-              className={`flex items-center justify-center gap-1.5 px-2 py-3 rounded-xl text-[11px] font-mono tracking-wider transition-all ${
-                viewMode === 'constellation'
-                  ? 'bg-[#FF7A3D]/15 text-[#FF7A3D] border border-[#FF7A3D]/30'
-                  : 'text-[#A0A0B0]'
-              }`}
-            >
-              <Orbit className="w-3.5 h-3.5" /> ORBIT
-            </button>
-            <button
-              onClick={() => {
-                setViewMode('map');
-                wakeConnectInvite();
-              }}
-              className={`flex items-center justify-center gap-1.5 px-2 py-3 rounded-xl text-[11px] font-mono tracking-wider transition-all ${
-                viewMode === 'map'
-                  ? 'bg-[#00E5FF]/15 text-[#00E5FF] border border-[#00E5FF]/30'
-                  : 'text-[#A0A0B0]'
-              }`}
-            >
-              <Globe2 className="w-3.5 h-3.5" /> WORLD MAP
-            </button>
-          </div>
+          <VizModeToggle
+            compact
+            mode={viewMode}
+            onChange={(m) => {
+              softSetViewMode(m, setViewMode);
+              wakeConnectInvite();
+            }}
+          />
         </div>
 
         {/* === LIVE METRICS === */}

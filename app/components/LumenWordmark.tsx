@@ -6,7 +6,7 @@ export default function LumenWordmark({
 }) {
   return (
     <span
-      className={`font-semibold leading-none tracking-[-0.035em] ${className}`.trim()}
+      className={`vt-lumen-wordmark font-semibold leading-none tracking-[-0.035em] ${className}`.trim()}
       aria-label="lumen"
     >
       lumen

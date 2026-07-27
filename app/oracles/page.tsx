@@ -158,7 +158,7 @@ export default function OraclesPage() {
   return (
     <div className="min-h-screen min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
       {/* === TOP BAR — same shell as main dashboard === */}
-      <div className="border-b border-white/10 bg-[#0A0A0F]/95 backdrop-blur-xl sticky top-0 z-40 pt-[env(safe-area-inset-top)]">
+      <div className="vt-lumen-header border-b border-white/10 bg-[#0A0A0F]/95 backdrop-blur-xl sticky top-0 z-40 pt-[env(safe-area-inset-top)]">
         <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           {/* Mobile */}
           <div className="sm:hidden flex items-center justify-between gap-2 min-w-0">
