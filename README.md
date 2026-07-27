@@ -21,7 +21,8 @@ It turns node and oracle data into something you can *see and feel* — not anot
                     ┌─────────────────────────────────────┐
                     │  ergolumen.net  (public UI + hub)   │
                     │  Network Orbit · World Map · Metrics│
-                    │  Blocks · Mempool · Oracles         │
+                    │  Operators · Blocks · Mempool       │
+                    │  Oracles dual pools + publish feed  │
                     └──────────────┬──────────────────────┘
                                    │  optional Bridge (outbound WSS)
                     ┌──────────────▼──────────────────────┐
@@ -44,13 +45,24 @@ It turns node and oracle data into something you can *see and feel* — not anot
 
 ### Node dashboard (`/`)
 
-- **Network Orbit** — cinematic 3D Earth + live peers (soft pins, hover, search)
+- **Network Orbit** — cinematic 3D Earth + live peer pins (search, hover card, drag / zoom)
+  - **AUTO ORBIT** freezes Earth when OFF
+  - Hover peer → clean status card; **auto-dismisses** when you leave the pin (no Close)
 - **World Map** — GeoIP pins with **Live / Linked / All** filters (Lumen mode)
 - **Live heights** — headers / full height next to the viz
-- **Metrics** — peers, mempool, average block time
-- **Blocks & mempool** — real tx counts from the node; miner labels from Explorer + pool catalog
-- **Connect invite** — soft typewriter CTA to attach your own node via Settings
-- **Soft page motion** — smooth Node ↔ Oracles transitions (View Transitions + enter fade)
+- **Glow metrics** — avg block time, P2P sessions, mempool, sync bar
+- **Oracle operators panel** — who is live on public pools right now
+  - Unique online count (both ERG/USD + ERG/XAU)
+  - Per-pool participation bars
+  - Full operator address grid (even layout; open on SigmaSpace with confirm)
+- **Blocks & mempool** — matching luminous panels; real tx counts from the node
+  - Miner labels from Explorer + pool catalog
+  - Tap block → detail; open SigmaSpace / official explorer **only after confirm**
+  - Tap mempool TX → confirm → SigmaSpace
+- **Typewriter invite stack** (top-right)
+  1. *Connect your Ergo node…* (Settings → My Node)
+  2. After it finishes typing → live **bridge hub** counts (agents / nodes via lumen)
+- **Soft motion** — Node ↔ Oracles View Transitions + shared morph (brand / nav / titles); Orbit ↔ Map crossfade
 
 ### Oracles (`/oracles`)
 
@@ -58,7 +70,12 @@ It turns node and oracle data into something you can *see and feel* — not anot
 - Canvas constellation per pool (operators, datapoints, rewards, lag)
 - On-chain pool box price + optional local oracle-core metrics
 - **Network** view (public pools) or **My Oracle** (your agent via the same Bridge token)
-- Typewriter CTA to connect your oracle (hidden when My Oracle is already live)
+- Hybrid My Oracle: attached pools = **you**; other pools = full lumen network (labeled)
+- **Publish activity** — session history of posts / rewards / pool refreshes (scrollable, smooth pin on new events)
+- Map legend sized so all rows fit
+- Typewriter invite stack (same rhythm as dashboard)
+  1. *Connect your Ergo oracle…*
+  2. Bridge hub · agents online · oracle operators via lumen · USD/XAU split
 
 ### Lumen Bridge (privacy)
 
@@ -66,6 +83,8 @@ It turns node and oracle data into something you can *see and feel* — not anot
 - **Allowlisted GET only** — no wallet, no writes
 - One token for **My Node** and **My Oracle**
 - Your node never needs a public REST port
+- **Public hub stats** (no tokens/IPs): live agents, nodes, oracle-capable sessions  
+  → `GET /api/bridge/stats` (powers the secondary typewriter cards)
 
 ---
 
@@ -74,7 +93,7 @@ It turns node and oracle data into something you can *see and feel* — not anot
 | Audience | Why lumen |
 |----------|-----------|
 | **Node runners** | Situational awareness with beauty — peers, height, mempool, map |
-| **Oracle operators** | Live dual-pool picture + path to attach your own agent |
+| **Oracle operators** | Live dual-pool picture, who is online, path to attach your agent |
 | **Builders** | Next.js App Router + thin `/api/chain/*` explorer plane + Bridge stack |
 
 ---
@@ -83,10 +102,10 @@ It turns node and oracle data into something you can *see and feel* — not anot
 
 | Piece | Role |
 |-------|------|
-| **Next.js 16** app (`app/`) | UI + API routes (`/api/node`, `/api/oracles`, `/api/chain/*`, `/api/bridge/*`) |
+| **Next.js 16** app (`app/`) | UI + API (`/api/node`, `/api/oracles`, `/api/chain/*`, `/api/bridge/*`) |
 | **Local Ergo** (`:9053`) | Primary chain source on the host (Lumen node mode) |
-| **bridge-server** (`:3100`) | Token hub + WSS proxy for My Node / My Oracle |
-| **bridge/** | Docker agent agents run on the operator machine |
+| **bridge-server** (`:3100`) | Token hub + WSS proxy + **public** `/stats` aggregates |
+| **bridge/** | Docker agent on the operator machine |
 | **Caddy** | TLS + reverse proxy → UI + `wss://…/ws/bridge` |
 
 Detailed ops, units, and env: **[LUMEN.md](./LUMEN.md)**.
@@ -117,6 +136,7 @@ docker run -d --name lumen-bridge --restart unless-stopped \
 | `LUMEN_TOKEN` | Dashboard token (`lumen_…`) |
 | `LUMEN_SERVER` | Hub WebSocket |
 | `LUMEN_NODE` | Local Ergo REST |
+| `LUMEN_ORACLE_USD` / `LUMEN_ORACLE_XAU` | Optional oracle-core metrics (loopback) |
 
 More: [bridge/DOCKER.md](./bridge/DOCKER.md) · [bridge/README.md](./bridge/README.md)
 
@@ -162,7 +182,23 @@ npm run crawl:network
 | **OFFLINE** | Price age | Missing / extremely old box |
 | **DOWN** | Agent | Protocol/quorum trouble (Health chip) |
 
+**Two “online” numbers (do not mix):**
+
+| Signal | Meaning |
+|--------|---------|
+| **On-chain operators** | Posting datapoints into public pools (dashboard panel + dual view) |
+| **Bridge agents** | Live WebSocket to the lumen hub (`/api/bridge/stats`) |
+
 API: `GET /api/oracles` · logic: [`lib/oracles.ts`](./lib/oracles.ts)
+
+---
+
+## UX details worth knowing
+
+- **Confirm before leaving** — SigmaSpace / explorer opens go through a small Stay / Open dialog  
+- **Invite stack** — closing the top typewriter keeps an empty slot so the bridge-stats card does not jump up  
+- **Glow panels** — shared luminous glass language across metrics, blocks, mempool, operators, and oracle tiles  
+- **Soft navigation** — sticky header stays solid; page body dissolves; Orbit / Map crossfades  
 
 ---
 
@@ -204,6 +240,8 @@ Production-style on host:
 ```bash
 cd /home/lumen
 npm run build && systemctl restart lumen
+# after bridge-server changes:
+# systemctl restart lumen-bridge-server
 ```
 
 ---
@@ -212,9 +250,10 @@ npm run build && systemctl restart lumen
 
 ```text
 app/                 Next.js UI + API
+  components/        Orbit, map, glow panels, invites, confirms
   oracles/           Dual oracle constellation page
 bridge/              Outbound agent (Docker context)
-bridge-server/       WSS hub + tokens + proxy
+bridge-server/       WSS hub + tokens + proxy + public /stats
 lib/                 Server helpers (oracles, chain, catalog, …)
 scripts/             Network crawl, miner watch, …
 docs/                Caps / reset notes
@@ -228,6 +267,7 @@ LUMEN.md             Operator handoff
 - Bridge: **GET allowlist only** — no signing, no wallet, no writes  
 - Agent is **outbound WSS** — no inbound Ergo REST to the public internet  
 - Treat `lumen_*` tokens like passwords  
+- Public bridge stats never expose tokens or IPs  
 - Optional site Basic Auth for public mode (see LUMEN.md)
 
 ---
