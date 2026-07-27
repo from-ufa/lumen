@@ -766,13 +766,6 @@ export default function LumenDashboard() {
               }
               hideControls={isAnyModalOpen}
               centerLabel={nodeMode === "my" ? "My Node" : "lumen node"}
-              onSimulateBlock={() => {
-                if ((window as any).__lumenSimulateBlock) {
-                  (window as any).__lumenSimulateBlock();
-                } else {
-                  toast("Block wave simulation triggered in 3D scene");
-                }
-              }}
             />
           }
           map={

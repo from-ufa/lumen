@@ -33,7 +33,6 @@ interface ConstellationProps {
   isOnline: boolean;
   onPeerHover?: (peer: Peer | null) => void;
   lastBlockHeight: number;
-  onSimulateBlock?: () => void;
   hideControls?: boolean;
   /** Label for the My Node / Lumen Node orbital point */
   centerLabel?: string;
@@ -411,10 +410,12 @@ function loadEarthTextures(): Promise<Record<string, THREE.Texture>> {
 
 /* ─── Earth ─────────────────────────────────────────────────────────────── */
 
-function Earth() {
+function Earth({ spin }: { spin: boolean }) {
   const groupRef = useRef<THREE.Group>(null!);
   const earthRef = useRef<THREE.Mesh>(null!);
   const cloudsRef = useRef<THREE.Mesh>(null!);
+  const earthAngle = useRef(0);
+  const cloudAngle = useRef(0);
   const [maps, setMaps] = useState<Record<string, THREE.Texture> | null>(null);
 
   useEffect(() => {
@@ -450,12 +451,16 @@ function Earth() {
     [earthMat]
   );
 
-  useFrame((state) => {
-    const t = state.clock.elapsedTime;
-    if (earthRef.current) earthRef.current.rotation.y = t * 0.028;
-    if (cloudsRef.current) cloudsRef.current.rotation.y = t * 0.034;
+  useFrame((state, dt) => {
+    // AUTO ORBIT OFF must freeze Earth + clouds (not only camera autoRotate)
+    if (spin) {
+      earthAngle.current += dt * 0.028;
+      cloudAngle.current += dt * 0.034;
+    }
+    if (earthRef.current) earthRef.current.rotation.y = earthAngle.current;
+    if (cloudsRef.current) cloudsRef.current.rotation.y = cloudAngle.current;
     if (earthMat) {
-      earthMat.uniforms.uTime.value = t;
+      earthMat.uniforms.uTime.value = state.clock.elapsedTime;
       // Key light always from viewing side (camera → Earth)
       earthMat.uniforms.uLightDir.value.copy(state.camera.position).normalize();
     }
@@ -1129,10 +1134,16 @@ function CameraRig({
     if (controlsRef.current) {
       // Motion mul is driven by PeerHoverDriver (raycast every frame)
       const mul = motionRef.current.mul;
-      const canSpin = autoOrbit && !fly?.active && mul > 0.02;
+      // Hard stop when AUTO ORBIT OFF — no residual autoRotate
+      const canSpin = !!autoOrbit && !fly?.active && mul > 0.02;
       controlsRef.current.autoRotate = canSpin;
-      // drei speed is deg/s-ish; scale by mul for smooth coast
-      controlsRef.current.autoRotateSpeed = 0.4 * orbitSpeed * mul;
+      controlsRef.current.autoRotateSpeed = canSpin
+        ? 0.4 * orbitSpeed * mul
+        : 0;
+      if (!canSpin) {
+        // Ensure controls don't keep coasting on the autoRotate path
+        controlsRef.current.update();
+      }
     }
   });
 
@@ -1143,6 +1154,8 @@ function CameraRig({
       enablePan
       enableZoom
       enableRotate
+      autoRotate={false}
+      autoRotateSpeed={0}
       minDistance={4}
       maxDistance={42}
       enableDamping
@@ -1274,7 +1287,7 @@ function NetworkOrbitWorld({
         />
       </mesh>
 
-      <Earth />
+      <Earth spin={autoOrbit} />
       <PeerInstances
         slots={slots}
         propagationStart={propagationStart}
@@ -1314,7 +1327,6 @@ function Scene({
   isOnline,
   onPeerHover,
   lastBlockHeight,
-  onSimulateBlock,
   hideControls = false,
   centerLabel = "Lumen Node",
 }: ConstellationProps) {
@@ -1342,7 +1354,7 @@ function Scene({
     setPointerOver(false);
     onPeerHover?.(null);
     setSearchClearToken((n) => n + 1);
-    setIsAutoOrbit(true);
+    // Do not force auto-orbit back on — respect user's OFF choice
   }, [onPeerHover]);
 
   useEffect(() => {
@@ -1444,12 +1456,6 @@ function Scene({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastBlockHeight]);
-
-  useEffect(() => {
-    if (onSimulateBlock) {
-      (window as any).__lumenSimulateBlock = triggerBlockPropagation;
-    }
-  }, [onSimulateBlock, triggerBlockPropagation]);
 
   const handlePeerHover = useCallback<PeerHoverFn>(
     (peer, pos) => {
@@ -1562,12 +1568,11 @@ function Scene({
       if (e.key === "[" || e.key === "-") onOrbitSpeedChange(orbitSpeed - 0.25);
       if (e.key === "]" || e.key === "=" || e.key === "+")
         onOrbitSpeedChange(orbitSpeed + 0.25);
-      if (e.key.toLowerCase() === "b" && onSimulateBlock) triggerBlockPropagation();
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onSimulateBlock, triggerBlockPropagation, orbitSpeed, musicOn, musicBusy]);
+  }, [orbitSpeed, musicOn, musicBusy]);
 
   return (
     <div ref={vizRef} className="absolute inset-0 w-full h-full">
@@ -1613,20 +1618,9 @@ function Scene({
         />
       </div>
 
-      {/* Mobile BOOM · FOCUS */}
+      {/* Mobile FOCUS */}
       {!hideControls && (
-        <div className="md:hidden absolute bottom-0 inset-x-0 z-30 pointer-events-none flex items-end justify-between gap-3 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-          {onSimulateBlock ? (
-            <button
-              type="button"
-              onClick={triggerBlockPropagation}
-              className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-[#E8C48A]/50 bg-[#0A0A0F]/92 text-[#E8C48A] shadow-lg backdrop-blur-md active:scale-[0.97]"
-            >
-              ✧ BOOM
-            </button>
-          ) : (
-            <span className="min-h-11 w-px" aria-hidden />
-          )}
+        <div className="md:hidden absolute bottom-0 inset-x-0 z-30 pointer-events-none flex items-end justify-end gap-3 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
             onClick={focusOnMyNode}
@@ -1785,15 +1779,6 @@ function Scene({
           >
             FOCUS ON MY NODE
           </button>
-          {onSimulateBlock && (
-            <button
-              type="button"
-              onClick={triggerBlockPropagation}
-              className={`${HUD_BTN} btn-cinematic bg-[#E8C48A]/08 border-[#E8C48A]/25 hover:bg-[#E8C48A]/14 text-[#E8C48A]`}
-            >
-              ✧ SIMULATE BLOCK WAVE
-            </button>
-          )}
         </div>
       )}
 
@@ -1904,7 +1889,7 @@ export default function Constellation3D(props: ConstellationProps) {
           />{" "}
           GHOST
         </span>
-        <span className="opacity-50">Pinch · drag · B boom</span>
+        <span className="opacity-50">Pinch · drag · O orbit · F focus</span>
       </div>
     </div>
   );
