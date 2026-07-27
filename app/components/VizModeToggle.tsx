@@ -48,11 +48,14 @@ const MODES = [
 export default function VizModeToggle({
   mode,
   onChange,
+  onPrefetchMode,
   layoutId = "lumen-viz-mode-pill",
   compact = false,
 }: {
   mode: VizMode;
   onChange: (m: VizMode) => void;
+  /** Warm route/chunks before tap (map leaflet, /oracles page) */
+  onPrefetchMode?: (m: VizMode) => void;
   layoutId?: string;
   compact?: boolean;
 }) {
@@ -68,6 +71,8 @@ export default function VizModeToggle({
               key={t.id}
               type="button"
               onClick={() => onChange(t.id)}
+              onPointerEnter={() => onPrefetchMode?.(t.id)}
+              onTouchStart={() => onPrefetchMode?.(t.id)}
               className={`relative flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 px-1.5 py-2.5 sm:py-3 rounded-xl text-[10px] sm:text-[11px] font-mono tracking-wider transition-colors ${
                 on
                   ? t.compactActive + " border"
@@ -101,6 +106,7 @@ export default function VizModeToggle({
             key={t.id}
             type="button"
             onClick={() => onChange(t.id)}
+            onPointerEnter={() => onPrefetchMode?.(t.id)}
             className={`relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3.5 py-2 rounded-xl text-[10px] sm:text-xs font-mono tracking-widest transition-colors ${
               on ? t.active : "text-[#A0A0B0] hover:text-white"
             }`}
@@ -125,7 +131,7 @@ export default function VizModeToggle({
   );
 }
 
-/** Soft viewMode setter — uses View Transitions API when available */
+/** Soft viewMode setter — View Transitions on desktop only (not mobile). */
 export function softSetViewMode(
   next: VizMode,
   setMode: (m: VizMode) => void
@@ -134,13 +140,24 @@ export function softSetViewMode(
     setMode(next);
     return;
   }
+  // Mobile: instant mode switch — VT freezes with WebGL/Leaflet snapshots
+  try {
+    if (
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      window.matchMedia("(max-width: 767px)").matches ||
+      window.matchMedia("(pointer: coarse)").matches
+    ) {
+      setMode(next);
+      return;
+    }
+  } catch {
+    setMode(next);
+    return;
+  }
   const doc = document as Document & {
     startViewTransition?: (cb: () => void) => { finished: Promise<void> };
   };
-  if (
-    typeof doc.startViewTransition === "function" &&
-    !window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  ) {
+  if (typeof doc.startViewTransition === "function") {
     try {
       doc.startViewTransition(() => {
         setMode(next);

@@ -8,6 +8,7 @@ import {
   Settings,
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import LumenWordmark from "../components/LumenWordmark";
 import ConnectionSettings from "../components/ConnectionSettings";
@@ -75,18 +76,61 @@ function nodeModeToView(m: NodeMode): OracleViewMode {
 
 export default function OraclesPage() {
   const softNav = useSoftNavigate();
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
 
+  // Prefetch dashboard + map chunk so Orbit/Map taps feel instant
+  useEffect(() => {
+    const warm = () => {
+      try {
+        router.prefetch("/");
+        router.prefetch("/?viz=map");
+        router.prefetch("/?viz=constellation");
+      } catch {
+        /* */
+      }
+      void import("../components/PeerMap").catch(() => {});
+    };
+    let idleId: number | undefined;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(warm, { timeout: 2200 });
+    } else {
+      t = setTimeout(warm, 900);
+    }
+    return () => {
+      if (idleId != null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (t != null) clearTimeout(t);
+    };
+  }, [router]);
+
   const onSelectVizMode = useCallback(
     (m: VizMode) => {
       if (m === "oracles") return;
-      // Same SoftLink path as header — land on dashboard with Orbit/Map
       softNav(m === "map" ? "/?viz=map" : "/?viz=constellation");
     },
     [softNav]
+  );
+
+  const onPrefetchVizMode = useCallback(
+    (m: VizMode) => {
+      if (m === "oracles") return;
+      try {
+        router.prefetch(m === "map" ? "/?viz=map" : "/?viz=constellation");
+        router.prefetch("/");
+      } catch {
+        /* */
+      }
+      if (m === "map") {
+        void import("../components/PeerMap").catch(() => {});
+      }
+    },
+    [router]
   );
 
   // Sync hydrate from localStorage — no ready-gate (fetch starts on first paint)
@@ -391,6 +435,7 @@ export default function OraclesPage() {
         <VizModeChrome
           mode="oracles"
           onSelectMode={onSelectVizMode}
+          onPrefetchMode={onPrefetchVizMode}
           leftLabel="TIP"
           leftValue={data?.tipHeight ?? 0}
           rightLabel="FULL HEIGHT"

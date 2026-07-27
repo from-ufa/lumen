@@ -23,6 +23,22 @@ function prefersReducedMotion() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+/**
+ * Phones / coarse pointers: View Transitions + full-page snapshots are expensive
+ * (WebGL + long pages). Desktop keeps soft VT; mobile uses instant router.push.
+ */
+export function isMobileUi(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return (
+      window.matchMedia("(max-width: 767px)").matches ||
+      window.matchMedia("(pointer: coarse)").matches
+    );
+  } catch {
+    return false;
+  }
+}
+
 function normalizePath(href: string): string {
   try {
     if (href.startsWith("http")) {
@@ -44,7 +60,12 @@ export function softNavigate(
     router.push(href);
   };
 
-  if (typeof document === "undefined" || prefersReducedMotion()) {
+  // Mobile: skip View Transitions (snapshot of canvas/map freezes taps)
+  if (
+    typeof document === "undefined" ||
+    prefersReducedMotion() ||
+    isMobileUi()
+  ) {
     go();
     return;
   }
@@ -61,7 +82,7 @@ export function softNavigate(
   try {
     // Do NOT return a long Promise here — freezes the UI until it resolves.
     // Next router is async; morph is best-effort, enter animation is guaranteed
-    // via LumenPageBody.
+    // via LumenPageBody. Desktop only.
     doc.startViewTransition(() => {
       go();
     });

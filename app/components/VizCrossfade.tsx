@@ -2,13 +2,13 @@
 
 /**
  * Premium Orbit ↔ Map crossfade with **keep-alive**.
- * Fixed-height slot (same as .lumen-viz) so mode switches never reflow the page.
- * Oracles is a separate route (/oracles) — not embedded here.
+ * Fixed-height slot so mode switches never reflow the page.
+ * Mobile: opacity-only (no blur) + shorter duration — blur was the main lag.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
-import type { ReactNode } from "react";
+import { isMobileUi } from "./soft-nav";
 
 const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 
@@ -17,14 +17,20 @@ export type OrbitMapMode = "constellation" | "map";
 function Layer({
   on,
   reduce,
+  mobile,
   children,
 }: {
   on: boolean;
   reduce: boolean | null;
+  mobile: boolean;
   children: ReactNode;
 }) {
-  const styleTransition = reduce
-    ? { transitionDuration: "150ms", transitionTimingFunction: "ease" }
+  const fast = reduce || mobile;
+  const styleTransition = fast
+    ? {
+        transitionDuration: reduce ? "120ms" : "220ms",
+        transitionTimingFunction: "ease",
+      }
     : {
         transitionDuration: "480ms",
         transitionTimingFunction: EASE,
@@ -34,15 +40,16 @@ function Layer({
     <div
       className={`
         absolute inset-0 w-full h-full
-        will-change-[opacity,filter]
-        transition-[opacity,filter]
-        ${reduce ? "duration-150" : "duration-500"}
+        will-change-[opacity]
+        transition-[opacity]
+        ${fast ? "duration-200" : "duration-500"}
         ${on ? "z-[2] opacity-100" : "z-[1] opacity-0 pointer-events-none"}
         overflow-hidden
       `}
       style={{
         ...styleTransition,
-        filter: on || reduce ? "none" : "blur(10px)",
+        // Blur only on desktop — filter:blur is very expensive over WebGL/map
+        filter: mobile || reduce || on ? "none" : "blur(8px)",
       }}
       aria-hidden={!on}
     >
@@ -61,6 +68,7 @@ export default function VizCrossfade({
   map: ReactNode;
 }) {
   const reduce = useReducedMotion();
+  const [mobile] = useState(() => isMobileUi());
   const [mapMounted, setMapMounted] = useState(mode === "map");
 
   useEffect(() => {
@@ -71,12 +79,12 @@ export default function VizCrossfade({
     if (mode !== "map") return;
     const kick = () => window.dispatchEvent(new Event("resize"));
     const t0 = window.setTimeout(kick, 40);
-    const t1 = window.setTimeout(kick, 520);
+    const t1 = window.setTimeout(kick, mobile ? 240 : 520);
     return () => {
       window.clearTimeout(t0);
       window.clearTimeout(t1);
     };
-  }, [mode]);
+  }, [mode, mobile]);
 
   return (
     <div
@@ -87,7 +95,8 @@ export default function VizCrossfade({
         lg:min-h-[520px]
       "
     >
-      {!reduce && (
+      {/* Wash only desktop — extra paint on mobile not worth it */}
+      {!reduce && !mobile && (
         <div
           aria-hidden
           key={mode}
@@ -101,12 +110,12 @@ export default function VizCrossfade({
         />
       )}
 
-      <Layer on={mode === "constellation"} reduce={reduce}>
+      <Layer on={mode === "constellation"} reduce={reduce} mobile={mobile}>
         {orbit}
       </Layer>
 
       {mapMounted && (
-        <Layer on={mode === "map"} reduce={reduce}>
+        <Layer on={mode === "map"} reduce={reduce} mobile={mobile}>
           {map}
         </Layer>
       )}

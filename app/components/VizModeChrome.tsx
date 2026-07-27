@@ -17,6 +17,7 @@ const CAPTION: Record<VizMode, string> = {
 export default function VizModeChrome({
   mode,
   onSelectMode,
+  onPrefetchMode,
   leftLabel,
   leftValue,
   rightLabel,
@@ -25,6 +26,7 @@ export default function VizModeChrome({
 }: {
   mode: VizMode;
   onSelectMode: (m: VizMode) => void;
+  onPrefetchMode?: (m: VizMode) => void;
   leftLabel: string;
   leftValue: string | number;
   rightLabel: string;
@@ -36,7 +38,11 @@ export default function VizModeChrome({
     <>
       <div className="mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-6">
         <div className="hidden md:flex items-center gap-2 min-w-0 flex-1">
-          <VizModeToggle mode={mode} onChange={onSelectMode} />
+          <VizModeToggle
+            mode={mode}
+            onChange={onSelectMode}
+            onPrefetchMode={onPrefetchMode}
+          />
           <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest min-h-[1.25rem] leading-tight truncate">
             {CAPTION[mode]}
           </span>
@@ -73,7 +79,12 @@ export default function VizModeChrome({
 
       {/* Mobile: same toggle under-slot pattern as dashboard */}
       <div className="md:hidden mb-4 space-y-2">
-        <VizModeToggle compact mode={mode} onChange={onSelectMode} />
+        <VizModeToggle
+          compact
+          mode={mode}
+          onChange={onSelectMode}
+          onPrefetchMode={onPrefetchMode}
+        />
         <p className="text-[10px] font-mono text-[#A0A0B0]/55 tracking-widest text-center min-h-[1.25rem]">
           {CAPTION[mode]}
         </p>

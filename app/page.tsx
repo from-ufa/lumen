@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -82,6 +83,7 @@ const PeerMap = dynamic(() => import('./components/PeerMap'), {
 
 export default function LumenDashboard() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const softNav = useSoftNavigate();
   /** Fixed Lumen REST base — custom URL was removed from Node Settings. */
   const nodeUrl = DEFAULT_LUMEN_NODE_URL;
@@ -126,6 +128,34 @@ export default function LumenDashboard() {
     preloadEarthTextures();
   }, []);
 
+  // Idle prefetch: /oracles route + PeerMap chunk + oracles API (mobile first-tap)
+  useEffect(() => {
+    const warm = () => {
+      try {
+        router.prefetch("/oracles");
+      } catch {
+        /* */
+      }
+      void import("./components/PeerMap").catch(() => {});
+      void fetch("/api/oracles?mode=network", { cache: "no-store" }).catch(
+        () => {}
+      );
+    };
+    let idleId: number | undefined;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      idleId = window.requestIdleCallback(warm, { timeout: 2200 });
+    } else {
+      t = setTimeout(warm, 900);
+    }
+    return () => {
+      if (idleId != null && "cancelIdleCallback" in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (t != null) clearTimeout(t);
+    };
+  }, [router]);
+
   // Restore Orbit/Map from /?viz= when returning from /oracles
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -149,6 +179,25 @@ export default function LumenDashboard() {
       wakeConnectInvite();
     },
     [softNav]
+  );
+
+  const onPrefetchVizMode = useCallback(
+    (m: VizMode) => {
+      if (m === "oracles") {
+        try {
+          router.prefetch("/oracles");
+        } catch {
+          /* */
+        }
+        void fetch("/api/oracles?mode=network", { cache: "no-store" }).catch(
+          () => {}
+        );
+      }
+      if (m === "map") {
+        void import("./components/PeerMap").catch(() => {});
+      }
+    },
+    [router]
   );
 
   useEffect(() => {
@@ -780,6 +829,7 @@ export default function LumenDashboard() {
         <VizModeChrome
           mode={viewMode}
           onSelectMode={onSelectVizMode}
+          onPrefetchMode={onPrefetchVizMode}
           leftLabel="HEADERS"
           leftValue={effectiveInfo?.headersHeight ?? 0}
           rightLabel="FULL HEIGHT"
