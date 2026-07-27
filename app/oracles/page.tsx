@@ -19,7 +19,9 @@ import ConnectOracleInvite, {
 import BridgeOperatorsInvite from "../components/BridgeOperatorsInvite";
 import LumenPageBody from "../components/LumenPageBody";
 import LumenPageHero from "../components/LumenPageHero";
-import { SoftLink } from "../components/soft-nav";
+import VizModeChrome from "../components/VizModeChrome";
+import type { VizMode } from "../components/VizModeToggle";
+import { SoftLink, useSoftNavigate } from "../components/soft-nav";
 import {
   HeaderActions,
   HeaderIconButton,
@@ -78,10 +80,20 @@ function nodeModeToView(m: NodeMode): OracleViewMode {
 }
 
 export default function OraclesPage() {
+  const softNav = useSoftNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+
+  const onSelectVizMode = useCallback(
+    (m: VizMode) => {
+      if (m === "oracles") return;
+      // Same SoftLink path as header — land on dashboard with Orbit/Map
+      softNav(m === "map" ? "/?viz=map" : "/?viz=constellation");
+    },
+    [softNav]
+  );
 
   // Sync hydrate from localStorage — no ready-gate (fetch starts on first paint)
   const [viewMode, setViewMode] = useState<OracleViewMode>(() => {
@@ -430,6 +442,21 @@ export default function OraclesPage() {
               </span>
             </>
           }
+        />
+
+        {/* Identical height chrome as dashboard (toggle + TIP/HEIGHTS) */}
+        <VizModeChrome
+          mode="oracles"
+          onSelectMode={onSelectVizMode}
+          leftLabel="TIP"
+          leftValue={data?.tipHeight ?? 0}
+          rightLabel="FULL HEIGHT"
+          rightValue={
+            data?.tipHeight ??
+            data?.feeds?.[0]?.tipHeight ??
+            0
+          }
+          rightAccentClass="text-[#E8C547]"
         />
 
         {viewMode === "my" && !bridgeToken ? (

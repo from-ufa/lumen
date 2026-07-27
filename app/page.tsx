@@ -28,10 +28,12 @@ import LumenPageBody from './components/LumenPageBody';
 import LumenPageHero from './components/LumenPageHero';
 import LumenWordmark from './components/LumenWordmark';
 import VizCrossfade from './components/VizCrossfade';
-import VizModeToggle, {
+import VizModeChrome from './components/VizModeChrome';
+import {
   softSetViewMode,
   type VizMode,
 } from './components/VizModeToggle';
+import { useSoftNavigate } from './components/soft-nav';
 import {
   HeaderActions,
   HeaderIconButton,
@@ -80,20 +82,9 @@ const PeerMap = dynamic(() => import('./components/PeerMap'), {
   ),
 });
 
-const OraclesDualView = dynamic(
-  () => import('./oracles/components/OraclesDualView'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="w-full h-full min-h-0 flex items-center justify-center font-mono text-xs tracking-[3px] text-[#A0A0B0]">
-        LOADING ORACLES…
-      </div>
-    ),
-  }
-);
-
 export default function LumenDashboard() {
   const queryClient = useQueryClient();
+  const softNav = useSoftNavigate();
   /** Fixed Lumen REST base — custom URL was removed from Node Settings. */
   const nodeUrl = DEFAULT_LUMEN_NODE_URL;
   const [nodeMode, setNodeModeState] = useState<NodeMode>("lumen");
@@ -102,7 +93,10 @@ export default function LumenDashboard() {
   const [lastBlockHeight, setLastBlockHeight] = useState(0);
   const [avgBlockTime, setAvgBlockTime] = useState<number | null>(null);
   const [avgBlockSamples, setAvgBlockSamples] = useState(0);
-  const [viewMode, setViewMode] = useState<VizMode>('constellation');
+  /** Orbit | Map only on dashboard; Oracles navigates to /oracles */
+  const [viewMode, setViewMode] = useState<"constellation" | "map">(
+    "constellation"
+  );
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
   /** Hide floating Boom/Refresh when any full-screen modal is open */
   const isAnyModalOpen = settingsModalOpen;
@@ -133,6 +127,31 @@ export default function LumenDashboard() {
   useEffect(() => {
     preloadEarthTextures();
   }, []);
+
+  // Restore Orbit/Map from /?viz= when returning from /oracles
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const v = new URLSearchParams(window.location.search).get("viz");
+      if (v === "map" || v === "constellation") setViewMode(v);
+    } catch {
+      /* */
+    }
+  }, []);
+
+  const onSelectVizMode = useCallback(
+    (m: VizMode) => {
+      if (m === "oracles") {
+        softNav("/oracles");
+        return;
+      }
+      softSetViewMode(m, (next) => {
+        if (next === "constellation" || next === "map") setViewMode(next);
+      });
+      wakeConnectInvite();
+    },
+    [softNav]
+  );
 
   useEffect(() => {
     // First invite hidden (My Node mode) → still show bridge stats after 3s
@@ -783,62 +802,16 @@ export default function LumenDashboard() {
           }
         />
 
-        {/* Mode switcher + heights — fixed row so toggles never jump */}
-        <div className="mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-6">
-          <div className="hidden md:flex items-center gap-2 min-w-0 flex-1">
-            <VizModeToggle
-              mode={viewMode}
-              onChange={(m) => {
-                softSetViewMode(m, setViewMode);
-                wakeConnectInvite();
-                if (m === "oracles") {
-                  void fetch("/api/oracles?mode=network", {
-                    cache: "no-store",
-                  }).catch(() => {});
-                }
-              }}
-            />
-            {/* Fixed min-height so caption line doesn't reflow */}
-            <span className="text-[10px] font-mono text-[#A0A0B0]/60 tracking-widest min-h-[1.25rem] leading-tight truncate">
-              {viewMode === "map"
-                ? "PEERS BY GEOIP · CITY-LEVEL ACCURACY"
-                : viewMode === "oracles"
-                  ? "ERG/USD · ERG/XAU · CONSENSUS · LIVE POOLS"
-                  : "NETWORK ORBIT · EARTH CORE · ORBITAL PEERS"}
-            </span>
-          </div>
-
-          <div className="flex items-end justify-end gap-3 sm:gap-6 text-sm shrink-0 self-end md:self-auto min-h-[3.5rem] sm:min-h-[4.25rem]">
-            <div className="text-right">
-              <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest font-mono">
-                {viewMode === "oracles" ? "TIP" : "HEADERS"}
-              </div>
-              <div className="font-mono text-3xl sm:text-5xl tracking-[-1.5px] tabular-nums text-white mt-0.5 leading-none">
-                {(viewMode === "oracles"
-                  ? (oraclesLive?.tipHeight ??
-                      effectiveInfo?.headersHeight ??
-                      0)
-                  : (effectiveInfo?.headersHeight ?? 0)
-                ).toLocaleString()}
-              </div>
-            </div>
-            <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest self-end pb-1.5 sm:pb-2 font-mono">
-              /
-            </div>
-            <div className="text-right">
-              <div className="text-[#A0A0B0] text-[10px] sm:text-xs tracking-widest font-mono">
-                {viewMode === "oracles" ? "FULL" : "FULL HEIGHT"}
-              </div>
-              <div
-                className={`font-mono text-3xl sm:text-5xl tracking-[-1.5px] tabular-nums mt-0.5 leading-none ${
-                  viewMode === "oracles" ? "text-[#E8C547]" : "text-[#FF7A3D]"
-                }`}
-              >
-                {(effectiveInfo?.fullHeight || 0).toLocaleString()}
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Same chrome as /oracles — identical row height above viz */}
+        <VizModeChrome
+          mode={viewMode}
+          onSelectMode={onSelectVizMode}
+          leftLabel="HEADERS"
+          leftValue={effectiveInfo?.headersHeight ?? 0}
+          rightLabel="FULL HEIGHT"
+          rightValue={effectiveInfo?.fullHeight ?? 0}
+          rightAccentClass="text-[#FF7A3D]"
+        />
 
         <VizCrossfade
           mode={viewMode}
@@ -874,41 +847,7 @@ export default function LumenDashboard() {
               bridgeToken={bridgeToken}
             />
           }
-          oracles={
-            <div className="w-full h-full min-h-0 p-0.5 sm:p-1">
-              <OraclesDualView
-                data={oraclesLive}
-                isLoading={oraclesLiveLoading && !oraclesLive}
-                isError={oraclesLiveError}
-                isFetching={oraclesLiveFetching}
-                onRetry={() => {
-                  void queryClient.invalidateQueries({
-                    queryKey: ["oracles-dashboard-live"],
-                  });
-                }}
-              />
-            </div>
-          }
         />
-
-        {/* === VIEW TOGGLE (mobile: BELOW viz) — same three modes === */}
-        <div className="md:hidden mb-8 space-y-2">
-          <VizModeToggle
-            compact
-            mode={viewMode}
-            onChange={(m) => {
-              softSetViewMode(m, setViewMode);
-              wakeConnectInvite();
-            }}
-          />
-          <p className="text-[10px] font-mono text-[#A0A0B0]/55 tracking-widest text-center min-h-[1.25rem]">
-            {viewMode === "map"
-              ? "PEERS BY GEOIP · CITY-LEVEL ACCURACY"
-              : viewMode === "oracles"
-                ? "ERG/USD · ERG/XAU · CONSENSUS · LIVE POOLS"
-                : "NETWORK ORBIT · EARTH CORE · ORBITAL PEERS"}
-          </p>
-        </div>
 
         {/* === LIVE METRICS === */}
         <div className="mb-8">
