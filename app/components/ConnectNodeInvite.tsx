@@ -36,6 +36,7 @@ export default function ConnectNodeInvite({
       wakeEvent={WAKE_EVENT}
       delayMs={delayMs}
       onFirstComplete={onFirstComplete}
+      holdClosedSlot
       ariaLabel="Open settings to connect your Ergo node"
     />
   );

@@ -35,6 +35,7 @@ export default function ConnectOracleInvite({
       wakeEvent={WAKE_EVENT}
       delayMs={delayMs}
       onFirstComplete={onFirstComplete}
+      holdClosedSlot
       ariaLabel="Open settings to connect your Ergo oracle"
     />
   );

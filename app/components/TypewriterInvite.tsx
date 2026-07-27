@@ -5,12 +5,21 @@
  * Used for My Node and My Oracle invites.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 const TYPE_MS = 38;
 const CURSOR_ONLY_MS = 700;
 const LOOP_PAUSE_MS = 15_000;
+/** Fallback height when holding a closed primary slot in a stack */
+const DEFAULT_SLOT_H = 76;
 
 export function wakeInvite(eventName: string) {
   if (typeof window === "undefined") return;
@@ -28,6 +37,11 @@ export default function TypewriterInvite({
   onFirstComplete,
   /** When false, only type once (no 15s loop). */
   loop = true,
+  /**
+   * After user closes (×), keep an empty layout slot so a stacked panel
+   * below does not jump into the first position.
+   */
+  holdClosedSlot = false,
 }: {
   enabled: boolean;
   onOpenSettings: () => void;
@@ -37,10 +51,15 @@ export default function TypewriterInvite({
   ariaLabel?: string;
   onFirstComplete?: () => void;
   loop?: boolean;
+  holdClosedSlot?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [cycle, setCycle] = useState(0);
+  /** True once the panel has been shown (delay elapsed or wake). */
+  const [hasOpened, setHasOpened] = useState(false);
+  const [slotH, setSlotH] = useState(0);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const firstCompleteSent = useRef(false);
   const onFirstCompleteRef = useRef(onFirstComplete);
   onFirstCompleteRef.current = onFirstComplete;
@@ -49,12 +68,18 @@ export default function TypewriterInvite({
     if (!enabled) {
       setOpen(false);
       setTyped("");
+      setHasOpened(false);
+      setSlotH(0);
       firstCompleteSent.current = false;
       return;
     }
     const t = window.setTimeout(() => setOpen(true), delayMs);
     return () => window.clearTimeout(t);
   }, [enabled, delayMs]);
+
+  useEffect(() => {
+    if (open) setHasOpened(true);
+  }, [open]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -126,6 +151,24 @@ export default function TypewriterInvite({
     };
   }, [open, enabled, cycle, fullText, loop]);
 
+  // Remember open height so closed slot keeps the stack stable
+  useLayoutEffect(() => {
+    if (!open || !holdClosedSlot) return;
+    const el = panelRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = el.offsetHeight;
+      if (h > 0) setSlotH(h);
+    };
+    measure();
+    const ro =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(measure)
+        : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [open, holdClosedSlot, typed]);
+
   const close = useCallback((e?: React.MouseEvent) => {
     e?.stopPropagation();
     e?.preventDefault();
@@ -137,16 +180,28 @@ export default function TypewriterInvite({
 
   if (!enabled) return null;
 
+  /** User dismissed (or otherwise closed after show) — keep empty slot */
+  const holdingSlot = holdClosedSlot && hasOpened && !open;
+  const heldHeight = slotH > 0 ? slotH : DEFAULT_SLOT_H;
+
   return (
-    <div className="relative flex justify-end w-full">
+    <div
+      className="relative flex justify-end w-full"
+      style={holdingSlot ? { minHeight: heldHeight } : undefined}
+    >
       <AnimatePresence>
         {open && (
           <motion.div
             key="typewriter-invite"
+            ref={panelRef}
             initial={{ opacity: 0, scaleX: 0.06, scaleY: 0.4 }}
             animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
-            exit={{ opacity: 0, scaleX: 0.1, scaleY: 0.4 }}
-            transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+            exit={
+              holdClosedSlot
+                ? { opacity: 0 }
+                : { opacity: 0, scaleX: 0.1, scaleY: 0.4 }
+            }
+            transition={{ duration: holdClosedSlot ? 0.28 : 0.7, ease: [0.16, 1, 0.3, 1] }}
             style={{ originX: 1, originY: 0, transformOrigin: "right top" }}
             className="relative w-full max-w-[min(100%,22rem)] md:max-w-[22rem]"
           >
@@ -230,8 +285,9 @@ export default function TypewriterInvite({
         )}
       </AnimatePresence>
 
+      {/* Pre-open seed only — never when holding closed stack slot */}
       <AnimatePresence>
-        {!open && (
+        {!open && !holdingSlot && (
           <motion.div
             key="seed"
             initial={{ opacity: 0 }}
