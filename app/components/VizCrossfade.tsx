@@ -1,15 +1,18 @@
 "use client";
 
 /**
- * Premium Orbit ↔ Map crossfade.
- * mode="wait" so exit completes before enter — soft dissolve, no layout thrash.
- * Outer min-height matches .lumen-viz so the page never jumps mid-switch.
+ * Premium Orbit ↔ Map crossfade with **keep-alive**.
+ * Both views stay mounted after first use so WebGL Earth never remounts
+ * (no texture reload gap). Soft opacity/blur dissolve; inactive layer
+ * is pointer-events none.
  */
 
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useState } from "react";
+import { useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 
-const EASE = [0.22, 1, 0.36, 1] as const;
+const EASE =
+  "cubic-bezier(0.22, 1, 0.36, 1)";
 
 export default function VizCrossfade({
   mode,
@@ -21,6 +24,37 @@ export default function VizCrossfade({
   map: ReactNode;
 }) {
   const reduce = useReducedMotion();
+  /** Mount map on first visit only — then keep forever */
+  const [mapMounted, setMapMounted] = useState(mode === "map");
+
+  useEffect(() => {
+    if (mode === "map") setMapMounted(true);
+  }, [mode]);
+
+  // Leaflet needs size tick when the keep-alive layer becomes visible again
+  useEffect(() => {
+    if (mode !== "map") return;
+    const kick = () => window.dispatchEvent(new Event("resize"));
+    const t0 = window.setTimeout(kick, 40);
+    const t1 = window.setTimeout(kick, 520);
+    return () => {
+      window.clearTimeout(t0);
+      window.clearTimeout(t1);
+    };
+  }, [mode]);
+
+  const orbitOn = mode === "constellation";
+  const mapOn = mode === "map";
+
+  const layerBase =
+    "w-full will-change-[opacity,filter] transition-[opacity,filter]";
+  const dur = reduce ? "duration-150" : "duration-500";
+  const styleTransition = reduce
+    ? { transitionDuration: "150ms", transitionTimingFunction: "ease" }
+    : {
+        transitionDuration: "480ms",
+        transitionTimingFunction: EASE,
+      };
 
   return (
     <div
@@ -29,52 +63,54 @@ export default function VizCrossfade({
         min-h-[min(52dvh,420px)] sm:min-h-[min(72vh,780px)]
       "
     >
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
+      {/* Accent wash on mode change */}
+      {!reduce && (
+        <div
+          aria-hidden
           key={mode}
-          initial={
-            reduce
-              ? { opacity: 0 }
-              : { opacity: 0, y: 14, scale: 0.985, filter: "blur(12px)" }
-          }
-          animate={
-            reduce
-              ? { opacity: 1 }
-              : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }
-          }
-          exit={
-            reduce
-              ? { opacity: 0 }
-              : { opacity: 0, y: -10, scale: 1.01, filter: "blur(10px)" }
-          }
-          transition={{
-            duration: reduce ? 0.14 : 0.4,
-            ease: EASE,
-            opacity: { duration: reduce ? 0.12 : 0.34 },
-            filter: { duration: reduce ? 0.12 : 0.36 },
+          className="pointer-events-none absolute inset-x-0 top-0 z-[3] h-[min(52dvh,420px)] sm:h-[min(72vh,780px)] rounded-[1.25rem] sm:rounded-2xl animate-[lumen-viz-wash_0.55s_ease-out_forwards]"
+          style={{
+            background:
+              mode === "map"
+                ? "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(0,229,255,0.12), transparent 70%)"
+                : "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(255,122,61,0.14), transparent 70%)",
           }}
-          className="w-full will-change-[opacity,transform,filter]"
+        />
+      )}
+
+      {/* Orbit — always mounted (default view) */}
+      <div
+        className={`${layerBase} ${dur} ${
+          orbitOn
+            ? "relative z-[2] opacity-100"
+            : "absolute inset-0 z-[1] opacity-0 pointer-events-none"
+        }`}
+        style={{
+          ...styleTransition,
+          filter: orbitOn || reduce ? "none" : "blur(10px)",
+        }}
+        aria-hidden={!orbitOn}
+      >
+        {orbit}
+      </div>
+
+      {/* Map — keep-alive after first open */}
+      {mapMounted && (
+        <div
+          className={`${layerBase} ${dur} ${
+            mapOn
+              ? "relative z-[2] opacity-100"
+              : "absolute inset-0 z-[1] opacity-0 pointer-events-none"
+          }`}
+          style={{
+            ...styleTransition,
+            filter: mapOn || reduce ? "none" : "blur(10px)",
+          }}
+          aria-hidden={!mapOn}
         >
-          {/* Cinematic accent wash (fades with content) */}
-          {!reduce && (
-            <motion.div
-              aria-hidden
-              className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-[min(52dvh,420px)] sm:h-[min(72vh,780px)] rounded-[1.25rem] sm:rounded-2xl"
-              initial={{ opacity: 0.35 }}
-              animate={{ opacity: 0 }}
-              exit={{ opacity: 0.25 }}
-              transition={{ duration: 0.5, ease: EASE }}
-              style={{
-                background:
-                  mode === "map"
-                    ? "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(0,229,255,0.12), transparent 70%)"
-                    : "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(255,122,61,0.14), transparent 70%)",
-              }}
-            />
-          )}
-          <div className="relative z-[1]">{mode === "constellation" ? orbit : map}</div>
-        </motion.div>
-      </AnimatePresence>
+          {map}
+        </div>
+      )}
     </div>
   );
 }

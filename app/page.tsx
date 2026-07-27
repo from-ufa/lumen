@@ -865,6 +865,7 @@ export default function LumenDashboard() {
               }
               hideControls={isAnyModalOpen}
               centerLabel={nodeMode === "my" ? "My Node" : "lumen node"}
+              active={viewMode === "constellation"}
             />
           }
           map={

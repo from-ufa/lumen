@@ -36,6 +36,16 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+/* Orbit ↔ Map crossfade accent wash */
+@keyframes lumen-viz-wash {
+  0% {
+    opacity: 0.4;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 /* Shared canvas height: comfortable on 375–430px, full on desktop */
 .lumen-viz {
   width: 100%;

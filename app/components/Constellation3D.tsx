@@ -36,6 +36,11 @@ interface ConstellationProps {
   hideControls?: boolean;
   /** Label for the My Node / Lumen Node orbital point */
   centerLabel?: string;
+  /**
+   * When false (e.g. World Map keep-alive layer), pause the rAF loop.
+   * Canvas stays mounted so Earth textures never reload.
+   */
+  active?: boolean;
 }
 
 type PeerHoverFn = (peer: Peer | null, pos?: THREE.Vector3) => void;
@@ -1470,6 +1475,7 @@ function Scene({
   lastBlockHeight,
   hideControls = false,
   centerLabel = "Lumen Node",
+  active = true,
 }: ConstellationProps) {
   const controlsApiRef = useRef<ControlsApi | null>(null);
   const ambienceRef = useRef<AmbienceController | null>(null);
@@ -1761,6 +1767,8 @@ function Scene({
         style={{ width: "100%", height: "100%", display: "block" }}
         resize={{ scroll: false, debounce: { scroll: 50, resize: 0 } }}
         dpr={[1, 1.5]}
+        /* keep-alive under Map: pause rAF so GPU rests; Earth stays warm */
+        frameloop={active ? "always" : "never"}
         gl={{
           alpha: false,
           antialias: true,
@@ -2057,12 +2065,15 @@ function Scene({
   );
 }
 
-export default function Constellation3D(props: ConstellationProps) {
+export default function Constellation3D({
+  active = true,
+  ...props
+}: ConstellationProps) {
   return (
     <div className="w-full">
       <div className="canvas-container lumen-viz relative w-full bg-[#010104] overflow-hidden">
         <div className="absolute inset-0 w-full h-full">
-          <Scene {...props} />
+          <Scene {...props} active={active} />
         </div>
       </div>
       <div className="md:hidden mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[10px] font-mono tracking-wider text-[#A0A0B0]">
