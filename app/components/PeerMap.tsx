@@ -170,14 +170,6 @@ function BlockTimeIndicator({
   );
 }
 
-function escapeHtml(s: string): string {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 /** connected | live | seen | ghost (+ legacy reachable/stale normalized) */
 type PeerMapState = "connected" | "live" | "seen" | "ghost";
 
@@ -329,62 +321,9 @@ function meDivIcon(): L.DivIcon {
   });
 }
 
-/** HTML for Leaflet bindPopup (works reliably with markercluster) */
-function peerPopupHtml(
-  m: {
-    name: string;
-    ip: string;
-    port?: string | null;
-    city?: string;
-    country?: string;
-    connectionType?: string;
-    state?: PeerMapState;
-    version?: string | null;
-  },
-  isMe = false,
-  /** Active data source label for the center pin, e.g. LUMEN NODE / MY NODE */
-  meRoleLabel = "lumen node"
-): string {
-  const loc =
-    [m.city, m.country].filter(Boolean).join(", ") || "Unknown location";
-  const state = normalizeState(m.state);
-  const meta = stateMeta(state);
-  const title = escapeHtml(m.name || (isMe ? meRoleLabel : "Peer"));
-  const addr = escapeHtml(m.ip) + (m.port ? `:${escapeHtml(m.port)}` : "");
-  const ver = shortVersion(m.version);
-  const roleColor = isMe ? "#FF7A3D" : meta.color;
-  const roleLine = isMe
-    ? escapeHtml(meRoleLabel)
-    : state === "connected"
-      ? "CONNECTED · MY PEER"
-      : state === "live"
-        ? "LIVE NODE"
-        : state === "seen"
-          ? "SEEN · NOT ANSWERING"
-          : "GHOST";
-  return `<div class="lumen-peer-popup" style="min-width:180px;max-width:260px;font-size:12px;line-height:1.4;color:#E8E8F0">
-    <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;letter-spacing:0.15em;color:${roleColor};margin-bottom:6px">${roleLine}</div>
-    <div style="font-weight:600;font-size:14px;color:#fff;word-break:break-all">${title}</div>
-    <div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;word-break:break-all;margin-top:6px;color:#E8E8F0">${addr}</div>
-    <div style="color:#A0A0B0;margin-top:6px">${escapeHtml(loc)}</div>
-    ${
-      ver
-        ? `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#00E5FF;margin-top:4px;opacity:0.85">v${escapeHtml(ver)}</div>`
-        : ""
-    }
-    ${
-      isMe
-        ? `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#A0A0B0;margin-top:6px">Active data source</div>`
-        : `<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;color:#A0A0B0;margin-top:6px">${escapeHtml(
-            m.connectionType || "—"
-          )} · <span style="color:${meta.color}">${meta.short}</span></div>`
-    }
-  </div>`;
-}
-
 /**
- * Native Leaflet cluster layer — bindPopup/bindTooltip are reliable here.
- * (react-leaflet Marker children often fail to bind inside MarkerClusterGroup)
+ * Native Leaflet cluster layer — bindTooltip + click→side card.
+ * (No Leaflet popup: that duplicated the right-side selected panel.)
  */
 function ClusteredPeersLayer({
   markers,
@@ -446,21 +385,16 @@ function ClusteredPeersLayer({
           : "") +
         (ver ? ` · v${ver}` : "") +
         ` · ${statusTip}`;
+      // Hover tooltip only — sticky right-side card comes from onSelect click.
+      // No Leaflet popup (was a third floating window on click).
       leafletMarker.unbindTooltip();
+      leafletMarker.unbindPopup();
       leafletMarker.bindTooltip(tip, {
         direction: "top",
         offset: [0, -12],
         opacity: 1,
         sticky: false,
         className: "lumen-map-tooltip",
-      });
-      leafletMarker.unbindPopup();
-      leafletMarker.bindPopup(peerPopupHtml(m, false), {
-        maxWidth: 300,
-        className: "lumen-map-popup",
-        autoPan: true,
-        closeButton: true,
-        autoClose: true,
       });
     },
     [isFocused]
@@ -702,6 +636,8 @@ function MeMarkerLayer({
       title: roleLabel,
     });
 
+    // Permanent role label only — detail lives in the side card on click.
+    marker.unbindPopup();
     marker.bindTooltip(roleLabel, {
       permanent: true,
       direction: "top",
@@ -709,16 +645,6 @@ function MeMarkerLayer({
       opacity: 1,
       className: "lumen-map-tooltip",
     });
-
-    marker.bindPopup(
-      peerPopupHtml({ ...me, state: "connected" }, true, roleLabel),
-      {
-        maxWidth: 300,
-        className: "lumen-map-popup",
-        autoPan: true,
-        closeButton: true,
-      }
-    );
 
     marker.on("click", () => {
       onSelect(me);
