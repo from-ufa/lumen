@@ -462,7 +462,7 @@ export default function ConnectionSettings({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98, y: 8 }}
               transition={{ ease: [0.23, 1, 0.32, 1] }}
-              className="glass relative z-10 w-full max-w-lg max-h-[min(92dvh,900px)] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-5 sm:p-8 border border-white/10 shadow-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+              className="glass relative z-10 w-full max-w-lg max-h-[min(92dvh,900px)] overflow-y-auto no-scrollbar rounded-t-3xl sm:rounded-3xl p-5 sm:p-8 border border-white/10 shadow-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))]"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex justify-between items-start mb-6 sm:mb-7">
