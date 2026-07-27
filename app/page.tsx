@@ -21,6 +21,7 @@ import ConnectNodeInvite, {
   wakeConnectInvite,
 } from './components/ConnectNodeInvite';
 import CrystalIcon from './components/CrystalIcon';
+import LumenPageHero from './components/LumenPageHero';
 import LumenWordmark from './components/LumenWordmark';
 import {
   HeaderActions,
@@ -631,89 +632,76 @@ export default function LumenDashboard() {
       </div>
 
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
-        {/*
-          HERO — document flow is ONLY label + title + badges (original height).
-          Connect invite is position:absolute top-right at ERGO NODE VISUALIZER
-          level so it never expands the hero and never pushes content down.
-        */}
-        <div className="relative mb-6 sm:mb-8 min-w-0">
-          {/* Overlay CTA: zero layout height */}
-          {nodeMode === "lumen" && (
-            <div className="absolute top-0 right-0 z-20 w-[min(100%,22rem)] max-w-[22rem] pointer-events-none">
-              <div className="pointer-events-auto w-full flex justify-end">
-                <ConnectNodeInvite
-                  enabled
-                  delayMs={5000}
-                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#FF7A3D] mb-1">
-            ERGO NODE VISUALIZER
-          </div>
-          {/* pr reserves space so title doesn't run under the floating card on wide screens */}
-          <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05] sm:pr-[min(23rem,42%)]">
-            The living network.
-          </h1>
-          <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1 sm:pr-[min(23rem,42%)]">
-            Your node. Your peers. Real-time beauty.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider sm:pr-[min(23rem,42%)]">
-            <span
-              title={
-                isOnline
-                  ? nodeMode === "my"
-                    ? "Live — your node via bridge"
-                    : "Live — source lumen"
-                  : nodeMode === "my"
-                    ? "Offline — bridge / node"
-                    : "Offline — source lumen"
-              }
-              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
-                isOnline
-                  ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                  : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
-              }`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                  isOnline
-                    ? "bg-[#10B981] status-dot"
-                    : "bg-[#EF4444]"
-                }`}
-                aria-hidden
+        <LumenPageHero
+          kicker="ERGO NODE VISUALIZER"
+          kickerClassName="text-[#FF7A3D]"
+          title="The living network."
+          subtitle="Your node. Your peers. Real-time beauty."
+          invite={
+            nodeMode === "lumen" ? (
+              <ConnectNodeInvite
+                enabled
+                delayMs={5000}
+                onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
               />
-              {nodeMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
-              {isOnline && (
-                <span className="text-[9px] tracking-[0.14em] opacity-80">
-                  LIVE
+            ) : null
+          }
+          badges={
+            <>
+              <span
+                title={
+                  isOnline
+                    ? nodeMode === "my"
+                      ? "Live — your node via bridge"
+                      : "Live — source lumen"
+                    : nodeMode === "my"
+                      ? "Offline — bridge / node"
+                      : "Offline — source lumen"
+                }
+                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
+                  isOnline
+                    ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                    : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                  }`}
+                  aria-hidden
+                />
+                {nodeMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
+                {isOnline && (
+                  <span className="text-[9px] tracking-[0.14em] opacity-80">
+                    LIVE
+                  </span>
+                )}
+              </span>
+              {effectiveInfo?.name && (
+                <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
+                  NODE · {effectiveInfo.name}
+                  {infoFetching ? " …" : ""}
                 </span>
               )}
-            </span>
-            {effectiveInfo?.name && (
-              <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
-                NODE · {effectiveInfo.name}
-                {infoFetching ? " …" : ""}
-              </span>
-            )}
-            {nodeMode === "my" && (
-              <span className="text-[10px] text-[#A0A0B0]/70 tracking-widest">
-                via /api/bridge/node
-              </span>
-            )}
-          </div>
-          {nodeMode === "my" && !isOnline && (
-            <p className="mt-3 text-[11px] sm:text-sm font-mono tracking-wide text-[#F59E0B] max-w-xl">
-              {bridgeToken
-                ? bridgeOnline
-                  ? "Bridge is online but node data is not ready yet — check Ergo REST on the agent side."
-                  : "My Node mode: Bridge offline. Open NODE SETTINGS → run the Bridge command next to your node."
-                : "My Node mode: no Bridge token. Open NODE SETTINGS → Connect my node."}
-            </p>
-          )}
-        </div>
+              {nodeMode === "my" && (
+                <span className="text-[10px] text-[#A0A0B0]/70 tracking-widest">
+                  via /api/bridge/node
+                </span>
+              )}
+            </>
+          }
+          footer={
+            nodeMode === "my" && !isOnline ? (
+              <p className="mt-3 text-[11px] sm:text-sm font-mono tracking-wide text-[#F59E0B] max-w-xl">
+                {bridgeToken
+                  ? bridgeOnline
+                    ? "Bridge is online but node data is not ready yet — check Ergo REST on the agent side."
+                    : "My Node mode: Bridge offline. Open NODE SETTINGS → run the Bridge command next to your node."
+                  : "My Node mode: no Bridge token. Open NODE SETTINGS → Connect my node."}
+              </p>
+            ) : null
+          }
+        />
 
         {/* Mode switcher + heights — same mb-4 → viz as before */}
         <div className="mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-4 md:gap-6">

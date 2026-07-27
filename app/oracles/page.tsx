@@ -17,6 +17,7 @@ import ConnectionSettings from "../components/ConnectionSettings";
 import ConnectOracleInvite, {
   wakeOracleInvite,
 } from "../components/ConnectOracleInvite";
+import LumenPageHero from "../components/LumenPageHero";
 import {
   HeaderActions,
   HeaderIconButton,
@@ -343,74 +344,64 @@ export default function OraclesPage() {
 
       {/* === PAGE BODY === */}
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
-        {/*
-          Hero matches node dashboard: document flow is label+title+badges only.
-          Oracle invite floats absolute top-right (same row as ERGO ORACLE POOLS)
-          so expanding typewriter never pushes layout down.
-          Removed dual LIVE pair chips (USD/XAU status menus).
-        */}
-        <div className="relative mb-6 sm:mb-8 min-w-0">
-          {oracleInviteEnabled && (
-            <div className="absolute top-0 right-0 z-20 w-[min(100%,22rem)] max-w-[22rem] pointer-events-none">
-              <div className="pointer-events-auto w-full flex justify-end">
-                <ConnectOracleInvite
-                  enabled
-                  delayMs={5000}
-                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] text-[#E8C547] mb-1">
-            ERGO ORACLE POOLS
-          </div>
-          <h1 className="text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05] sm:pr-[min(23rem,42%)]">
-            Consensus, visualized.
-          </h1>
-          <p className="text-base sm:text-2xl text-[#A0A0B0] tracking-tight mt-1 sm:pr-[min(23rem,42%)]">
-            {viewMode === "my"
+        <LumenPageHero
+          kicker="ERGO ORACLE POOLS"
+          kickerClassName="text-[#E8C547]"
+          title="Consensus, visualized."
+          subtitle={
+            viewMode === "my"
               ? "Your oracle agent via the same lumen bridge as My Node."
-              : "Live USD and XAU from on-chain pool boxes."}
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] sm:text-xs font-mono tracking-wider sm:pr-[min(23rem,42%)]">
-            <span
-              title={
-                isOnline
-                  ? viewMode === "my"
-                    ? "Live — bridge oracle"
-                    : "Live — lumen network oracles"
-                  : "Oracle source offline"
-              }
-              className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
-                isOnline
-                  ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
-                  : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
-              }`}
-            >
-              <span
-                className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                  isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
-                }`}
-                aria-hidden
+              : "Live USD and XAU from on-chain pool boxes."
+          }
+          invite={
+            oracleInviteEnabled ? (
+              <ConnectOracleInvite
+                enabled
+                delayMs={5000}
+                onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
               />
-              {viewMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
-              {isOnline && (
-                <span className="text-[9px] tracking-[0.14em] opacity-80">
-                  LIVE
+            ) : null
+          }
+          badges={
+            <>
+              <span
+                title={
+                  isOnline
+                    ? viewMode === "my"
+                      ? "Live — bridge oracle"
+                      : "Live — lumen network oracles"
+                    : "Oracle source offline"
+                }
+                className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full border ${
+                  isOnline
+                    ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/[0.1] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                    : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/[0.1]"
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                  }`}
+                  aria-hidden
+                />
+                {viewMode === "my" ? "SOURCE · BRIDGE" : "SOURCE · lumen"}
+                {isOnline && (
+                  <span className="text-[9px] tracking-[0.14em] opacity-80">
+                    LIVE
+                  </span>
+                )}
+              </span>
+              {data?.tipHeight != null && (
+                <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
+                  TIP · {data.tipHeight.toLocaleString()}
                 </span>
               )}
-            </span>
-            {data?.tipHeight != null && (
-              <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#E8E8F0] bg-white/5">
-                TIP · {data.tipHeight.toLocaleString()}
+              <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#A0A0B0] bg-white/5">
+                AUTO · 5s
               </span>
-            )}
-            <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#A0A0B0] bg-white/5">
-              AUTO · 5s
-            </span>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {viewMode === "my" && !bridgeToken ? (
           <div className="rounded-[1.35rem] border border-white/[0.06] bg-[#0C0C12] py-16 flex flex-col items-center gap-4 text-center px-4">
