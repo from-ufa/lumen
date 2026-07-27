@@ -785,39 +785,56 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   View Transitions — soft Node ↔ Oracles (and any route) navigations
+   View Transitions — soft Node ↔ Oracles
+   Header is frozen (no fade/blur). Only .lumen-page-body dissolves.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @view-transition {
   navigation: auto;
 }
 
+/* Root snapshot: no animation (avoids double-fading header) */
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 0.42s;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation: none;
+  mix-blend-mode: normal;
 }
 
-::view-transition-old(root) {
-  animation-name: lumen-vt-fade-out;
-}
-
-::view-transition-new(root) {
-  animation-name: lumen-vt-fade-in;
-}
-
-/* Shared chrome morphs across pages */
-.vt-lumen-wordmark {
-  view-transition-name: lumen-wordmark;
-}
+/* Sticky header — solid, never participates in dissolve */
 .vt-lumen-header {
   view-transition-name: lumen-header;
+  /* promote own layer so it stays sharp over body transition */
+  z-index: 40;
+}
+::view-transition-group(lumen-header) {
+  animation: none !important;
+  z-index: 100;
+}
+::view-transition-old(lumen-header),
+::view-transition-new(lumen-header) {
+  animation: none !important;
+  mix-blend-mode: normal;
 }
 
-::view-transition-group(lumen-wordmark),
-::view-transition-group(lumen-header) {
-  animation-duration: 0.45s;
+/* Main content only — soft cinematic enter/exit */
+.lumen-page-body {
+  view-transition-name: lumen-body;
+}
+::view-transition-group(lumen-body) {
+  animation-duration: 0.4s;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 1;
+}
+::view-transition-old(lumen-body) {
+  animation: lumen-vt-fade-out 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+::view-transition-new(lumen-body) {
+  animation: lumen-vt-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Wordmark lives inside header — no separate VT name (avoids split morph) */
+.vt-lumen-wordmark {
+  view-transition-name: none;
 }
 
 @keyframes lumen-vt-fade-out {
@@ -837,7 +854,7 @@ body {
   from {
     opacity: 0;
     filter: blur(10px);
-    transform: scale(1.012) translateY(8px);
+    transform: scale(1.01) translateY(8px);
   }
   to {
     opacity: 1;
@@ -847,15 +864,16 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(root),
-  ::view-transition-new(root),
-  ::view-transition-group(lumen-wordmark),
+  ::view-transition-old(lumen-body),
+  ::view-transition-new(lumen-body),
+  ::view-transition-group(lumen-body),
   ::view-transition-group(lumen-header) {
     animation: none !important;
   }
-  .vt-lumen-wordmark,
+  .lumen-page-body,
   .vt-lumen-header {
     view-transition-name: none;
   }
 }
+
 

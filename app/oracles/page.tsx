@@ -342,7 +342,8 @@ export default function OraclesPage() {
         />
       </div>
 
-      {/* === PAGE BODY === */}
+      {/* Body only — VT dissolve; sticky header stays solid */}
+      <div className="lumen-page-body flex-1">
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
         <LumenPageHero
           kicker="ERGO ORACLE POOLS"
@@ -429,6 +430,7 @@ export default function OraclesPage() {
             onRetry={() => void refetch()}
           />
         )}
+      </div>
       </div>
 
       {/* Avoid unused lint for settings modal open state when only onOpenChange used */}

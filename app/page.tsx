@@ -633,6 +633,8 @@ export default function LumenDashboard() {
         </div>
       </div>
 
+      {/* Body only — VT dissolve; header excluded via .vt-lumen-header freeze */}
+      <div className="lumen-page-body flex-1">
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
         <LumenPageHero
           kicker="ERGO NODE VISUALIZER"
@@ -836,6 +838,7 @@ export default function LumenDashboard() {
             <a href="https://ergoplatform.org" target="_blank" className="hover:text-[#FF7A3D] inline-flex items-center gap-1">ERGOPLATFORM.ORG <ExternalLink size={11} /></a>
           </div>
         </div>
+      </div>
       </div>
 
       {/* === BLOCK DETAIL MODAL === */}
