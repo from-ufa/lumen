@@ -471,13 +471,14 @@ function Earth({ spin }: { spin: boolean }) {
       {/* Soft fill on limbs only — key light is camera-facing via shader */}
       <pointLight position={[-2.5, 0.4, -1.5]} intensity={0.18} color="#1a3a6a" distance={10} />
 
+      {/*
+        No solid placeholder while textures load — a blue meshStandard sphere
+        flashed for ~0.5s as a hard circle. Until maps are ready: empty group
+        (stars / peers still draw). Earth appears only with real day/night maps.
+      */}
       {earthMat ? (
         <mesh ref={earthRef} geometry={GEO_EARTH} material={earthMat} />
-      ) : (
-        <mesh ref={earthRef} geometry={GEO_EARTH}>
-          <meshStandardMaterial color="#1a3a5c" roughness={0.85} metalness={0.1} />
-        </mesh>
-      )}
+      ) : null}
 
       {/* Clouds — tight to surface, no separate halo shell */}
       {maps?.clouds && (
