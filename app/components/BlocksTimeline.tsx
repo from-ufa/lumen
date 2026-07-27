@@ -54,25 +54,52 @@ export default function BlocksTimeline({
   }
 
   return (
-    <div className="lumen-glow-panel lumen-glow-panel--orange rounded-2xl sm:rounded-3xl p-4 sm:p-5 h-full flex flex-col">
+    <div className="lumen-glow-panel lumen-glow-panel--orange rounded-2xl sm:rounded-3xl p-4 sm:p-5 h-full flex flex-col overflow-hidden">
       <span className="lumen-glow-orb lumen-glow-orb--a" aria-hidden />
       <span className="lumen-glow-orb lumen-glow-orb--b" aria-hidden />
 
-      {/* Header */}
-      <div className="flex-shrink-0 mb-3 sm:mb-4 px-0.5 flex items-start gap-3">
-        <div className="lumen-glow-icon w-9 h-9 sm:w-10 sm:h-10 shrink-0">
-          <Pickaxe className="w-4 h-4" />
+      {/* Header — same rhythm as Mempool Flow */}
+      <div className="flex items-start justify-between gap-3 mb-3 sm:mb-4 px-0.5 flex-shrink-0">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="lumen-glow-icon w-9 h-9 sm:w-10 sm:h-10 shrink-0">
+            <Pickaxe className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="lumen-glow-kicker flex items-center gap-2">
+              <span className="lumen-glow-pulse" />
+              Recent blocks
+            </div>
+            <div className="text-lg sm:text-xl font-semibold tracking-tight mt-0.5 text-white">
+              Last {blocks.length} blocks
+            </div>
+            <div className="text-[10px] font-mono text-[#6B6B78] mt-1 tracking-wide">
+              Miner via Explorer · SigmaSpace
+            </div>
+          </div>
         </div>
-        <div className="min-w-0">
-          <div className="lumen-glow-kicker flex items-center gap-2">
-            <span className="lumen-glow-pulse" />
-            Recent blocks
+        <div
+          className="text-right flex-shrink-0 rounded-xl border px-2.5 py-1.5"
+          style={{
+            borderColor:
+              "color-mix(in srgb, var(--lumen-accent) 28%, transparent)",
+            background:
+              "color-mix(in srgb, var(--lumen-accent) 8%, rgba(0,0,0,0.35))",
+            boxShadow:
+              "0 0 20px color-mix(in srgb, var(--lumen-glow) 30%, transparent)",
+          }}
+        >
+          <div
+            className="lumen-glow-value--accent font-mono text-xl sm:text-2xl font-semibold tracking-tighter tabular-nums leading-none"
+            style={{
+              color: "var(--lumen-accent)",
+              textShadow:
+                "0 0 18px color-mix(in srgb, var(--lumen-glow) 85%, transparent)",
+            }}
+          >
+            {blocks.length}
           </div>
-          <div className="text-lg sm:text-xl font-semibold tracking-tight mt-0.5 text-white">
-            Last {blocks.length} blocks
-          </div>
-          <div className="text-[10px] font-mono text-[#6B6B78] mt-1 tracking-wide">
-            Miner via Explorer
+          <div className="text-[9px] font-mono tracking-widest text-[#8B8B9A] mt-1 uppercase">
+            Shown
           </div>
         </div>
       </div>
@@ -200,7 +227,7 @@ export default function BlocksTimeline({
       </div>
 
       <div className="text-[10px] text-center text-[#5C5C6A] mt-3 font-mono tracking-[0.12em] flex-shrink-0 uppercase">
-        Tap for details
+        Tap · details · confirm · SigmaSpace
       </div>
     </div>
   );

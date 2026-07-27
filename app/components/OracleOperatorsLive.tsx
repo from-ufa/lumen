@@ -5,18 +5,12 @@
  * Soft glass table, pool glows, SigmaSpace open confirm.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type CSSProperties,
-} from "react";
-import { createPortal } from "react-dom";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowUpRight, ExternalLink, Radio, X } from "lucide-react";
+import { useCallback, useMemo, useState, type CSSProperties } from "react";
+import { motion, useReducedMotion } from "framer-motion";
+import { ArrowUpRight, Radio } from "lucide-react";
 import { SoftLink } from "./soft-nav";
 import { openAddressOnSigmaSpace } from "../lib/explorer";
+import ExternalOpenConfirm from "./ExternalOpenConfirm";
 import type {
   FeedStatus,
   OracleFeedData,
@@ -85,165 +79,6 @@ function liveCount(feed: OracleFeedData): number {
 function totalCount(feed: OracleFeedData): number {
   if (feed.totalOracles != null) return feed.totalOracles;
   return feed.nodes?.length || 0;
-}
-
-function SigmaConfirmModal({
-  address,
-  pools,
-  status,
-  onCancel,
-  onConfirm,
-}: {
-  address: string;
-  pools: string[];
-  status: FeedStatus;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const reduceMotion = useReducedMotion();
-  const st = statusMeta(status);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-      if (e.key === "Enter") onConfirm();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel, onConfirm]);
-
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
-  }, []);
-
-  return createPortal(
-    <AnimatePresence>
-      <motion.div
-        key="sigma-backdrop"
-        className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
-        initial={reduceMotion ? false : { opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.18 }}
-      >
-        <button
-          type="button"
-          aria-label="Dismiss"
-          className="absolute inset-0 bg-black/70 backdrop-blur-[6px]"
-          onClick={onCancel}
-        />
-
-        <motion.div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="sigma-confirm-title"
-          initial={reduceMotion ? false : { opacity: 0, y: 10, scale: 0.97 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 6, scale: 0.98 }}
-          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-          className="relative w-full max-w-[22rem] rounded-2xl border border-white/[0.1] overflow-hidden"
-          style={{
-            background:
-              "linear-gradient(165deg, rgba(22,26,34,0.98) 0%, rgba(10,12,16,0.99) 100%)",
-            boxShadow:
-              "0 24px 64px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 48px rgba(45,212,191,0.08)",
-          }}
-        >
-          <div
-            className="pointer-events-none absolute -top-16 -right-10 h-40 w-40 rounded-full blur-3xl opacity-50"
-            style={{
-              background:
-                "radial-gradient(circle, rgba(45,212,191,0.22) 0%, transparent 70%)",
-            }}
-          />
-
-          <div className="relative p-5 sm:p-6">
-            <div className="flex items-start justify-between gap-3 mb-4">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="lumen-glow-icon h-9 w-9 shrink-0">
-                  <ExternalLink className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <div
-                    id="sigma-confirm-title"
-                    className="text-[13px] sm:text-sm font-medium text-white tracking-tight"
-                  >
-                    Open on SigmaSpace?
-                  </div>
-                  <div className="text-[11px] text-[#6B6B78] mt-0.5">
-                    Leaves lumen · opens a new tab
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onCancel}
-                className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-xl border border-white/[0.08] text-[#7A7A88] hover:text-white hover:bg-white/[0.04] transition-colors"
-                aria-label="Cancel"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            <div className="rounded-xl border border-white/[0.07] bg-black/35 px-3.5 py-3 mb-5">
-              <div className="flex items-center gap-2 mb-2">
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{
-                    background: st.color,
-                    boxShadow: `0 0 8px ${st.glow}`,
-                  }}
-                />
-                <span
-                  className="text-[9px] font-mono tracking-[0.16em] uppercase"
-                  style={{ color: st.color }}
-                >
-                  {st.label}
-                </span>
-                {pools.length > 0 && (
-                  <span className="text-[9px] font-mono text-[#5C5C6A] tracking-wide truncate">
-                    · {pools.join(" · ")}
-                  </span>
-                )}
-              </div>
-              <div
-                className="font-mono text-[12px] sm:text-[13px] text-[#E8E8F0] break-all leading-relaxed"
-                title={address}
-              >
-                {address}
-              </div>
-            </div>
-
-            <div className="flex gap-2.5">
-              <button
-                type="button"
-                onClick={onCancel}
-                className="flex-1 h-11 rounded-xl border border-white/[0.1] bg-white/[0.03] text-[11px] font-mono tracking-[0.14em] uppercase text-[#A0A0B0] hover:text-white hover:border-white/20 transition-colors active:scale-[0.98]"
-              >
-                Stay
-              </button>
-              <button
-                type="button"
-                onClick={onConfirm}
-                className="flex-1 h-11 rounded-xl border border-[#2DD4BF]/35 bg-[#2DD4BF]/[0.12] text-[11px] font-mono tracking-[0.14em] uppercase text-[#A7F3E8] hover:bg-[#2DD4BF]/[0.18] hover:border-[#2DD4BF]/50 transition-all active:scale-[0.98] shadow-[0_0_20px_rgba(45,212,191,0.15)]"
-              >
-                Open
-              </button>
-            </div>
-
-            <p className="mt-3 text-center text-[10px] font-mono text-[#4A4A56] tracking-wide">
-              sigmaspace.io
-            </p>
-          </div>
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>,
-    document.body
-  );
 }
 
 export default function OracleOperatorsLive({
@@ -587,15 +422,21 @@ export default function OracleOperatorsLive({
         )}
       </div>
 
-      {confirmOp && (
-        <SigmaConfirmModal
-          address={confirmOp.address}
-          pools={confirmOp.pools}
-          status={confirmOp.status}
-          onCancel={cancelOpen}
-          onConfirm={confirmOpen}
-        />
-      )}
+      <ExternalOpenConfirm
+        open={!!confirmOp}
+        accent="teal"
+        title="Open on SigmaSpace?"
+        subtitle="Leaves lumen · opens a new tab"
+        badge={confirmOp ? statusMeta(confirmOp.status).label : undefined}
+        badgeColor={
+          confirmOp ? statusMeta(confirmOp.status).color : undefined
+        }
+        meta={confirmOp?.pools.join(" · ")}
+        detail={confirmOp?.address || ""}
+        hostLabel="sigmaspace.io"
+        onCancel={cancelOpen}
+        onConfirm={confirmOpen}
+      />
     </section>
   );
 }

@@ -35,11 +35,12 @@ import {
 } from './components/HeaderChrome';
 import type { NodeInfo, Peer, RecentBlock } from './types/ergo';
 import {
+  openAddressOnSigmaSpace,
   openBlockOnSigmaSpace,
-  officialExplorerAddressUrl,
   officialExplorerBlockUrl,
   sigmaBlockUrl,
 } from './lib/explorer';
+import ExternalOpenConfirm from './components/ExternalOpenConfirm';
 import {
   fetchAvgBlockTime,
   fetchBlockDetails,
@@ -426,11 +427,19 @@ export default function LumenDashboard() {
 
   // === BLOCK DETAIL MODAL (simple beautiful) ===
   const [selectedBlock, setSelectedBlock] = useState<RecentBlock | null>(null);
+  /** External leave-confirm for block detail (SigmaSpace / explorer / address) */
+  const [blockExt, setBlockExt] = useState<null | {
+    kind: "sigma" | "explorer" | "address";
+    detail: string;
+    url?: string;
+  }>(null);
+  const [blockExtBusy, setBlockExtBusy] = useState(false);
 
   /** Open block preview; backfill honest miner from Explorer if missing */
   const openBlockDetail = (block: RecentBlock) => {
     wakeConnectInvite();
     setSelectedBlock(block);
+    setBlockExt(null);
     if (block.minerAddress && block.minerLabel) return;
     void (async () => {
       try {
@@ -457,6 +466,38 @@ export default function LumenDashboard() {
       }
     })();
   };
+
+  const confirmBlockExternal = useCallback(async () => {
+    if (!blockExt || !selectedBlock) return;
+    setBlockExtBusy(true);
+    try {
+      if (blockExt.kind === "address" && selectedBlock.minerAddress) {
+        openAddressOnSigmaSpace(selectedBlock.minerAddress);
+      } else if (blockExt.kind === "explorer" && blockExt.url) {
+        window.open(blockExt.url, "_blank", "noopener,noreferrer");
+      } else if (blockExt.kind === "sigma") {
+        if (selectedBlock.id) {
+          window.open(
+            sigmaBlockUrl(selectedBlock.id),
+            "_blank",
+            "noopener,noreferrer"
+          );
+        } else {
+          await openBlockOnSigmaSpace(
+            selectedBlock.height,
+            effectiveNodeUrl,
+            undefined,
+            apiHeaders
+          );
+        }
+      }
+      setBlockExt(null);
+    } catch {
+      toast.error("Could not open external page");
+    } finally {
+      setBlockExtBusy(false);
+    }
+  }, [blockExt, selectedBlock, effectiveNodeUrl, apiHeaders]);
 
   const effectivePeers = peers;
   const effectiveInfo = nodeInfo;
@@ -869,30 +910,65 @@ export default function LumenDashboard() {
       </div>
       </LumenPageBody>
 
-      {/* === BLOCK DETAIL MODAL === */}
+      {/* === BLOCK DETAIL MODAL — same glow language as dashboard panels === */}
       {selectedBlock && (
-        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/90 p-0 sm:p-6" onClick={() => setSelectedBlock(null)}>
-          <motion.div 
-            initial={{ scale: 0.96, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="glass max-w-md w-full rounded-t-3xl sm:rounded-3xl p-6 sm:p-9 border border-white/10 max-h-[90dvh] overflow-y-auto"
-            onClick={e => e.stopPropagation()}
+        <div
+          className="fixed inset-0 z-[9998] flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-[6px] p-0 sm:p-6"
+          onClick={() => {
+            if (blockExt) return;
+            setSelectedBlock(null);
+          }}
+        >
+          <motion.div
+            initial={{ scale: 0.97, opacity: 0, y: 8 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            className="lumen-glow-panel lumen-glow-panel--orange max-w-md w-full rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 border border-white/[0.1] max-h-[90dvh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div className="font-mono text-xs tracking-[4px] text-[#FF7A3D] mb-2">BLOCK #{selectedBlock.height}</div>
-            <div className="text-6xl font-semibold tracking-[-2.5px] tabular-nums mb-8">{selectedBlock.height}</div>
-            
-            <div className="space-y-6 text-sm">
-              <div className="flex justify-between py-3 border-b border-white/10">
-                <span className="text-[#A0A0B0]">CONFIRMED AT</span>
-                <span className="font-mono text-right">{new Date(selectedBlock.timestamp).toLocaleTimeString()}</span>
-              </div>
-              <div className="flex justify-between py-3 border-b border-white/10">
-                <span className="text-[#A0A0B0]">TRANSACTIONS</span>
-                <span className="font-mono text-[#FF7A3D] text-xl tracking-tighter">{selectedBlock.txCount}</span>
-              </div>
-              <div className="flex justify-between py-3 border-b border-white/10 gap-4">
-                <span className="text-[#A0A0B0] flex-shrink-0">MINER</span>
+            <span className="lumen-glow-orb lumen-glow-orb--a" aria-hidden />
+            <span className="lumen-glow-orb lumen-glow-orb--b" aria-hidden />
+
+            <div className="lumen-glow-kicker mb-2 flex items-center gap-2">
+              <span className="lumen-glow-pulse" />
+              Block #{selectedBlock.height}
+            </div>
+            <div
+              className="lumen-glow-value text-5xl sm:text-6xl font-semibold tracking-tighter tabular-nums mb-6"
+              style={{
+                color: "var(--lumen-accent)",
+                textShadow:
+                  "0 0 28px color-mix(in srgb, var(--lumen-glow) 70%, transparent)",
+              }}
+            >
+              {selectedBlock.height.toLocaleString()}
+            </div>
+
+            <div className="lumen-glow-inset divide-y divide-white/[0.06] text-sm">
+              <div className="flex justify-between gap-4 px-3.5 py-3">
+                <span className="text-[#7A7A88] text-[11px] font-mono tracking-[0.12em] uppercase">
+                  Confirmed
+                </span>
                 <span className="font-mono text-right text-[#E8E8F0]">
+                  {new Date(selectedBlock.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4 px-3.5 py-3">
+                <span className="text-[#7A7A88] text-[11px] font-mono tracking-[0.12em] uppercase">
+                  Transactions
+                </span>
+                <span
+                  className="font-mono text-xl tracking-tighter tabular-nums"
+                  style={{ color: "var(--lumen-accent)" }}
+                >
+                  {selectedBlock.txCount}
+                </span>
+              </div>
+              <div className="flex justify-between gap-4 px-3.5 py-3">
+                <span className="text-[#7A7A88] text-[11px] font-mono tracking-[0.12em] uppercase shrink-0">
+                  Miner
+                </span>
+                <span className="font-mono text-right text-[#E8E8F0] text-[13px]">
                   {selectedBlock.minerLabel || "—"}
                   {selectedBlock.minerShort
                     ? ` · ${selectedBlock.minerShort}`
@@ -900,82 +976,135 @@ export default function LumenDashboard() {
                 </span>
               </div>
               {selectedBlock.minerAddress && (
-                <div className="flex justify-between py-3 gap-4 border-b border-white/10">
-                  <span className="text-[#A0A0B0] flex-shrink-0">REWARD ADDR</span>
-                  <a
-                    href={officialExplorerAddressUrl(selectedBlock.minerAddress)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-mono text-right text-[11px] text-[#00E5FF] break-all hover:underline"
+                <div className="flex justify-between gap-4 px-3.5 py-3 items-center">
+                  <span className="text-[#7A7A88] text-[11px] font-mono tracking-[0.12em] uppercase shrink-0">
+                    Reward addr
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBlockExt({
+                        kind: "address",
+                        detail: selectedBlock.minerAddress!,
+                      })
+                    }
+                    className="font-mono text-right text-[11px] text-[#00E5FF] break-all hover:underline max-w-[60%]"
                   >
-                    {selectedBlock.minerAddress.slice(0, 14)}…
-                    {selectedBlock.minerAddress.slice(-10)}
-                  </a>
+                    {selectedBlock.minerAddress.slice(0, 12)}…
+                    {selectedBlock.minerAddress.slice(-8)}
+                  </button>
                 </div>
               )}
-              <div className="flex justify-between py-3 border-b border-white/10">
-                <span className="text-[#A0A0B0]">TIME SINCE</span>
-                <span className="font-mono">{Math.floor((Date.now() - selectedBlock.timestamp) / 1000)} seconds ago</span>
+              <div className="flex justify-between gap-4 px-3.5 py-3">
+                <span className="text-[#7A7A88] text-[11px] font-mono tracking-[0.12em] uppercase">
+                  Time since
+                </span>
+                <span className="font-mono text-[#A0A0B0]">
+                  {Math.floor(
+                    (Date.now() - selectedBlock.timestamp) / 1000
+                  )}{" "}
+                  s ago
+                </span>
               </div>
               {selectedBlock.id && (
-                <div className="flex justify-between py-3 gap-4">
-                  <span className="text-[#A0A0B0] flex-shrink-0">BLOCK ID</span>
-                  <span className="font-mono text-right text-[11px] text-[#A0A0B0] break-all">
-                    {selectedBlock.id.slice(0, 16)}…{selectedBlock.id.slice(-8)}
+                <div className="flex justify-between gap-4 px-3.5 py-3">
+                  <span className="text-[#7A7A88] text-[11px] font-mono tracking-[0.12em] uppercase shrink-0">
+                    Block id
+                  </span>
+                  <span className="font-mono text-right text-[11px] text-[#6B6B78] break-all max-w-[60%]">
+                    {selectedBlock.id.slice(0, 14)}…{selectedBlock.id.slice(-8)}
                   </span>
                 </div>
               )}
             </div>
 
-            <div className="mt-9 flex flex-col gap-2">
-              <a
-                href={
-                  selectedBlock.id
-                    ? sigmaBlockUrl(selectedBlock.id)
-                    : `https://sigmaspace.io/en/blocks`
+            <div className="mt-6 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() =>
+                  setBlockExt({
+                    kind: "sigma",
+                    detail: selectedBlock.id
+                      ? selectedBlock.id
+                      : `height ${selectedBlock.height.toLocaleString()}`,
+                  })
                 }
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={async (e) => {
-                  if (!selectedBlock.id) {
-                    e.preventDefault();
-                    try {
-                      await openBlockOnSigmaSpace(
-                        selectedBlock.height,
-                        effectiveNodeUrl,
-                        undefined,
-                        apiHeaders
-                      );
-                    } catch {
-                      toast.error("Could not resolve block on SigmaSpace");
-                    }
-                  }
-                }}
-                className="w-full py-4 rounded-2xl bg-[#FF7A3D] text-black text-sm font-semibold tracking-widest hover:brightness-110 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                className="w-full h-12 rounded-xl border border-[#FF7A3D]/40 bg-[#FF7A3D]/[0.14] text-[11px] font-mono tracking-[0.16em] uppercase text-[#FFD4BE] hover:bg-[#FF7A3D]/[0.22] transition-all active:scale-[0.99] flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(255,122,61,0.18)]"
               >
-                OPEN ON SIGMASPACE <ExternalLink size={14} />
-              </a>
+                Open on SigmaSpace <ExternalLink size={14} />
+              </button>
               {selectedBlock.id && (
-                <a
-                  href={officialExplorerBlockUrl(selectedBlock.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-full py-3.5 rounded-2xl border border-white/20 text-sm font-mono tracking-widest hover:bg-white/5 active:bg-white/10 transition-all flex items-center justify-center gap-2 text-[#E8E8F0]"
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBlockExt({
+                      kind: "explorer",
+                      detail: selectedBlock.id!,
+                      url: officialExplorerBlockUrl(selectedBlock.id!),
+                    })
+                  }
+                  className="w-full h-11 rounded-xl border border-white/[0.1] bg-white/[0.03] text-[11px] font-mono tracking-[0.14em] uppercase text-[#A0A0B0] hover:text-white hover:border-white/20 transition-all active:scale-[0.99] flex items-center justify-center gap-2"
                 >
-                  OFFICIAL EXPLORER <ExternalLink size={14} />
-                </a>
+                  Official explorer <ExternalLink size={14} />
+                </button>
               )}
+              <button
+                type="button"
+                onClick={() => {
+                  setBlockExt(null);
+                  setSelectedBlock(null);
+                }}
+                className="w-full h-11 rounded-xl border border-white/[0.08] text-[11px] font-mono tracking-[0.14em] uppercase text-[#6B6B78] hover:text-white hover:bg-white/[0.04] transition-all"
+              >
+                Stay
+              </button>
             </div>
-
-            <button 
-              onClick={() => setSelectedBlock(null)}
-              className="mt-3 w-full py-4 rounded-2xl border border-white/20 text-sm font-mono tracking-widest hover:bg-white/5 active:bg-white/10 transition-all"
-            >
-              CLOSE PREVIEW
-            </button>
           </motion.div>
         </div>
       )}
+
+      <ExternalOpenConfirm
+        open={!!blockExt && !!selectedBlock}
+        accent={blockExt?.kind === "explorer" ? "cyan" : blockExt?.kind === "address" ? "teal" : "orange"}
+        title={
+          blockExt?.kind === "explorer"
+            ? "Open official explorer?"
+            : blockExt?.kind === "address"
+              ? "Open on SigmaSpace?"
+              : "Open on SigmaSpace?"
+        }
+        subtitle="Leaves lumen · opens a new tab"
+        badge={
+          blockExt?.kind === "address"
+            ? "ADDR"
+            : blockExt?.kind === "explorer"
+              ? "EXPLORER"
+              : "BLOCK"
+        }
+        badgeColor={
+          blockExt?.kind === "explorer"
+            ? "#00E5FF"
+            : blockExt?.kind === "address"
+              ? "#2DD4BF"
+              : "#FF7A3D"
+        }
+        meta={
+          selectedBlock
+            ? `#${selectedBlock.height.toLocaleString()}`
+            : undefined
+        }
+        detail={blockExt?.detail || ""}
+        hostLabel={
+          blockExt?.kind === "explorer"
+            ? "explorer.ergoplatform.com"
+            : "sigmaspace.io"
+        }
+        busy={blockExtBusy}
+        onCancel={() => {
+          if (!blockExtBusy) setBlockExt(null);
+        }}
+        onConfirm={() => void confirmBlockExternal()}
+      />
     </div>
   );
 }
