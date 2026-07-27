@@ -785,46 +785,73 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   View Transitions — soft Node ↔ Oracles
-   Header is frozen (no fade/blur). Only .lumen-page-body dissolves.
+   View Transitions — Node ↔ Oracles
+   · Body: soft dissolve
+   · Shared morph: brand, primary nav pill, hero kicker, hero title
+   · Sticky header chrome has NO whole-bar name (so children can morph)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @view-transition {
   navigation: auto;
 }
 
-/* Root snapshot: no animation (avoids double-fading header) */
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation: none;
   mix-blend-mode: normal;
 }
 
-/* Sticky header — solid, never participates in dissolve */
-.vt-lumen-header {
-  view-transition-name: lumen-header;
-  /* promote own layer so it stays sharp over body transition */
-  z-index: 40;
+/* ── Named shared elements ─────────────────────────────────────────────── */
+.vt-lumen-brand {
+  view-transition-name: lumen-brand;
 }
-::view-transition-group(lumen-header) {
-  animation: none !important;
-  z-index: 100;
+.vt-lumen-nav-primary {
+  view-transition-name: lumen-nav-primary;
 }
-::view-transition-old(lumen-header),
-::view-transition-new(lumen-header) {
-  animation: none !important;
-  mix-blend-mode: normal;
+.vt-lumen-kicker {
+  view-transition-name: lumen-kicker;
 }
-
-/* Main content only — soft cinematic enter/exit */
+.vt-lumen-title {
+  view-transition-name: lumen-title;
+}
 .lumen-page-body {
   view-transition-name: lumen-body;
+}
+
+/* Sticky shell: no name — stays put; morphing pieces live inside */
+.vt-lumen-header {
+  z-index: 40;
+}
+
+/* Group morph timing (position/size) */
+::view-transition-group(lumen-brand),
+::view-transition-group(lumen-nav-primary),
+::view-transition-group(lumen-kicker),
+::view-transition-group(lumen-title) {
+  animation-duration: 0.48s;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  z-index: 60;
 }
 ::view-transition-group(lumen-body) {
   animation-duration: 0.4s;
   animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
   z-index: 1;
 }
+
+/* Soft content crossfade while the group morphs geometry */
+::view-transition-old(lumen-brand),
+::view-transition-old(lumen-nav-primary),
+::view-transition-old(lumen-kicker),
+::view-transition-old(lumen-title) {
+  animation: lumen-vt-morph-out 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+::view-transition-new(lumen-brand),
+::view-transition-new(lumen-nav-primary),
+::view-transition-new(lumen-kicker),
+::view-transition-new(lumen-title) {
+  animation: lumen-vt-morph-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 ::view-transition-old(lumen-body) {
   animation: lumen-vt-fade-out 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -832,9 +859,25 @@ body {
   animation: lumen-vt-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-/* Wordmark lives inside header — no separate VT name (avoids split morph) */
-.vt-lumen-wordmark {
-  view-transition-name: none;
+@keyframes lumen-vt-morph-out {
+  from {
+    opacity: 1;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+@keyframes lumen-vt-morph-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+  }
 }
 
 @keyframes lumen-vt-fade-out {
@@ -866,14 +909,29 @@ body {
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(lumen-body),
   ::view-transition-new(lumen-body),
+  ::view-transition-old(lumen-brand),
+  ::view-transition-new(lumen-brand),
+  ::view-transition-old(lumen-nav-primary),
+  ::view-transition-new(lumen-nav-primary),
+  ::view-transition-old(lumen-kicker),
+  ::view-transition-new(lumen-kicker),
+  ::view-transition-old(lumen-title),
+  ::view-transition-new(lumen-title),
   ::view-transition-group(lumen-body),
-  ::view-transition-group(lumen-header) {
+  ::view-transition-group(lumen-brand),
+  ::view-transition-group(lumen-nav-primary),
+  ::view-transition-group(lumen-kicker),
+  ::view-transition-group(lumen-title) {
     animation: none !important;
   }
   .lumen-page-body,
-  .vt-lumen-header {
-    view-transition-name: none;
+  .vt-lumen-brand,
+  .vt-lumen-nav-primary,
+  .vt-lumen-kicker,
+  .vt-lumen-title {
+    view-transition-name: none !important;
   }
 }
+
 
 

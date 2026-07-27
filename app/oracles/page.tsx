@@ -163,7 +163,10 @@ export default function OraclesPage() {
         <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           {/* Mobile */}
           <div className="sm:hidden flex items-center justify-between gap-2 min-w-0">
-            <SoftLink href="/" className="flex items-center gap-2 min-w-0 flex-1">
+            <SoftLink
+              href="/"
+              className="vt-lumen-brand flex items-center gap-2 min-w-0 flex-1"
+            >
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
                 <Zap className="w-4 h-4 text-black" />
               </div>
@@ -256,7 +259,7 @@ export default function OraclesPage() {
             <div className="flex items-center gap-3 min-w-0">
               <SoftLink
                 href="/"
-                className="flex items-center gap-3 min-w-0 group"
+                className="vt-lumen-brand flex items-center gap-3 min-w-0 group"
                 onClick={() => wakeOracleInvite()}
               >
                 <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
@@ -278,6 +281,7 @@ export default function OraclesPage() {
                 as="link"
                 href="/"
                 tone="gold"
+                className="vt-lumen-nav-primary"
                 title="Node dashboard"
                 onClick={() => wakeOracleInvite()}
               >

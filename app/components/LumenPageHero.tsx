@@ -47,13 +47,13 @@ export default function LumenPageHero({
       ) : null}
 
       <div
-        className={`font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] mb-1 ${kickerClassName}`}
+        className={`vt-lumen-kicker font-mono text-[10px] sm:text-xs tracking-[3px] sm:tracking-[4px] mb-1 w-fit max-w-full ${kickerClassName}`}
       >
         {kicker}
       </div>
 
       <h1
-        className={`text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05] ${PR}`}
+        className={`vt-lumen-title text-[2rem] sm:text-5xl lg:text-6xl font-semibold tracking-[-1px] sm:tracking-[-1.6px] leading-[1.05] w-fit max-w-full ${PR}`}
       >
         {title}
       </h1>

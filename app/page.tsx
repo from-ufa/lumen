@@ -445,7 +445,7 @@ export default function LumenDashboard() {
         <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           {/* ── Mobile header: one row — logo left · LIVE + ··· right ── */}
           <div className="sm:hidden flex items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div className="vt-lumen-brand flex items-center gap-2 min-w-0 flex-1">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
                 <Zap className="w-4 h-4 text-black" />
               </div>
@@ -568,7 +568,7 @@ export default function LumenDashboard() {
 
           {/* ── Desktop header ── */}
           <div className="hidden sm:flex sm:items-center sm:justify-between sm:gap-4">
-            <div className="flex items-center gap-3 min-w-0">
+            <div className="vt-lumen-brand flex items-center gap-3 min-w-0">
               <div className="w-9 h-9 rounded-2xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
                 <Zap className="w-5 h-5 text-black" />
               </div>
@@ -587,6 +587,7 @@ export default function LumenDashboard() {
                 as="link"
                 href="/oracles"
                 tone="gold"
+                className="vt-lumen-nav-primary"
                 title="ERG/USD & ERG/XAU oracle pools"
                 onMouseEnter={() => {
                   void fetch("/api/oracles", { cache: "default" }).catch(
