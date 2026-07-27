@@ -1,8 +1,9 @@
 "use client";
 
-import { motion } from 'framer-motion';
-import { NodeInfo } from '../types/ergo';
-import { Clock, Users, Zap, TrendingUp } from 'lucide-react';
+import type { ComponentType } from "react";
+import { motion } from "framer-motion";
+import { NodeInfo } from "../types/ergo";
+import { Clock, Users, Zap, TrendingUp } from "lucide-react";
 
 interface MetricsProps {
   info: NodeInfo | null;
@@ -16,37 +17,57 @@ interface MetricsProps {
   avgBlockWindow?: number;
 }
 
-function MetricCard({ 
-  icon: Icon, 
-  label, 
-  value, 
-  subValue, 
-  accent = false 
-}: { 
-  icon: any; 
-  label: string; 
-  value: string | number; 
-  subValue?: string; 
-  accent?: boolean;
+type Tone = "orange" | "cyan" | "teal" | "violet" | "emerald";
+
+const TONE_CLASS: Record<Tone, string> = {
+  orange: "lumen-glow-panel--orange",
+  cyan: "lumen-glow-panel--cyan",
+  teal: "lumen-glow-panel--teal",
+  violet: "lumen-glow-panel--violet",
+  emerald: "lumen-glow-panel--emerald",
+};
+
+function MetricCard({
+  icon: Icon,
+  label,
+  value,
+  subValue,
+  tone = "cyan",
+  live,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  value: string | number;
+  subValue?: string;
+  tone?: Tone;
+  live?: boolean;
 }) {
   return (
-    <div className="card glass rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 flex flex-col justify-between min-h-[112px] sm:min-h-[138px]">
+    <div
+      className={`lumen-glow-panel lumen-glow-panel--metric ${TONE_CLASS[tone]} rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 flex flex-col justify-between`}
+    >
+      <span className="lumen-glow-orb lumen-glow-orb--a" aria-hidden />
+      <span className="lumen-glow-orb lumen-glow-orb--b" aria-hidden />
+
       <div className="flex items-center justify-between gap-2">
-        <div className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl ${accent ? 'bg-[#FF7A3D]/10' : 'bg-white/5'}`}>
-          <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${accent ? 'text-[#FF7A3D]' : 'text-[#A0A0B0]'}`} />
+        <div className="lumen-glow-icon p-2 sm:p-3">
+          <Icon className="w-4 h-4 sm:w-5 sm:h-5" />
         </div>
         {subValue && (
-          <div className="text-[9px] sm:text-[10px] font-mono tracking-[1px] sm:tracking-[1.5px] text-[#A0A0B0] text-right leading-tight">
-            {subValue}
+          <div className="flex items-center gap-1.5 min-w-0">
+            {live && <span className="lumen-glow-pulse shrink-0" />}
+            <div className="text-[9px] sm:text-[10px] font-mono tracking-[0.12em] sm:tracking-[0.14em] text-[#8B8B9A] text-right leading-tight uppercase truncate">
+              {subValue}
+            </div>
           </div>
         )}
       </div>
-      
-      <div>
-        <div className={`metric-value text-2xl sm:text-4xl font-semibold tracking-tighter mt-2 sm:mt-3 mb-0.5 sm:mb-1 ${accent ? 'text-[#FF7A3D]' : 'text-white'}`}>
+
+      <div className="mt-2 sm:mt-3">
+        <div className="lumen-glow-value metric-value text-2xl sm:text-4xl font-semibold tracking-tighter mb-0.5 sm:mb-1">
           {value}
         </div>
-        <div className="text-[10px] sm:text-xs font-mono tracking-[0.5px] sm:tracking-[1px] text-[#A0A0B0] leading-tight">
+        <div className="text-[10px] sm:text-xs font-mono tracking-[0.08em] sm:tracking-[0.1em] text-[#7A7A88] leading-tight uppercase">
           {label}
         </div>
       </div>
@@ -62,8 +83,14 @@ export default function MetricsCards({
   avgBlockSamples = 0,
   avgBlockWindow = 100,
 }: MetricsProps) {
-  const syncProgress = info 
-    ? Math.min(100, Math.round((info.headersHeight / (info.maxPeerHeight || info.headersHeight)) * 100)) 
+  const syncProgress = info
+    ? Math.min(
+        100,
+        Math.round(
+          (info.headersHeight / (info.maxPeerHeight || info.headersHeight)) *
+            100
+        )
+      )
     : 0;
 
   const avgSub =
@@ -75,54 +102,69 @@ export default function MetricsCards({
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-      <MetricCard 
-        icon={Clock} 
-        label="AVG BLOCK TIME" 
-        value={avgBlockTime != null ? `${avgBlockTime}s` : "—"} 
+      <MetricCard
+        icon={Clock}
+        label="AVG BLOCK TIME"
+        value={avgBlockTime != null ? `${avgBlockTime}s` : "—"}
         subValue={avgSub}
+        tone="orange"
       />
-      
-      <MetricCard 
-        icon={Users} 
-        label="MY P2P SESSIONS" 
-        value={info?.peersCount || 0} 
+
+      <MetricCard
+        icon={Users}
+        label="MY P2P SESSIONS"
+        value={info?.peersCount || 0}
         subValue={isOnline ? "LIVE" : "OFFLINE"}
-        accent={isOnline}
+        tone={isOnline ? "emerald" : "violet"}
+        live={isOnline}
       />
-      
-      <MetricCard 
-        icon={Zap} 
-        label="MEMPOOL SIZE" 
-        value={mempoolSize} 
+
+      <MetricCard
+        icon={Zap}
+        label="MEMPOOL SIZE"
+        value={mempoolSize}
         subValue="UNCONFIRMED"
+        tone="cyan"
       />
-      
-      <div className="card glass rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 flex flex-col justify-between min-h-[112px] sm:min-h-[138px]">
+
+      <div className="lumen-glow-panel lumen-glow-panel--metric lumen-glow-panel--violet rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 flex flex-col justify-between">
+        <span className="lumen-glow-orb lumen-glow-orb--a" aria-hidden />
+        <span className="lumen-glow-orb lumen-glow-orb--b" aria-hidden />
+
         <div className="flex items-center justify-between mb-2 sm:mb-3">
-          <div className="p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-white/5">
-            <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5 text-[#A0A0B0]" />
+          <div className="lumen-glow-icon p-2 sm:p-3">
+            <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div className="text-[9px] sm:text-[10px] font-mono tracking-[1.5px] text-[#A0A0B0]">SYNC</div>
+          <div className="text-[9px] sm:text-[10px] font-mono tracking-[0.14em] text-[#8B8B9A] uppercase">
+            Sync
+          </div>
         </div>
-        
+
         <div>
-          <div className="flex items-baseline gap-2">
-            <div className="metric-value text-2xl sm:text-4xl font-semibold tracking-tighter text-white">
+          <div className="flex items-baseline gap-1">
+            <div className="lumen-glow-value metric-value text-2xl sm:text-4xl font-semibold tracking-tighter">
               {syncProgress}
-              <span className="text-lg sm:text-2xl text-[#A0A0B0]">%</span>
             </div>
+            <span className="text-lg sm:text-2xl font-mono text-[#5C5C6A]">
+              %
+            </span>
           </div>
-          <div className="text-[10px] sm:text-xs font-mono tracking-[0.5px] sm:tracking-[1px] text-[#A0A0B0] mb-2">
-            HEADERS / NETWORK
+          <div className="text-[10px] sm:text-xs font-mono tracking-[0.08em] text-[#7A7A88] mb-2 uppercase">
+            Headers / network
           </div>
-          
-          {/* Beautiful progress bar */}
-          <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mt-1">
-            <motion.div 
-              className="h-full bg-gradient-to-r from-[#FF7A3D] to-[#00E5FF] rounded-full"
+
+          <div className="lumen-glow-track mt-1">
+            <motion.div
+              className="lumen-glow-bar"
+              style={{
+                background:
+                  "linear-gradient(90deg, #FF7A3D, #00E5FF, #A78BFA)",
+                boxShadow:
+                  "0 0 14px rgba(0,229,255,0.45), 0 0 10px rgba(255,122,61,0.35)",
+              }}
               initial={{ width: 0 }}
               animate={{ width: `${syncProgress}%` }}
-              transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+              transition={{ duration: 0.65, ease: [0.23, 1, 0.32, 1] }}
             />
           </div>
         </div>

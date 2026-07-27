@@ -461,14 +461,12 @@ export default function OracleConstellation({
 
     if (incoming.length > 0 && onActivity) {
       onActivity(
-        incoming
-          .map((e) => ({
-            id: e.id,
-            t: e.t,
-            kind: e.kind,
-            message: e.message,
-          }))
-          .slice(0, 24)
+        incoming.map((e) => ({
+          id: e.id,
+          t: e.t,
+          kind: e.kind,
+          message: e.message,
+        }))
       );
     }
 

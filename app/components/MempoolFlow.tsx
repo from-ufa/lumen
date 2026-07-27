@@ -49,33 +49,58 @@ export default function MempoolFlow({ txs, size }: MempoolFlowProps) {
   const displayTxs = txs.slice(0, 12);
 
   return (
-    <div className="card glass rounded-2xl sm:rounded-3xl p-4 sm:p-5 h-full flex flex-col border border-white/[0.06] shadow-[0_12px_40px_rgba(0,0,0,0.25)] overflow-hidden">
+    <div className="lumen-glow-panel lumen-glow-panel--cyan rounded-2xl sm:rounded-3xl p-4 sm:p-5 h-full flex flex-col overflow-hidden">
+      <span className="lumen-glow-orb lumen-glow-orb--a" aria-hidden />
+      <span className="lumen-glow-orb lumen-glow-orb--b" aria-hidden />
+
       {/* Header — aligned with Recent Blocks */}
       <div className="flex items-start justify-between gap-3 mb-3 sm:mb-4 px-0.5 flex-shrink-0">
-        <div className="min-w-0">
-          <div className="font-mono text-[10px] sm:text-xs tracking-[3px] text-[#00E5FF]">
-            MEMPOOL FLOW
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="lumen-glow-icon w-9 h-9 sm:w-10 sm:h-10 shrink-0">
+            <Activity className="w-4 h-4" />
           </div>
-          <div className="text-lg sm:text-xl font-semibold tracking-tight mt-0.5">
-            Pending Transactions
-          </div>
-          <div className="text-[10px] font-mono text-[#A0A0B0]/50 mt-1 tracking-wide">
-            Live unconfirmed · SigmaSpace
+          <div className="min-w-0">
+            <div className="lumen-glow-kicker flex items-center gap-2">
+              <span className="lumen-glow-pulse" />
+              Mempool flow
+            </div>
+            <div className="text-lg sm:text-xl font-semibold tracking-tight mt-0.5 text-white">
+              Pending Transactions
+            </div>
+            <div className="text-[10px] font-mono text-[#6B6B78] mt-1 tracking-wide">
+              Live unconfirmed · SigmaSpace
+            </div>
           </div>
         </div>
-        <div className="text-right flex-shrink-0 rounded-xl border border-white/[0.06] bg-black/20 px-2.5 py-1.5">
-          <div className="font-mono text-xl sm:text-2xl font-semibold tracking-tighter tabular-nums text-[#00E5FF] leading-none">
+        <div
+          className="text-right flex-shrink-0 rounded-xl border px-2.5 py-1.5"
+          style={{
+            borderColor: "color-mix(in srgb, var(--lumen-accent) 28%, transparent)",
+            background:
+              "color-mix(in srgb, var(--lumen-accent) 8%, rgba(0,0,0,0.35))",
+            boxShadow:
+              "0 0 20px color-mix(in srgb, var(--lumen-glow) 30%, transparent)",
+          }}
+        >
+          <div
+            className="lumen-glow-value--accent font-mono text-xl sm:text-2xl font-semibold tracking-tighter tabular-nums leading-none"
+            style={{
+              color: "var(--lumen-accent)",
+              textShadow:
+                "0 0 18px color-mix(in srgb, var(--lumen-glow) 85%, transparent)",
+            }}
+          >
             {size.toLocaleString()}
           </div>
-          <div className="text-[9px] font-mono tracking-widest text-[#A0A0B0] mt-1">
-            PENDING
+          <div className="text-[9px] font-mono tracking-widest text-[#8B8B9A] mt-1 uppercase">
+            Pending
           </div>
         </div>
       </div>
 
       {displayTxs.length > 0 ? (
         <div
-          className="flex flex-col overflow-y-auto overflow-x-hidden pr-0.5 custom-scroll flex-shrink-0"
+          className="flex flex-col overflow-y-auto overflow-x-hidden pr-0.5 lumen-glow-scroll flex-shrink-0"
           style={{ height: LIST_H, gap: GAP }}
         >
           <AnimatePresence initial={false} mode="popLayout">
@@ -97,20 +122,18 @@ export default function MempoolFlow({ txs, size }: MempoolFlowProps) {
                     delay: Math.min(index * 0.015, 0.12),
                     ease: [0.23, 1, 0.32, 1],
                   }}
-                  className="group relative shrink-0 overflow-hidden rounded-xl border border-white/[0.07] bg-white/[0.02] hover:border-[#00E5FF]/25 hover:bg-white/[0.04] transition-colors cursor-pointer active:scale-[0.995]"
+                  className="group relative shrink-0 overflow-hidden lumen-glow-row cursor-pointer active:scale-[0.995]"
                   style={{ height: ROW_H }}
                 >
                   <div className="h-full grid grid-cols-[0.75rem_1fr_auto] items-center gap-x-2.5 sm:gap-x-3 px-3 sm:px-3.5">
-                    {/* Status dot */}
                     <div
                       className="w-2 h-2 rounded-full shrink-0 justify-self-center"
                       style={{
                         backgroundColor: dot,
-                        boxShadow: `0 0 8px ${dot}66`,
+                        boxShadow: `0 0 10px ${dot}88`,
                       }}
                     />
 
-                    {/* TX id — single clean line, no overflow */}
                     <div className="min-w-0 font-mono text-[11px] sm:text-xs tracking-tight text-[#E8E8F0] group-hover:text-white">
                       <span className="block truncate">
                         {head}
@@ -118,17 +141,21 @@ export default function MempoolFlow({ txs, size }: MempoolFlowProps) {
                           <span className="text-[#A0A0B0]/70">…{tail}</span>
                         ) : null}
                       </span>
-                      <span className="block text-[9px] font-mono text-[#A0A0B0]/45 tracking-wider mt-0.5">
-                        UNCONFIRMED
+                      <span className="block text-[9px] font-mono text-[#5C5C6A] tracking-wider mt-0.5 uppercase">
+                        Unconfirmed
                       </span>
                     </div>
 
-                    {/* Action */}
-                    <div className="flex items-center gap-1.5 shrink-0 text-[#A0A0B0]/50 group-hover:text-[#00E5FF] transition-colors">
-                      <span className="text-[9px] font-mono tracking-widest hidden sm:inline">
+                    <div
+                      className="flex items-center gap-1.5 shrink-0 text-[#5C5C6A] transition-colors"
+                      style={{
+                        // hover via group — keep cyan accent on hover via CSS variable
+                      }}
+                    >
+                      <span className="text-[9px] font-mono tracking-widest hidden sm:inline group-hover:text-[var(--lumen-accent)] transition-colors">
                         SIGMA
                       </span>
-                      <ExternalLink className="w-3.5 h-3.5" />
+                      <ExternalLink className="w-3.5 h-3.5 group-hover:text-[var(--lumen-accent)] transition-colors" />
                     </div>
                   </div>
                 </motion.a>
@@ -138,21 +165,21 @@ export default function MempoolFlow({ txs, size }: MempoolFlowProps) {
         </div>
       ) : (
         <div
-          className="flex flex-col items-center justify-center text-center flex-shrink-0 rounded-xl border border-white/[0.05] bg-black/15"
+          className="flex flex-col items-center justify-center text-center flex-shrink-0 lumen-glow-inset"
           style={{ height: LIST_H }}
         >
-          <div className="w-9 h-9 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center mb-2.5">
-            <Activity className="w-4 h-4 text-[#00E5FF]/60" />
+          <div className="lumen-glow-icon w-10 h-10 mb-2.5">
+            <Activity className="w-4 h-4" />
           </div>
           <div className="text-[#A0A0B0] text-sm">Mempool is empty</div>
-          <div className="text-[11px] text-[#A0A0B0]/50 mt-1 max-w-[16rem]">
+          <div className="text-[11px] text-[#5C5C6A] mt-1 max-w-[16rem]">
             New transactions appear here in real time
           </div>
         </div>
       )}
 
-      <div className="text-[10px] text-center text-[#A0A0B0]/40 mt-3 font-mono tracking-[1px] flex-shrink-0">
-        TAP TX → SIGMASPACE · EVERY 8S
+      <div className="text-[10px] text-center text-[#5C5C6A] mt-3 font-mono tracking-[0.12em] flex-shrink-0 uppercase">
+        Tap tx → SigmaSpace · every 8s
       </div>
     </div>
   );

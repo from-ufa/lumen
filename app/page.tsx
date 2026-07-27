@@ -13,8 +13,10 @@ import { toast } from 'sonner';
 
 import Constellation3D from './components/Constellation3D';
 import MetricsCards from './components/MetricsCards';
+import OracleOperatorsLive from './components/OracleOperatorsLive';
 import BlocksTimeline from './components/BlocksTimeline';
 import MempoolFlow from './components/MempoolFlow';
+import type { OraclesApiResponse } from './oracles/components/types';
 import ConnectionSettings from './components/ConnectionSettings';
 import ConnectNodeInvite, {
   wakeConnectInvite,
@@ -236,6 +238,27 @@ export default function LumenDashboard() {
     refetchInterval: 8500,
     placeholderData: undefined,
     structuralSharing: false,
+  });
+
+  /** Public oracle pools — operator online counts for dashboard panel */
+  const {
+    data: oraclesLive,
+    isLoading: oraclesLiveLoading,
+    isError: oraclesLiveError,
+    isFetching: oraclesLiveFetching,
+  } = useQuery({
+    queryKey: ["oracles-dashboard-live"],
+    queryFn: async (): Promise<OraclesApiResponse> => {
+      const res = await fetch("/api/oracles?mode=network", {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`oracles ${res.status}`);
+      return res.json();
+    },
+    refetchInterval: 8_000,
+    staleTime: 5_000,
+    placeholderData: (prev) => prev,
+    refetchOnWindowFocus: false,
   });
 
   const bridgeOnline = !!bridgeStatus?.connected;
@@ -805,6 +828,16 @@ export default function LumenDashboard() {
             avgBlockTime={avgBlockTime}
             avgBlockSamples={avgBlockSamples}
             avgBlockWindow={AVG_BLOCK_WINDOW}
+          />
+        </div>
+
+        {/* === ORACLE OPERATORS ONLINE === */}
+        <div className="mb-8">
+          <OracleOperatorsLive
+            data={oraclesLive}
+            isLoading={oraclesLiveLoading}
+            isError={oraclesLiveError}
+            isFetching={oraclesLiveFetching}
           />
         </div>
 

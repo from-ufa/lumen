@@ -1,8 +1,83 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import OracleConstellation from "./OracleConstellation";
 import type { OracleFeedData, OraclesApiResponse } from "./types";
+
+type ActivityRow = {
+  id: string;
+  t: number;
+  kind: string;
+  message: string;
+};
+
+/** Cap kept in memory + sessionStorage (newest first). */
+const ACTIVITY_CAP = 120;
+const ACTIVITY_STORAGE_PREFIX = "lumen-oracle-activity:";
+
+function activityStorageKey(
+  feedId: string,
+  scope?: string | null
+) {
+  return `${ACTIVITY_STORAGE_PREFIX}${feedId}:${scope || "default"}`;
+}
+
+function loadActivityHistory(
+  feedId: string,
+  scope?: string | null
+): ActivityRow[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = sessionStorage.getItem(activityStorageKey(feedId, scope));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as ActivityRow[];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (r) =>
+          r &&
+          typeof r.id === "string" &&
+          typeof r.message === "string" &&
+          typeof r.kind === "string"
+      )
+      .slice(0, ACTIVITY_CAP);
+  } catch {
+    return [];
+  }
+}
+
+function saveActivityHistory(
+  feedId: string,
+  rows: ActivityRow[],
+  scope?: string | null
+) {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      activityStorageKey(feedId, scope),
+      JSON.stringify(rows.slice(0, ACTIVITY_CAP))
+    );
+  } catch {
+    /* quota / private mode */
+  }
+}
+
+function mergeActivity(
+  prev: ActivityRow[],
+  incoming: ActivityRow[]
+): ActivityRow[] {
+  if (incoming.length === 0) return prev;
+  const seen = new Set(prev.map((r) => r.id));
+  const fresh: ActivityRow[] = [];
+  for (const row of incoming) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    fresh.push(row);
+  }
+  if (fresh.length === 0) return prev;
+  return [...fresh, ...prev].slice(0, ACTIVITY_CAP);
+}
 
 interface Props {
   data: OraclesApiResponse | undefined;
@@ -343,10 +418,52 @@ function OracleBlock({
   feed: OracleFeedData;
   tipHeight: number | null;
 }) {
-  const [activity, setActivity] = useState<
-    { id: string; t: number; kind: string; message: string }[]
-  >([]);
+  const reduceMotion = useReducedMotion();
+  const [activity, setActivity] = useState<ActivityRow[]>(() =>
+    loadActivityHistory(feed.id, feed.scope)
+  );
   const [publishPulse, setPublishPulse] = useState(0);
+  const activityScrollRef = useRef<HTMLDivElement>(null);
+  /** When true, new rows pin the viewport to the top (newest). */
+  const stickToLatestRef = useRef(true);
+  /** Head id of last rendered list — detects prepend even at cap. */
+  const prevHeadIdRef = useRef<string | null>(activity[0]?.id ?? null);
+
+  // Hydrate from session when feed identity changes (USD ↔ XAU panes)
+  useEffect(() => {
+    const restored = loadActivityHistory(feed.id, feed.scope);
+    setActivity(restored);
+    prevHeadIdRef.current = restored[0]?.id ?? null;
+    stickToLatestRef.current = true;
+    const el = activityScrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [feed.id, feed.scope]);
+
+  // Persist full history for the tab session
+  useEffect(() => {
+    saveActivityHistory(feed.id, activity, feed.scope);
+  }, [feed.id, feed.scope, activity]);
+
+  const onActivityScroll = useCallback(() => {
+    const el = activityScrollRef.current;
+    if (!el) return;
+    // Near top = still following live stream; deeper = reading history
+    stickToLatestRef.current = el.scrollTop < 28;
+  }, []);
+
+  // Smooth pin to newest when rows prepend and user is following live
+  useLayoutEffect(() => {
+    const el = activityScrollRef.current;
+    const headId = activity[0]?.id ?? null;
+    const headChanged = headId != null && headId !== prevHeadIdRef.current;
+    prevHeadIdRef.current = headId;
+    if (!el || !headChanged || !stickToLatestRef.current) return;
+    if (reduceMotion) {
+      el.scrollTop = 0;
+      return;
+    }
+    el.scrollTo({ top: 0, behavior: "smooth" });
+  }, [activity, reduceMotion]);
 
   const theme = themeFor(feed);
   const st = statusExplain(feed);
@@ -572,7 +689,7 @@ function OracleBlock({
               accentOverride={theme.accent}
               hideCenterPrice
               onActivity={(rows) => {
-                setActivity((prev) => [...rows, ...prev].slice(0, 24));
+                setActivity((prev) => mergeActivity(prev, rows));
                 if (
                   rows.some(
                     (r) => r.kind === "datapoint" || r.kind === "pool_refresh"
@@ -904,14 +1021,21 @@ function OracleBlock({
           </div>
         </div>
 
-        {/* Row 3: publish activity — fixed */}
+        {/* Row 3: publish activity — full session history + smooth live scroll */}
         <div className="lumen-oracle-tile h-[6.5rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col overflow-hidden">
           <div className="flex items-center justify-between mb-2 shrink-0 h-[1.1rem]">
-            <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase">
-              Publish activity
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase">
+                Publish activity
+              </div>
+              {activity.length > 0 && (
+                <span className="text-[9px] font-mono text-[#5C5C6A] tabular-nums">
+                  {activity.length}
+                </span>
+              )}
             </div>
             <span
-              className="text-[9px] font-mono tracking-wider uppercase min-w-[3.5rem] text-right"
+              className="text-[9px] font-mono tracking-wider uppercase min-w-[3.5rem] text-right transition-colors duration-300"
               style={{
                 color: activity.some((a) => a.kind === "datapoint")
                   ? theme.accent
@@ -921,42 +1045,69 @@ function OracleBlock({
               ● firing
             </span>
           </div>
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div
+            ref={activityScrollRef}
+            onScroll={onActivityScroll}
+            className="lumen-activity-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain"
+          >
             {activity.length === 0 ? (
-              <p className="text-[11px] text-[#5C5C6A] leading-snug line-clamp-3">
+              <p className="text-[11px] text-[#5C5C6A] leading-snug">
                 When an operator posts a datapoint, a diamond flies from their
                 node into the pool core.
               </p>
             ) : (
-              <ul className="space-y-1 overflow-hidden">
-                {activity.slice(0, 3).map((row) => (
-                  <li
-                    key={row.id}
-                    className="text-[10px] sm:text-[11px] font-mono truncate leading-snug h-[1.15rem]"
-                    style={{
-                      color:
-                        row.kind === "datapoint"
-                          ? "#2DD4BF"
-                          : row.kind === "reward"
-                            ? theme.accent
-                            : row.kind === "pool_refresh"
+              <ul className="space-y-1 pr-0.5">
+                <AnimatePresence initial={false} mode="popLayout">
+                  {activity.map((row) => (
+                    <motion.li
+                      key={row.id}
+                      layout={!reduceMotion}
+                      initial={
+                        reduceMotion
+                          ? false
+                          : { opacity: 0, y: -10, filter: "blur(4px)" }
+                      }
+                      animate={{
+                        opacity: 1,
+                        y: 0,
+                        filter: "blur(0px)",
+                      }}
+                      exit={
+                        reduceMotion
+                          ? undefined
+                          : { opacity: 0, height: 0, marginBottom: 0 }
+                      }
+                      transition={{
+                        duration: 0.32,
+                        ease: [0.22, 1, 0.36, 1],
+                        layout: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+                      }}
+                      className="text-[10px] sm:text-[11px] font-mono truncate leading-snug h-[1.15rem]"
+                      style={{
+                        color:
+                          row.kind === "datapoint"
+                            ? "#2DD4BF"
+                            : row.kind === "reward"
                               ? theme.accent
-                              : "#8B8B9A",
-                    }}
-                  >
-                    {row.kind === "datapoint"
-                      ? "◆ publish "
-                      : row.kind === "reward"
-                        ? "★ reward "
-                        : row.kind === "pool_refresh"
-                          ? "⬡ pool "
-                          : "· "}
-                    {row.message.replace(
-                      /^(POST|REWARD|POOL REFRESH|RATE)\s*/i,
-                      ""
-                    )}
-                  </li>
-                ))}
+                              : row.kind === "pool_refresh"
+                                ? theme.accent
+                                : "#8B8B9A",
+                      }}
+                    >
+                      {row.kind === "datapoint"
+                        ? "◆ publish "
+                        : row.kind === "reward"
+                          ? "★ reward "
+                          : row.kind === "pool_refresh"
+                            ? "⬡ pool "
+                            : "· "}
+                      {row.message.replace(
+                        /^(POST|REWARD|POOL REFRESH|RATE)\s*/i,
+                        ""
+                      )}
+                    </motion.li>
+                  ))}
+                </AnimatePresence>
               </ul>
             )}
           </div>

@@ -39,14 +39,14 @@ export default function BlocksTimeline({
 
   if (blocks.length === 0) {
     return (
-      <div className="card glass rounded-2xl sm:rounded-3xl p-5 sm:p-6 h-full min-h-[320px] flex flex-col items-center justify-center text-center border border-white/[0.06]">
-        <div className="w-10 h-10 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mb-3">
-          <Pickaxe className="w-4 h-4 text-[#A0A0B0]" />
+      <div className="lumen-glow-panel lumen-glow-panel--orange rounded-2xl sm:rounded-3xl p-5 sm:p-6 h-full min-h-[320px] flex flex-col items-center justify-center text-center">
+        <span className="lumen-glow-orb lumen-glow-orb--a" aria-hidden />
+        <span className="lumen-glow-orb lumen-glow-orb--b" aria-hidden />
+        <div className="lumen-glow-icon w-11 h-11 mb-3">
+          <Pickaxe className="w-4 h-4" />
         </div>
-        <div className="text-[#A0A0B0] text-sm tracking-widest font-mono">
-          NO BLOCKS YET
-        </div>
-        <div className="text-xs mt-1 text-[#A0A0B0]/60">
+        <div className="lumen-glow-kicker">No blocks yet</div>
+        <div className="text-xs mt-2 text-[#6B6B78]">
           Waiting for node data…
         </div>
       </div>
@@ -54,23 +54,32 @@ export default function BlocksTimeline({
   }
 
   return (
-    <div className="card glass rounded-2xl sm:rounded-3xl p-4 sm:p-5 h-full flex flex-col border border-white/[0.06] shadow-[0_12px_40px_rgba(0,0,0,0.25)]">
-      {/* Header — no TIP badge */}
-      <div className="flex-shrink-0 mb-3 sm:mb-4 px-0.5">
-        <div className="font-mono text-[10px] sm:text-xs tracking-[3px] text-[#FF7A3D]">
-          RECENT BLOCKS
+    <div className="lumen-glow-panel lumen-glow-panel--orange rounded-2xl sm:rounded-3xl p-4 sm:p-5 h-full flex flex-col">
+      <span className="lumen-glow-orb lumen-glow-orb--a" aria-hidden />
+      <span className="lumen-glow-orb lumen-glow-orb--b" aria-hidden />
+
+      {/* Header */}
+      <div className="flex-shrink-0 mb-3 sm:mb-4 px-0.5 flex items-start gap-3">
+        <div className="lumen-glow-icon w-9 h-9 sm:w-10 sm:h-10 shrink-0">
+          <Pickaxe className="w-4 h-4" />
         </div>
-        <div className="text-lg sm:text-xl font-semibold tracking-tight mt-0.5">
-          Last {blocks.length} blocks
-        </div>
-        <div className="text-[10px] font-mono text-[#A0A0B0]/50 mt-1 tracking-wide">
-          Miner via Explorer
+        <div className="min-w-0">
+          <div className="lumen-glow-kicker flex items-center gap-2">
+            <span className="lumen-glow-pulse" />
+            Recent blocks
+          </div>
+          <div className="text-lg sm:text-xl font-semibold tracking-tight mt-0.5 text-white">
+            Last {blocks.length} blocks
+          </div>
+          <div className="text-[10px] font-mono text-[#6B6B78] mt-1 tracking-wide">
+            Miner via Explorer
+          </div>
         </div>
       </div>
 
       {/* Exactly 6 rows visible; scroll for the rest */}
       <div
-        className="flex flex-col overflow-y-auto overflow-x-hidden pr-0.5 custom-scroll flex-shrink-0"
+        className="flex flex-col overflow-y-auto overflow-x-hidden pr-0.5 lumen-glow-scroll flex-shrink-0"
         style={{
           height: LIST_H,
           gap: GAP,
@@ -98,46 +107,56 @@ export default function BlocksTimeline({
                   onBlockClick?.(block);
                 }
               }}
-              className={`group relative shrink-0 overflow-hidden rounded-xl border cursor-pointer transition-colors active:scale-[0.995]
-                ${
-                  isNewest
-                    ? "border-[#FF7A3D]/30 bg-[#FF7A3D]/[0.07]"
-                    : "border-white/[0.07] bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.04]"
-                }`}
+              className={`group relative shrink-0 overflow-hidden lumen-glow-row cursor-pointer active:scale-[0.995] ${
+                isNewest ? "lumen-glow-row--hot" : ""
+              }`}
               style={{ height: ROW_H }}
             >
               {isNewest && (
-                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#FF7A3D]" />
+                <div
+                  className="absolute left-0 top-0 bottom-0 w-[3px]"
+                  style={{
+                    background: "var(--lumen-accent)",
+                    boxShadow: "0 0 12px var(--lumen-glow)",
+                  }}
+                />
               )}
 
-              {/*
-                Clean grid — no overlap:
-                [ height ] [ time · txs · latest ] [ chevron ]
-                           [ miner row           ]
-              */}
               <div className="h-full grid grid-cols-[minmax(4.75rem,auto)_1fr_1.25rem] items-center gap-x-2.5 sm:gap-x-3 pl-3 pr-2 sm:pl-3.5 sm:pr-2.5">
-                {/* Height — fixed column */}
                 <div
                   className={`font-mono text-[0.95rem] sm:text-lg font-semibold tracking-tighter tabular-nums leading-none whitespace-nowrap ${
-                    isNewest ? "text-[#FF7A3D]" : "text-white"
+                    isNewest
+                      ? "lumen-glow-value--accent"
+                      : "text-white"
                   }`}
+                  style={
+                    isNewest
+                      ? {
+                          color: "var(--lumen-accent)",
+                          textShadow:
+                            "0 0 16px color-mix(in srgb, var(--lumen-glow) 80%, transparent)",
+                        }
+                      : undefined
+                  }
                 >
                   {block.height.toLocaleString()}
                 </div>
 
-                {/* Meta + miner */}
                 <div className="min-w-0 flex flex-col justify-center gap-0.5 py-1">
-                  <div className="flex items-center gap-1.5 min-w-0 text-[10px] sm:text-[11px] text-[#A0A0B0]">
+                  <div className="flex items-center gap-1.5 min-w-0 text-[10px] sm:text-[11px] text-[#8B8B9A]">
                     <span className="truncate shrink min-w-0">{timeAgo}</span>
-                    <span className="text-[#A0A0B0]/35 shrink-0">·</span>
-                    <span className="font-mono tabular-nums shrink-0 text-[#A0A0B0]/70">
+                    <span className="text-[#5C5C6A] shrink-0">·</span>
+                    <span className="font-mono tabular-nums shrink-0 text-[#A0A0B0]/80">
                       {block.txCount} TX
                     </span>
                     {isNewest && (
                       <>
-                        <span className="text-[#A0A0B0]/35 shrink-0">·</span>
-                        <span className="shrink-0 font-mono text-[9px] tracking-wider text-[#FF7A3D]/90">
-                          LATEST
+                        <span className="text-[#5C5C6A] shrink-0">·</span>
+                        <span
+                          className="shrink-0 font-mono text-[9px] tracking-wider uppercase"
+                          style={{ color: "var(--lumen-accent)" }}
+                        >
+                          Latest
                         </span>
                       </>
                     )}
@@ -173,15 +192,15 @@ export default function BlocksTimeline({
                   </div>
                 </div>
 
-                <ChevronRight className="w-3.5 h-3.5 text-[#A0A0B0]/30 group-hover:text-[#E8E8F0] transition-colors justify-self-end" />
+                <ChevronRight className="w-3.5 h-3.5 text-[#5C5C6A] group-hover:text-[#E8E8F0] transition-colors justify-self-end" />
               </div>
             </motion.div>
           );
         })}
       </div>
 
-      <div className="text-[10px] text-center text-[#A0A0B0]/40 mt-3 font-mono tracking-[1px] flex-shrink-0">
-        TAP FOR DETAILS
+      <div className="text-[10px] text-center text-[#5C5C6A] mt-3 font-mono tracking-[0.12em] flex-shrink-0 uppercase">
+        Tap for details
       </div>
     </div>
   );

@@ -24,7 +24,7 @@ export default function VizModeToggle({
 
   if (compact) {
     return (
-      <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl glass border border-white/10 relative">
+      <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl lumen-glow-panel lumen-glow-panel--cyan border border-white/10 relative hover:!translate-y-0">
         {(
           [
             { id: "constellation" as const, label: "ORBIT", Icon: Orbit, active: "bg-[#FF7A3D]/15 text-[#FF7A3D] border-[#FF7A3D]/30" },
@@ -58,7 +58,7 @@ export default function VizModeToggle({
   }
 
   return (
-    <div className="inline-flex p-1 rounded-2xl glass border border-white/10 relative">
+    <div className="inline-flex p-1 rounded-2xl lumen-glow-panel lumen-glow-panel--cyan border border-white/10 relative hover:!translate-y-0">
       {(
         [
           {
