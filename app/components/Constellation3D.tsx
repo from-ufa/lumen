@@ -1334,7 +1334,8 @@ function Scene({
   const ambienceRef = useRef<AmbienceController | null>(null);
   const [infoPeer, setInfoPeer] = useState<Peer | null>(null);
   const [hoveredPos, setHoveredPos] = useState<THREE.Vector3 | null>(null);
-  const [pointerOver, setPointerOver] = useState(false);
+  /** Soft hide so adjacent-node raycast flicker does not flash the card */
+  const hoverHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vizRef = useRef<HTMLDivElement | null>(null);
   const [isAutoOrbit, setIsAutoOrbit] = useState(true);
   const [orbitSpeed, setOrbitSpeed] = useState(1.0);
@@ -1347,11 +1348,14 @@ function Scene({
   const [searchClearToken, setSearchClearToken] = useState(0);
 
   const clearSearchFocus = useCallback(() => {
+    if (hoverHideTimerRef.current) {
+      clearTimeout(hoverHideTimerRef.current);
+      hoverHideTimerRef.current = null;
+    }
     setFocusAddress(null);
     controlsApiRef.current?.clearPeerFocus();
     setInfoPeer(null);
     setHoveredPos(null);
-    setPointerOver(false);
     onPeerHover?.(null);
     setSearchClearToken((n) => n + 1);
     // Do not force auto-orbit back on — respect user's OFF choice
@@ -1431,8 +1435,11 @@ function Scene({
             p.name === node.name
         ) || null;
       if (peer) {
+        if (hoverHideTimerRef.current) {
+          clearTimeout(hoverHideTimerRef.current);
+          hoverHideTimerRef.current = null;
+        }
         setInfoPeer(peer);
-        setPointerOver(true);
         onPeerHover?.(peer);
       }
       try {
@@ -1459,24 +1466,32 @@ function Scene({
 
   const handlePeerHover = useCallback<PeerHoverFn>(
     (peer, pos) => {
+      if (hoverHideTimerRef.current) {
+        clearTimeout(hoverHideTimerRef.current);
+        hoverHideTimerRef.current = null;
+      }
       if (peer) {
         setInfoPeer(peer);
         setHoveredPos(pos || null);
-        setPointerOver(true);
-      } else {
-        setPointerOver(false);
+        onPeerHover?.(peer);
+        return;
       }
-      onPeerHover?.(peer);
+      // Leave node → auto-dismiss (short delay only to bridge raycast gaps)
+      onPeerHover?.(null);
+      hoverHideTimerRef.current = setTimeout(() => {
+        setInfoPeer(null);
+        setHoveredPos(null);
+        hoverHideTimerRef.current = null;
+      }, 90);
     },
     [onPeerHover]
   );
 
-  const clearInfoPeer = useCallback(() => {
-    setInfoPeer(null);
-    setHoveredPos(null);
-    setPointerOver(false);
-    onPeerHover?.(null);
-  }, [onPeerHover]);
+  useEffect(() => {
+    return () => {
+      if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
+    };
+  }, []);
 
   const floatingStyle = useMemo(() => {
     if (!hoveredPos) {
@@ -1496,52 +1511,75 @@ function Scene({
   const infoShell = infoPeer ? shellFromPeer(infoPeer, Date.now()) : null;
   const shellLabel =
     infoShell === "live"
-      ? "CONNECTED / LIVE"
+      ? "LIVE"
       : infoShell === "seen"
-        ? "RECENT / SEEN"
+        ? "SEEN"
         : infoShell === "ghost"
-          ? "GHOST / STALE"
-          : "";
+          ? "GHOST"
+          : "PEER";
+
+  const infoLastSec =
+    infoPeer?.lastMessage != null
+      ? Math.max(
+          0,
+          Math.round((Date.now() - peerLastMs(infoPeer.lastMessage)) / 1000)
+        )
+      : null;
+
+  const shortAddr = (addr: string) => {
+    const a = addr.replace(/^\//, "");
+    if (a.length <= 22) return a;
+    return `${a.slice(0, 10)}…${a.slice(-8)}`;
+  };
 
   const infoCardBody = infoPeer ? (
-    <>
-      <div className="flex items-start justify-between gap-3 mb-1">
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span
+          className="h-1.5 w-1.5 rounded-full shrink-0"
+          style={{
+            background: infoShell ? SHELL_COLOR[infoShell] : "#C8D0E0",
+            boxShadow: infoShell
+              ? `0 0 8px ${SHELL_COLOR[infoShell]}`
+              : undefined,
+          }}
+        />
         <div
-          className="font-mono text-[10px] sm:text-xs tracking-[2px]"
-          style={{ color: infoShell ? SHELL_COLOR[infoShell] : "#C8D0E0" }}
+          className="font-mono text-[10px] tracking-[0.18em] uppercase"
+          style={{ color: infoShell ? SHELL_COLOR[infoShell] : "#A0A0B0" }}
         >
-          {shellLabel || "PEER"}
+          {shellLabel}
         </div>
-        <button
-          type="button"
-          onClick={clearInfoPeer}
-          className="pointer-events-auto text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white shrink-0 -mt-0.5"
+      </div>
+
+      {infoPeer.name ? (
+        <>
+          <div className="text-[13px] sm:text-sm font-medium text-white leading-snug truncate">
+            {infoPeer.name}
+          </div>
+          <div
+            className="font-mono text-[11px] text-[#8B8B9A] leading-snug truncate"
+            title={infoPeer.address}
+          >
+            {shortAddr(infoPeer.address)}
+          </div>
+        </>
+      ) : (
+        <div
+          className="font-mono text-[12px] sm:text-[13px] text-white leading-snug break-all"
+          title={infoPeer.address}
         >
-          CLOSE
-        </button>
-      </div>
-      <div className="font-mono text-white break-all text-[13px] leading-tight mb-1">
-        {infoPeer.name || infoPeer.address}
-      </div>
-      {infoPeer.name && (
-        <div className="font-mono text-[#A0A0B0] text-[11px] break-all mb-2">
-          {infoPeer.address}
+          {shortAddr(infoPeer.address)}
         </div>
       )}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-        {infoPeer.connectionType && <span>{infoPeer.connectionType}</span>}
-        {infoPeer.lastMessage ? (
-          <span>
-            last{" "}
-            {Math.max(
-              0,
-              Math.round((Date.now() - peerLastMs(infoPeer.lastMessage)) / 1000)
-            )}
-            s
-          </span>
+
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5 text-[10px] font-mono text-[#6B6B78] tracking-wide">
+        {infoPeer.connectionType ? (
+          <span className="text-[#A0A0B0]">{infoPeer.connectionType}</span>
         ) : null}
+        {infoLastSec != null ? <span>last {infoLastSec}s</span> : null}
       </div>
-    </>
+    </div>
   ) : null;
 
   const focusOnMyNode = () => {
@@ -1782,32 +1820,51 @@ function Scene({
         </div>
       )}
 
-      {/* Peer info card */}
+      {/* Peer hover card — auto-dismiss on leave; no close control */}
       <AnimatePresence>
         {infoPeer && !focusAddress && (
           <>
             <motion.div
               key="peer-info-mobile"
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-              className="md:hidden absolute z-40 left-2.5 right-2.5 bottom-[4.25rem] pointer-events-auto"
+              exit={{ opacity: 0, y: 6 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className="md:hidden absolute z-40 left-2.5 right-2.5 bottom-[4.25rem] pointer-events-none"
             >
-              <div className="glass rounded-2xl px-4 py-3.5 text-sm border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.5)] max-h-[min(36vh,240px)] overflow-y-auto">
+              <div
+                className="rounded-2xl px-4 py-3 text-sm border border-white/[0.09] max-h-[min(32vh,200px)] overflow-hidden"
+                style={{
+                  background:
+                    "linear-gradient(165deg, rgba(18,22,28,0.94) 0%, rgba(8,10,14,0.97) 100%)",
+                  boxShadow:
+                    "0 12px 36px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 28px rgba(0,229,255,0.06)",
+                  backdropFilter: "blur(16px)",
+                }}
+              >
                 {infoCardBody}
               </div>
             </motion.div>
 
             <motion.div
               key="peer-info-desktop"
-              initial={{ opacity: 0, y: 8, scale: 0.96 }}
+              initial={{ opacity: 0, y: 6, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.98 }}
+              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
               className="hidden md:block absolute z-30 pointer-events-none"
               style={floatingStyle}
             >
-              <div className="glass rounded-2xl px-5 py-4 text-sm w-[min(280px,32vw)] border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.4)] pointer-events-auto">
+              <div
+                className="rounded-2xl px-4 py-3 text-sm w-[min(248px,30vw)] border border-white/[0.09]"
+                style={{
+                  background:
+                    "linear-gradient(165deg, rgba(18,22,28,0.94) 0%, rgba(8,10,14,0.97) 100%)",
+                  boxShadow:
+                    "0 14px 40px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 32px rgba(0,229,255,0.07)",
+                  backdropFilter: "blur(16px)",
+                }}
+              >
                 {infoCardBody}
               </div>
             </motion.div>
