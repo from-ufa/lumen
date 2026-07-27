@@ -11,7 +11,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-import Constellation3D from './components/Constellation3D';
+import Constellation3D, {
+  preloadEarthTextures,
+} from './components/Constellation3D';
 import MetricsCards from './components/MetricsCards';
 import OracleOperatorsLive from './components/OracleOperatorsLive';
 import BlocksTimeline from './components/BlocksTimeline';
@@ -114,6 +116,11 @@ export default function LumenDashboard() {
       document.removeEventListener("touchstart", onDown);
     };
   }, [mobileMenuOpen]);
+
+  // Warm Earth textures as soon as dashboard mounts (before Orbit paint)
+  useEffect(() => {
+    preloadEarthTextures();
+  }, []);
 
   useEffect(() => {
     // First invite hidden (My Node mode) → still show bridge stats after 3s

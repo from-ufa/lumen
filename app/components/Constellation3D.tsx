@@ -363,58 +363,136 @@ const earthFragment = /* glsl */ `
   }
 `;
 
-/* ─── Texture loader (module-level cache) ───────────────────────────────── */
+/* ─── Texture loader (module-level cache + progressive core maps) ───────── */
+
+const EARTH_TEX_PATHS: Record<string, string> = {
+  day: "/planets/earth_blue_marble.jpg",
+  night: "/planets/earth_night_2k.jpg",
+  specular: "/planets/earth_specular_2048.jpg",
+  normal: "/planets/earth_normal_2048.jpg",
+  clouds: "/planets/earth_clouds_1024.png",
+};
 
 const texCache: Record<string, THREE.Texture> = {};
 let texPromise: Promise<Record<string, THREE.Texture>> | null = null;
+const mapsListeners = new Set<(m: Record<string, THREE.Texture>) => void>();
 
+function emptyFallbackTex(): THREE.Texture {
+  const data = new Uint8Array([12, 18, 28, 255]);
+  const t = new THREE.DataTexture(data, 1, 1);
+  t.needsUpdate = true;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function configureEarthTex(t: THREE.Texture) {
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.needsUpdate = true;
+  return t;
+}
+
+/** Build maps as soon as day+night exist (specular/clouds optional). */
+function assembleEarthMaps(): Record<string, THREE.Texture> | null {
+  if (!texCache.day || !texCache.night) return null;
+  return {
+    day: texCache.day,
+    night: texCache.night,
+    specular: texCache.specular || texCache.day,
+    normal: texCache.normal || texCache.day,
+    clouds: texCache.clouds,
+  };
+}
+
+function notifyMapsListeners() {
+  const m = assembleEarthMaps();
+  if (!m) return;
+  for (const fn of mapsListeners) {
+    try {
+      fn(m);
+    } catch {
+      /* */
+    }
+  }
+}
+
+function loadOneEarthTex(
+  key: string,
+  url: string,
+  loader: THREE.TextureLoader
+): Promise<void> {
+  if (texCache[key]) return Promise.resolve();
+  return new Promise((resolve) => {
+    loader.load(
+      url,
+      (t) => {
+        texCache[key] = configureEarthTex(t);
+        // Progressive: surface as soon as day+night land
+        if (key === "day" || key === "night" || key === "clouds") {
+          notifyMapsListeners();
+        }
+        resolve();
+      },
+      undefined,
+      () => {
+        texCache[key] = emptyFallbackTex();
+        notifyMapsListeners();
+        resolve();
+      }
+    );
+  });
+}
+
+/**
+ * Load all Earth textures (shared promise). Notifies listeners when
+ * day+night are ready so the globe can appear before clouds finish.
+ */
 function loadEarthTextures(): Promise<Record<string, THREE.Texture>> {
   if (texPromise) return texPromise;
   const loader = new THREE.TextureLoader();
-  const paths: Record<string, string> = {
-    day: "/planets/earth_blue_marble.jpg",
-    night: "/planets/earth_night_2k.jpg",
-    specular: "/planets/earth_specular_2048.jpg",
-    normal: "/planets/earth_normal_2048.jpg",
-    clouds: "/planets/earth_clouds_1024.png",
-  };
   texPromise = Promise.all(
-    Object.entries(paths).map(
-      ([k, url]) =>
-        new Promise<[string, THREE.Texture]>((resolve) => {
-          if (texCache[k]) {
-            resolve([k, texCache[k]]);
-            return;
-          }
-          loader.load(
-            url,
-            (t) => {
-              t.colorSpace = THREE.SRGBColorSpace;
-              t.anisotropy = 8;
-              t.wrapS = t.wrapT = THREE.RepeatWrapping;
-              texCache[k] = t;
-              resolve([k, t]);
-            },
-            undefined,
-            () => {
-              // Fallback: empty 1×1
-              const data = new Uint8Array([20, 40, 80, 255]);
-              const t = new THREE.DataTexture(data, 1, 1);
-              t.needsUpdate = true;
-              texCache[k] = t;
-              resolve([k, t]);
-            }
-          );
-        })
+    Object.entries(EARTH_TEX_PATHS).map(([k, url]) =>
+      loadOneEarthTex(k, url, loader)
     )
-  ).then((entries) => Object.fromEntries(entries));
+  ).then(() => {
+    const m = assembleEarthMaps();
+    if (m) return m;
+    // Should not happen — force fallbacks
+    for (const k of Object.keys(EARTH_TEX_PATHS)) {
+      if (!texCache[k]) texCache[k] = emptyFallbackTex();
+    }
+    return assembleEarthMaps()!;
+  });
   return texPromise;
+}
+
+/** Sync snapshot if core maps already in cache (warm remount). */
+function getCachedEarthMaps(): Record<string, THREE.Texture> | null {
+  return assembleEarthMaps();
+}
+
+/** Browser Image() warm-up + THREE TextureLoader (call early from dashboard). */
+export function preloadEarthTextures(): void {
+  if (typeof window === "undefined") return;
+  for (const url of Object.values(EARTH_TEX_PATHS)) {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = url;
+  }
+  void loadEarthTextures();
+}
+
+// Start as soon as this module is evaluated on the client
+if (typeof window !== "undefined") {
+  preloadEarthTextures();
 }
 
 /* ─── Earth ─────────────────────────────────────────────────────────────── */
 
-/** Soft reveal duration after day/night maps are ready (seconds). */
-const EARTH_FADE_SEC = 0.55;
+/** Cold first paint: longer soft ease. Warm remount (cache): quicker. */
+const EARTH_FADE_SEC_COLD = 0.85;
+const EARTH_FADE_SEC_WARM = 0.42;
 const CLOUDS_OPACITY = 0.38;
 
 function Earth({ spin }: { spin: boolean }) {
@@ -425,18 +503,40 @@ function Earth({ spin }: { spin: boolean }) {
   const cloudAngle = useRef(0);
   /** 0 → 1 ease after textures land */
   const fadeRef = useRef(0);
-  const [maps, setMaps] = useState<Record<string, THREE.Texture> | null>(null);
+  const fadeDurRef = useRef(EARTH_FADE_SEC_COLD);
+  const [maps, setMaps] = useState<Record<string, THREE.Texture> | null>(() =>
+    getCachedEarthMaps()
+  );
 
   useEffect(() => {
     let alive = true;
-    loadEarthTextures().then((m) => {
-      if (alive) {
-        fadeRef.current = 0;
-        setMaps(m);
-      }
-    });
+    const warm = !!getCachedEarthMaps();
+    fadeDurRef.current = warm ? EARTH_FADE_SEC_WARM : EARTH_FADE_SEC_COLD;
+
+    const apply = (m: Record<string, THREE.Texture>) => {
+      if (!alive) return;
+      setMaps((prev) => {
+        // First time we get maps: reset fade. Upgrades (clouds etc.) keep fade.
+        if (!prev) {
+          fadeRef.current = 0;
+          fadeDurRef.current = getCachedEarthMaps()
+            ? EARTH_FADE_SEC_WARM
+            : EARTH_FADE_SEC_COLD;
+        }
+        return m;
+      });
+    };
+
+    // Immediate if already cached
+    const cached = getCachedEarthMaps();
+    if (cached) apply(cached);
+
+    mapsListeners.add(apply);
+    void loadEarthTextures().then((m) => apply(m));
+
     return () => {
       alive = false;
+      mapsListeners.delete(apply);
     };
   }, []);
 
@@ -457,7 +557,13 @@ function Earth({ spin }: { spin: boolean }) {
         uOpacity: { value: 0 },
       },
     });
-  }, [maps]);
+  }, [maps?.day, maps?.night]); // recreate only when core maps change
+
+  // Hot-swap specular when it arrives after core (same material)
+  useEffect(() => {
+    if (!earthMat || !maps?.specular) return;
+    earthMat.uniforms.uSpecular.value = maps.specular;
+  }, [earthMat, maps?.specular]);
 
   useEffect(
     () => () => {
@@ -479,18 +585,19 @@ function Earth({ spin }: { spin: boolean }) {
       // Key light always from viewing side (camera → Earth)
       earthMat.uniforms.uLightDir.value.copy(state.camera.position).normalize();
 
-      // Soft fade-in when maps first become available (no hard pop-in)
+      // Soft fade-in — ease-out cubic feels smoother than linear/smoothstep alone
       if (fadeRef.current < 1) {
-        fadeRef.current = Math.min(1, fadeRef.current + dt / EARTH_FADE_SEC);
-        // smoothstep ease
+        const dur = fadeDurRef.current || EARTH_FADE_SEC_COLD;
+        fadeRef.current = Math.min(1, fadeRef.current + dt / dur);
         const t = fadeRef.current;
-        const eased = t * t * (3 - 2 * t);
+        // smoothstep * ease-out
+        const sm = t * t * (3 - 2 * t);
+        const eased = 1 - Math.pow(1 - sm, 1.35);
         earthMat.uniforms.uOpacity.value = eased;
         const cloudMat = cloudsRef.current?.material as
           | THREE.MeshStandardMaterial
           | undefined;
         if (cloudMat) cloudMat.opacity = CLOUDS_OPACITY * eased;
-        // Fully opaque: drop transparency path for cleaner depth
         if (fadeRef.current >= 1) {
           earthMat.uniforms.uOpacity.value = 1;
           earthMat.transparent = false;
@@ -506,14 +613,14 @@ function Earth({ spin }: { spin: boolean }) {
       <pointLight position={[-2.5, 0.4, -1.5]} intensity={0.18} color="#1a3a6a" distance={10} />
 
       {/*
-        No solid placeholder while textures load. When maps arrive, Earth +
-        clouds fade in (~0.55s smoothstep) instead of popping opaque.
+        Preload + progressive day/night → soft fade (warm remount is shorter).
+        No solid blue placeholder while waiting.
       */}
       {earthMat ? (
         <mesh ref={earthRef} geometry={GEO_EARTH} material={earthMat} />
       ) : null}
 
-      {/* Clouds — tight to surface, no separate halo shell */}
+      {/* Clouds — arrive later; fade with globe opacity */}
       {maps?.clouds && (
         <mesh ref={cloudsRef} geometry={GEO_CLOUDS} scale={1.012}>
           <meshStandardMaterial
