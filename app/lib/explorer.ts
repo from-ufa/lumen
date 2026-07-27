@@ -7,6 +7,15 @@ export function sigmaTxUrl(txId: string): string {
   return `${SIGMASPACE}/en/transaction/${txId}`;
 }
 
+/** Operator / wallet address page on SigmaSpace. */
+export function sigmaAddressUrl(address: string): string {
+  return `${SIGMASPACE}/en/address/${encodeURIComponent(address)}`;
+}
+
+export function openAddressOnSigmaSpace(address: string): void {
+  window.open(sigmaAddressUrl(address), "_blank", "noopener,noreferrer");
+}
+
 /** Block page needs header / block id (hex), not height. */
 export function sigmaBlockUrl(blockId: string): string {
   return `${SIGMASPACE}/en/block/${blockId}`;

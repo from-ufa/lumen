@@ -1,21 +1,41 @@
 "use client";
 
 /**
- * Dashboard panel — live oracle operator count.
- * Soft glass table, pool glows (teal USD / gold XAU), soft live pulse.
+ * Dashboard panel — live oracle operator count + full address grid.
+ * Soft glass table, pool glows, SigmaSpace open confirm.
  */
 
-import { useMemo } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import { ArrowUpRight, Radio } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { ArrowUpRight, ExternalLink, Radio, X } from "lucide-react";
 import { SoftLink } from "./soft-nav";
-import type { OracleFeedData, OraclesApiResponse } from "../oracles/components/types";
+import { openAddressOnSigmaSpace } from "../lib/explorer";
+import type {
+  FeedStatus,
+  OracleFeedData,
+  OraclesApiResponse,
+} from "../oracles/components/types";
 
 type Props = {
   data: OraclesApiResponse | undefined;
   isLoading?: boolean;
   isError?: boolean;
   isFetching?: boolean;
+};
+
+type OperatorRow = {
+  address: string;
+  status: FeedStatus;
+  pools: string[];
+  accent: string;
+  isMine?: boolean;
 };
 
 function shortAddr(addr: string) {
@@ -51,6 +71,12 @@ function statusMeta(status: string) {
   return { label: "OFF", color: "#F87171", glow: "rgba(248, 113, 113, 0.35)" };
 }
 
+function statusRank(s: FeedStatus): number {
+  if (s === "live") return 3;
+  if (s === "stale") return 2;
+  return 1;
+}
+
 function liveCount(feed: OracleFeedData): number {
   if (feed.activeOracles != null) return feed.activeOracles;
   return (feed.nodes || []).filter((n) => n.status === "live").length;
@@ -61,6 +87,165 @@ function totalCount(feed: OracleFeedData): number {
   return feed.nodes?.length || 0;
 }
 
+function SigmaConfirmModal({
+  address,
+  pools,
+  status,
+  onCancel,
+  onConfirm,
+}: {
+  address: string;
+  pools: string[];
+  status: FeedStatus;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const reduceMotion = useReducedMotion();
+  const st = statusMeta(status);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+      if (e.key === "Enter") onConfirm();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel, onConfirm]);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  return createPortal(
+    <AnimatePresence>
+      <motion.div
+        key="sigma-backdrop"
+        className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6"
+        initial={reduceMotion ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+      >
+        <button
+          type="button"
+          aria-label="Dismiss"
+          className="absolute inset-0 bg-black/70 backdrop-blur-[6px]"
+          onClick={onCancel}
+        />
+
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="sigma-confirm-title"
+          initial={reduceMotion ? false : { opacity: 0, y: 10, scale: 0.97 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 6, scale: 0.98 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          className="relative w-full max-w-[22rem] rounded-2xl border border-white/[0.1] overflow-hidden"
+          style={{
+            background:
+              "linear-gradient(165deg, rgba(22,26,34,0.98) 0%, rgba(10,12,16,0.99) 100%)",
+            boxShadow:
+              "0 24px 64px rgba(0,0,0,0.65), 0 0 0 1px rgba(255,255,255,0.04) inset, 0 0 48px rgba(45,212,191,0.08)",
+          }}
+        >
+          <div
+            className="pointer-events-none absolute -top-16 -right-10 h-40 w-40 rounded-full blur-3xl opacity-50"
+            style={{
+              background:
+                "radial-gradient(circle, rgba(45,212,191,0.22) 0%, transparent 70%)",
+            }}
+          />
+
+          <div className="relative p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="lumen-glow-icon h-9 w-9 shrink-0">
+                  <ExternalLink className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <div
+                    id="sigma-confirm-title"
+                    className="text-[13px] sm:text-sm font-medium text-white tracking-tight"
+                  >
+                    Open on SigmaSpace?
+                  </div>
+                  <div className="text-[11px] text-[#6B6B78] mt-0.5">
+                    Leaves lumen · opens a new tab
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="shrink-0 h-8 w-8 inline-flex items-center justify-center rounded-xl border border-white/[0.08] text-[#7A7A88] hover:text-white hover:bg-white/[0.04] transition-colors"
+                aria-label="Cancel"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-white/[0.07] bg-black/35 px-3.5 py-3 mb-5">
+              <div className="flex items-center gap-2 mb-2">
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{
+                    background: st.color,
+                    boxShadow: `0 0 8px ${st.glow}`,
+                  }}
+                />
+                <span
+                  className="text-[9px] font-mono tracking-[0.16em] uppercase"
+                  style={{ color: st.color }}
+                >
+                  {st.label}
+                </span>
+                {pools.length > 0 && (
+                  <span className="text-[9px] font-mono text-[#5C5C6A] tracking-wide truncate">
+                    · {pools.join(" · ")}
+                  </span>
+                )}
+              </div>
+              <div
+                className="font-mono text-[12px] sm:text-[13px] text-[#E8E8F0] break-all leading-relaxed"
+                title={address}
+              >
+                {address}
+              </div>
+            </div>
+
+            <div className="flex gap-2.5">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex-1 h-11 rounded-xl border border-white/[0.1] bg-white/[0.03] text-[11px] font-mono tracking-[0.14em] uppercase text-[#A0A0B0] hover:text-white hover:border-white/20 transition-colors active:scale-[0.98]"
+              >
+                Stay
+              </button>
+              <button
+                type="button"
+                onClick={onConfirm}
+                className="flex-1 h-11 rounded-xl border border-[#2DD4BF]/35 bg-[#2DD4BF]/[0.12] text-[11px] font-mono tracking-[0.14em] uppercase text-[#A7F3E8] hover:bg-[#2DD4BF]/[0.18] hover:border-[#2DD4BF]/50 transition-all active:scale-[0.98] shadow-[0_0_20px_rgba(45,212,191,0.15)]"
+              >
+                Open
+              </button>
+            </div>
+
+            <p className="mt-3 text-center text-[10px] font-mono text-[#4A4A56] tracking-wide">
+              sigmaspace.io
+            </p>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>,
+    document.body
+  );
+}
+
 export default function OracleOperatorsLive({
   data,
   isLoading,
@@ -69,50 +254,70 @@ export default function OracleOperatorsLive({
 }: Props) {
   const reduceMotion = useReducedMotion();
   const feeds = data?.feeds ?? [];
+  const [confirmOp, setConfirmOp] = useState<OperatorRow | null>(null);
 
   const stats = useMemo(() => {
-    const liveAddrs = new Set<string>();
-    const allAddrs = new Set<string>();
+    const byAddr = new Map<string, OperatorRow>();
     let activeSum = 0;
     let totalSum = 0;
 
     for (const feed of feeds) {
       activeSum += liveCount(feed);
       totalSum += totalCount(feed);
-      for (const n of feed.nodes || []) {
-        allAddrs.add(n.address);
-        if (n.status === "live") liveAddrs.add(n.address);
-      }
-    }
-
-    // Prefer unique addresses when nodes are present; else sum of pool actives
-    const uniqueLive =
-      liveAddrs.size > 0 ? liveAddrs.size : activeSum;
-    const uniqueTotal =
-      allAddrs.size > 0 ? allAddrs.size : totalSum || uniqueLive;
-
-    // Showcase a few live operators (newest / first from API)
-    const showcase: { address: string; pool: string; accent: string }[] = [];
-    const seen = new Set<string>();
-    for (const feed of feeds) {
       const th = poolTheme(feed);
       for (const n of feed.nodes || []) {
-        if (n.status !== "live" || seen.has(n.address)) continue;
-        seen.add(n.address);
-        showcase.push({
-          address: n.address,
-          pool: feed.pair,
-          accent: th.accent,
-        });
-        if (showcase.length >= 6) break;
+        const prev = byAddr.get(n.address);
+        if (!prev) {
+          byAddr.set(n.address, {
+            address: n.address,
+            status: n.status,
+            pools: [feed.pair],
+            accent: th.accent,
+            isMine: n.isMine,
+          });
+          continue;
+        }
+        // Keep best status; merge pools
+        if (statusRank(n.status) > statusRank(prev.status)) {
+          prev.status = n.status;
+          prev.accent = th.accent;
+        }
+        if (!prev.pools.includes(feed.pair)) prev.pools.push(feed.pair);
+        if (n.isMine) prev.isMine = true;
       }
-      if (showcase.length >= 6) break;
     }
 
-    return { uniqueLive, uniqueTotal, activeSum, showcase };
+    const operators = Array.from(byAddr.values()).sort((a, b) => {
+      const dr = statusRank(b.status) - statusRank(a.status);
+      if (dr !== 0) return dr;
+      if (a.isMine && !b.isMine) return -1;
+      if (!a.isMine && b.isMine) return 1;
+      return a.address.localeCompare(b.address);
+    });
+
+    const uniqueLive = operators.filter((o) => o.status === "live").length;
+    const uniqueTotal = operators.length || totalSum;
+
+    return {
+      uniqueLive: uniqueLive || activeSum,
+      uniqueTotal,
+      operators,
+    };
   }, [feeds]);
 
   const empty = !isLoading && (isError || feeds.length === 0);
+
+  const requestOpen = useCallback((op: OperatorRow) => {
+    setConfirmOp(op);
+  }, []);
+
+  const cancelOpen = useCallback(() => setConfirmOp(null), []);
+
+  const confirmOpen = useCallback(() => {
+    if (!confirmOp) return;
+    openAddressOnSigmaSpace(confirmOp.address);
+    setConfirmOp(null);
+  }, [confirmOp]);
 
   return (
     <section
@@ -140,9 +345,7 @@ export default function OracleOperatorsLive({
                     style={{
                       background: "#34D399",
                       boxShadow: "0 0 8px rgba(52, 211, 153, 0.9)",
-                      animation: reduceMotion
-                        ? "none"
-                        : undefined,
+                      animation: reduceMotion ? "none" : undefined,
                     }}
                   />
                   <span className="text-[9px] font-mono tracking-[0.16em] text-emerald-300/90 uppercase">
@@ -276,7 +479,9 @@ export default function OracleOperatorsLive({
                           </span>
                           {need != null && (
                             <span className="text-[9px] font-mono text-[#5C5C6A]">
-                              {online >= need ? "quorum ok" : `${need - online} short`}
+                              {online >= need
+                                ? "quorum ok"
+                                : `${need - online} short`}
                             </span>
                           )}
                         </div>
@@ -325,38 +530,72 @@ export default function OracleOperatorsLive({
           )}
         </div>
 
-        {/* Live operator chips */}
-        {stats.showcase.length > 0 && (
+        {/* Full operator address grid — 12 per row on desktop */}
+        {stats.operators.length > 0 && (
           <div className="mt-4 sm:mt-5">
-            <div className="text-[9px] font-mono tracking-[0.16em] text-[#5C5C6A] uppercase mb-2">
-              Live operators
+            <div className="flex items-center justify-between gap-2 mb-2.5">
+              <div className="text-[9px] font-mono tracking-[0.16em] text-[#5C5C6A] uppercase">
+                All operators · {stats.operators.length}
+              </div>
+              <div className="text-[9px] font-mono tracking-[0.12em] text-[#4A4A56] uppercase hidden sm:block">
+                Tap → SigmaSpace
+              </div>
             </div>
-            <div className="flex flex-wrap gap-1.5 sm:gap-2">
-              {stats.showcase.map((op) => (
-                <span
-                  key={op.address}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-black/30 px-2 py-1 font-mono text-[10px] sm:text-[11px] text-[#A0A0B0]"
-                  title={`${op.address} · ${op.pool}`}
-                >
-                  <span
-                    className="h-1.5 w-1.5 rounded-full shrink-0"
-                    style={{
-                      background: op.accent,
-                      boxShadow: `0 0 8px ${op.accent}`,
-                    }}
-                  />
-                  {shortAddr(op.address)}
-                </span>
-              ))}
-              {stats.uniqueLive > stats.showcase.length && (
-                <span className="inline-flex items-center rounded-lg border border-white/[0.05] px-2 py-1 font-mono text-[10px] text-[#5C5C6A]">
-                  +{stats.uniqueLive - stats.showcase.length} more
-                </span>
-              )}
+
+            <div
+              className="lumen-ops-addr-grid"
+              role="list"
+              aria-label="Oracle operator addresses"
+            >
+              {stats.operators.map((op) => {
+                const st = statusMeta(op.status);
+                return (
+                  <button
+                    key={op.address}
+                    type="button"
+                    role="listitem"
+                    onClick={() => requestOpen(op)}
+                    title={`${op.address}\n${op.pools.join(" · ")} · ${st.label}`}
+                    className="lumen-ops-addr-cell group"
+                    style={
+                      {
+                        "--op-accent": op.accent,
+                        "--op-status": st.color,
+                      } as CSSProperties
+                    }
+                  >
+                    <span
+                      className="h-1 w-1 rounded-full shrink-0"
+                      style={{
+                        background: st.color,
+                        boxShadow: `0 0 6px ${st.glow}`,
+                      }}
+                    />
+                    <span className="font-mono text-[9px] sm:text-[10px] tabular-nums tracking-tight text-[#A0A0B0] group-hover:text-[#E8E8F0] transition-colors truncate">
+                      {shortAddr(op.address)}
+                    </span>
+                    {op.isMine && (
+                      <span className="text-[8px] font-mono tracking-wider text-[#FF7A3D] shrink-0">
+                        ME
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
       </div>
+
+      {confirmOp && (
+        <SigmaConfirmModal
+          address={confirmOp.address}
+          pools={confirmOp.pools}
+          status={confirmOp.status}
+          onCancel={cancelOpen}
+          onConfirm={confirmOpen}
+        />
+      )}
     </section>
   );
 }

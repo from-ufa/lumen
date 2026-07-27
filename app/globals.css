@@ -302,6 +302,76 @@ body {
     border-radius: 1rem;
   }
 }
+/* Oracle operators — even address grid (12 per row desktop) */
+.lumen-ops-addr-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+@media (min-width: 480px) {
+  .lumen-ops-addr-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (min-width: 640px) {
+  .lumen-ops-addr-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.4rem;
+  }
+}
+@media (min-width: 1024px) {
+  .lumen-ops-addr-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 0.35rem;
+  }
+}
+.lumen-ops-addr-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  min-width: 0;
+  min-height: 1.85rem;
+  padding: 0.3rem 0.25rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.28);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  cursor: pointer;
+  transition:
+    border-color 0.18s cubic-bezier(0.23, 1, 0.32, 1),
+    background-color 0.18s cubic-bezier(0.23, 1, 0.32, 1),
+    box-shadow 0.18s cubic-bezier(0.23, 1, 0.32, 1),
+    transform 0.18s cubic-bezier(0.23, 1, 0.32, 1);
+}
+.lumen-ops-addr-cell:hover {
+  border-color: color-mix(
+    in srgb,
+    var(--op-accent, #2dd4bf) 40%,
+    rgba(255, 255, 255, 0.1)
+  );
+  background: color-mix(
+    in srgb,
+    var(--op-accent, #2dd4bf) 10%,
+    rgba(0, 0, 0, 0.35)
+  );
+  box-shadow:
+    0 0 16px color-mix(in srgb, var(--op-accent, #2dd4bf) 22%, transparent),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  transform: translateY(-1px);
+}
+.lumen-ops-addr-cell:active {
+  transform: translateY(0) scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .lumen-ops-addr-cell {
+    transition: none;
+  }
+  .lumen-ops-addr-cell:hover {
+    transform: none;
+  }
+}
+
 /* Soft scroll inside glowing panels */
 .lumen-glow-scroll {
   scrollbar-width: thin;
