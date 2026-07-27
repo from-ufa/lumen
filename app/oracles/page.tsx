@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -17,7 +16,9 @@ import ConnectionSettings from "../components/ConnectionSettings";
 import ConnectOracleInvite, {
   wakeOracleInvite,
 } from "../components/ConnectOracleInvite";
+import LumenPageBody from "../components/LumenPageBody";
 import LumenPageHero from "../components/LumenPageHero";
+import { SoftLink } from "../components/soft-nav";
 import {
   HeaderActions,
   HeaderIconButton,
@@ -162,7 +163,7 @@ export default function OraclesPage() {
         <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-4">
           {/* Mobile */}
           <div className="sm:hidden flex items-center justify-between gap-2 min-w-0">
-            <Link href="/" className="flex items-center gap-2 min-w-0 flex-1">
+            <SoftLink href="/" className="flex items-center gap-2 min-w-0 flex-1">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF7A3D] via-[#FF7A3D] to-[#00E5FF] flex items-center justify-center flex-shrink-0">
                 <Zap className="w-4 h-4 text-black" />
               </div>
@@ -174,7 +175,7 @@ export default function OraclesPage() {
                   Oracles
                 </div>
               </div>
-            </Link>
+            </SoftLink>
 
             <div
               className="flex items-center gap-1.5 shrink-0"
@@ -203,7 +204,7 @@ export default function OraclesPage() {
                       transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                       className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[12rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
                     >
-                      <Link
+                      <SoftLink
                         href="/"
                         role="menuitem"
                         onClick={() => {
@@ -214,7 +215,7 @@ export default function OraclesPage() {
                       >
                         <Home className="w-3.5 h-3.5 text-[#A0A0B0] shrink-0" />
                         DASHBOARD
-                      </Link>
+                      </SoftLink>
                       <div className="h-px bg-white/[0.06]" />
                       <button
                         type="button"
@@ -253,7 +254,7 @@ export default function OraclesPage() {
           {/* Desktop — mirror dashboard header actions */}
           <div className="hidden sm:flex sm:items-center sm:justify-between sm:gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              <Link
+              <SoftLink
                 href="/"
                 className="flex items-center gap-3 min-w-0 group"
                 onClick={() => wakeOracleInvite()}
@@ -269,7 +270,7 @@ export default function OraclesPage() {
                     Ergo Node Dashboard
                   </div>
                 </div>
-              </Link>
+              </SoftLink>
             </div>
 
             <HeaderActions>
@@ -342,8 +343,8 @@ export default function OraclesPage() {
         />
       </div>
 
-      {/* Body only — VT dissolve; sticky header stays solid */}
-      <div className="lumen-page-body flex-1">
+      {/* Body only — VT + enter motion; sticky header solid */}
+      <LumenPageBody>
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
         <LumenPageHero
           kicker="ERGO ORACLE POOLS"
@@ -431,7 +432,7 @@ export default function OraclesPage() {
           />
         )}
       </div>
-      </div>
+      </LumenPageBody>
 
       {/* Avoid unused lint for settings modal open state when only onOpenChange used */}
       {settingsModalOpen ? null : null}

@@ -9,7 +9,6 @@ import {
   ExternalLink,
   MoreHorizontal, Settings,
 } from 'lucide-react';
-import Link from 'next/link';
 import { toast } from 'sonner';
 
 import Constellation3D from './components/Constellation3D';
@@ -21,8 +20,10 @@ import ConnectNodeInvite, {
   wakeConnectInvite,
 } from './components/ConnectNodeInvite';
 import CrystalIcon from './components/CrystalIcon';
+import LumenPageBody from './components/LumenPageBody';
 import LumenPageHero from './components/LumenPageHero';
 import LumenWordmark from './components/LumenWordmark';
+import { SoftLink } from './components/soft-nav';
 import VizCrossfade from './components/VizCrossfade';
 import VizModeToggle, { softSetViewMode } from './components/VizModeToggle';
 import {
@@ -491,7 +492,7 @@ export default function LumenDashboard() {
                       transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                       className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[11.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
                     >
-                      <Link
+                      <SoftLink
                         href="/oracles"
                         role="menuitem"
                         onClick={() => {
@@ -508,7 +509,7 @@ export default function LumenDashboard() {
                       >
                         <CrystalIcon className="w-3.5 h-3.5 text-[#E8C547] shrink-0" />
                         ORACLES
-                      </Link>
+                      </SoftLink>
                       <div className="h-px bg-white/[0.06]" />
                       <button
                         type="button"
@@ -633,8 +634,8 @@ export default function LumenDashboard() {
         </div>
       </div>
 
-      {/* Body only — VT dissolve; header excluded via .vt-lumen-header freeze */}
-      <div className="lumen-page-body flex-1">
+      {/* Body only — VT + enter motion; header frozen */}
+      <LumenPageBody>
       <div className="max-w-[1480px] mx-auto px-3 sm:px-6 lg:px-8 pt-5 sm:pt-8 pb-12 sm:pb-16">
         <LumenPageHero
           kicker="ERGO NODE VISUALIZER"
@@ -839,7 +840,7 @@ export default function LumenDashboard() {
           </div>
         </div>
       </div>
-      </div>
+      </LumenPageBody>
 
       {/* === BLOCK DETAIL MODAL === */}
       {selectedBlock && (

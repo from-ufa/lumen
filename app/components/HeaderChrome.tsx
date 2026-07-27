@@ -5,8 +5,8 @@
  * Node dashboard and Oracles (one product language).
  */
 
-import Link from "next/link";
 import type { ReactNode, ButtonHTMLAttributes } from "react";
+import { SoftLink } from "./soft-nav";
 
 export type HeaderPillTone =
   | "live"
@@ -99,7 +99,7 @@ export function HeaderPill({
 
   if (as === "link" && href) {
     return (
-      <Link
+      <SoftLink
         href={href}
         className={base}
         title={title}
@@ -108,7 +108,7 @@ export function HeaderPill({
         prefetch
       >
         {inner}
-      </Link>
+      </SoftLink>
     );
   }
   if (as === "button") {
