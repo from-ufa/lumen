@@ -267,6 +267,39 @@ class BridgeRegistry {
       storePath: this.persistEnabled ? this.storePath : null,
     };
   }
+
+  /**
+   * Public aggregate counts — no tokens, IPs, or labels.
+   * Used by dashboard / oracle invites.
+   */
+  publicStats() {
+    let connections = 0;
+    let withOracle = 0;
+    let withNode = 0;
+    /** @type {Record<string, number>} */
+    const oracles = {};
+
+    for (const s of this.connections.values()) {
+      if (s.ws.readyState !== 1 /* OPEN */) continue;
+      connections += 1;
+      if (s.node) withNode += 1;
+      const list = Array.isArray(s.oracles) ? s.oracles : [];
+      if (list.length > 0) withOracle += 1;
+      for (const id of list) {
+        if (typeof id !== "string" || !id) continue;
+        oracles[id] = (oracles[id] || 0) + 1;
+      }
+    }
+
+    return {
+      generatedAt: Date.now(),
+      tokensIssued: this.tokens.size,
+      connections,
+      withNode,
+      withOracle,
+      oracles,
+    };
+  }
 }
 
 module.exports = { BridgeRegistry, isBridgeTokenFormat, tokenPreview };

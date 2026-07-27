@@ -5,7 +5,7 @@
  * Used for My Node and My Oracle invites.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 const TYPE_MS = 38;
@@ -24,6 +24,10 @@ export default function TypewriterInvite({
   wakeEvent,
   delayMs = 5000,
   ariaLabel = "Open settings",
+  /** Fires once when the first type-out finishes (not on loop restarts). */
+  onFirstComplete,
+  /** When false, only type once (no 15s loop). */
+  loop = true,
 }: {
   enabled: boolean;
   onOpenSettings: () => void;
@@ -31,15 +35,21 @@ export default function TypewriterInvite({
   wakeEvent: string;
   delayMs?: number;
   ariaLabel?: string;
+  onFirstComplete?: () => void;
+  loop?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [cycle, setCycle] = useState(0);
+  const firstCompleteSent = useRef(false);
+  const onFirstCompleteRef = useRef(onFirstComplete);
+  onFirstCompleteRef.current = onFirstComplete;
 
   useEffect(() => {
     if (!enabled) {
       setOpen(false);
       setTyped("");
+      firstCompleteSent.current = false;
       return;
     }
     const t = window.setTimeout(() => setOpen(true), delayMs);
@@ -58,6 +68,12 @@ export default function TypewriterInvite({
 
   useEffect(() => {
     if (!open || !enabled) return;
+
+    // After first type-out without loop: refresh text quietly (live stats)
+    if (firstCompleteSent.current && !loop) {
+      setTyped(fullText);
+      return;
+    }
 
     let cancelled = false;
     let typeTimer = 0;
@@ -83,9 +99,19 @@ export default function TypewriterInvite({
             setTyped(fullText);
             window.clearInterval(typeTimer);
             typeTimer = 0;
-            pauseTimer = window.setTimeout(() => {
-              if (!cancelled) runCycle();
-            }, LOOP_PAUSE_MS);
+            if (!firstCompleteSent.current) {
+              firstCompleteSent.current = true;
+              try {
+                onFirstCompleteRef.current?.();
+              } catch {
+                /* */
+              }
+            }
+            if (loop) {
+              pauseTimer = window.setTimeout(() => {
+                if (!cancelled) runCycle();
+              }, LOOP_PAUSE_MS);
+            }
             return;
           }
           setTyped(fullText.slice(0, i));
@@ -98,7 +124,7 @@ export default function TypewriterInvite({
       cancelled = true;
       clearTimers();
     };
-  }, [open, enabled, cycle, fullText]);
+  }, [open, enabled, cycle, fullText, loop]);
 
   const close = useCallback((e?: React.MouseEvent) => {
     e?.stopPropagation();

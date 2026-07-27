@@ -129,6 +129,22 @@ async function handleHttp(req, res) {
     return;
   }
 
+  // Public aggregate stats (no tokens / IPs)
+  // GET /stats  |  GET /api/stats  |  GET /api/bridge/stats
+  if (
+    req.method === "GET" &&
+    (path === "/stats" ||
+      path === "/api/stats" ||
+      path === "/api/bridge/stats")
+  ) {
+    sendJson(res, 200, {
+      service: "lumen-bridge-server",
+      version: VERSION,
+      ...registry.publicStats(),
+    });
+    return;
+  }
+
   // Create token
   // POST /tokens  |  POST /api/tokens
   if (req.method === "POST" && (path === "/tokens" || path === "/api/tokens")) {

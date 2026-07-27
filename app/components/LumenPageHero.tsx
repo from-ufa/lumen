@@ -40,7 +40,8 @@ export default function LumenPageHero({
     <div className="relative mb-6 sm:mb-8 min-w-0">
       {invite ? (
         <div className="absolute top-0 right-0 z-20 w-[min(100%,22rem)] max-w-[22rem] pointer-events-none">
-          <div className="pointer-events-auto w-full flex justify-end">
+          {/* Column stack: primary invite + delayed bridge-ops typewriter */}
+          <div className="pointer-events-auto w-full flex flex-col items-end gap-2">
             {invite}
           </div>
         </div>

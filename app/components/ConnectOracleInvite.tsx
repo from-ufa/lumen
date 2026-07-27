@@ -19,10 +19,13 @@ export default function ConnectOracleInvite({
   enabled,
   onOpenSettings,
   delayMs = 5000,
+  onFirstComplete,
 }: {
   enabled: boolean;
   onOpenSettings: () => void;
   delayMs?: number;
+  /** After first type-out finishes (for stacking a second invite). */
+  onFirstComplete?: () => void;
 }) {
   return (
     <TypewriterInvite
@@ -31,6 +34,7 @@ export default function ConnectOracleInvite({
       fullText={FULL_TEXT}
       wakeEvent={WAKE_EVENT}
       delayMs={delayMs}
+      onFirstComplete={onFirstComplete}
       ariaLabel="Open settings to connect your Ergo oracle"
     />
   );

@@ -16,6 +16,7 @@ import ConnectionSettings from "../components/ConnectionSettings";
 import ConnectOracleInvite, {
   wakeOracleInvite,
 } from "../components/ConnectOracleInvite";
+import BridgeOperatorsInvite from "../components/BridgeOperatorsInvite";
 import LumenPageBody from "../components/LumenPageBody";
 import LumenPageHero from "../components/LumenPageHero";
 import { SoftLink } from "../components/soft-nav";
@@ -155,6 +156,20 @@ export default function OraclesPage() {
   const bridgeOnline = !!bridgeStatus?.connected;
   /** Hide invite when My Oracle is already connected via bridge */
   const oracleInviteEnabled = !(viewMode === "my" && bridgeOnline);
+  /** Second typewriter (bridge ops count) — 3s after first finishes typing */
+  const [bridgeInviteReady, setBridgeInviteReady] = useState(false);
+
+  useEffect(() => {
+    // If first invite is hidden, still show bridge stats after a short wait
+    if (oracleInviteEnabled) return;
+    setBridgeInviteReady(false);
+    const t = window.setTimeout(() => setBridgeInviteReady(true), 3000);
+    return () => window.clearTimeout(t);
+  }, [oracleInviteEnabled]);
+
+  const onOracleInviteTyped = useCallback(() => {
+    window.setTimeout(() => setBridgeInviteReady(true), 3000);
+  }, []);
 
   return (
     <div className="min-h-screen min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
@@ -360,13 +375,21 @@ export default function OraclesPage() {
               : "Live USD and XAU from on-chain pool boxes."
           }
           invite={
-            oracleInviteEnabled ? (
-              <ConnectOracleInvite
-                enabled
-                delayMs={5000}
+            <div className="flex w-full flex-col items-end gap-2">
+              {oracleInviteEnabled ? (
+                <ConnectOracleInvite
+                  enabled
+                  delayMs={5000}
+                  onFirstComplete={onOracleInviteTyped}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+                />
+              ) : null}
+              <BridgeOperatorsInvite
+                enabled={bridgeInviteReady}
+                delayMs={0}
                 onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
               />
-            ) : null
+            </div>
           }
           badges={
             <>
