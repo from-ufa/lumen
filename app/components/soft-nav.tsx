@@ -3,9 +3,9 @@
 /**
  * Soft navigation for App Router.
  *
- * Critical: startViewTransition's callback must not finish until the new route
- * has committed to the DOM. router.push is async — we await pathname change
- * (+ 2 rAFs) so old/new snapshots differ and shared morph actually runs.
+ * IMPORTANT: never await pathname inside startViewTransition — that deadlocks
+ * with Next's async router (page freezes ~4–5s). Fire router.push inside VT
+ * and return immediately; LumenPageBody handles enter motion reliably.
  */
 
 import Link, { type LinkProps } from "next/link";
@@ -17,7 +17,6 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { useTransition } from "react";
 
 function prefersReducedMotion() {
   if (typeof window === "undefined") return true;
@@ -36,46 +35,13 @@ function normalizePath(href: string): string {
   return path.replace(/\/$/, "") || "/";
 }
 
-/** Resolve when location.pathname matches target (Next client nav finished paint). */
-function waitForPathname(href: string, timeoutMs = 4000): Promise<void> {
-  const target = normalizePath(href);
-  return new Promise((resolve) => {
-    const now = () =>
-      (typeof window !== "undefined"
-        ? window.location.pathname
-        : ""
-      ).replace(/\/$/, "") || "/";
-
-    if (now() === target) {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      return;
-    }
-
-    const t0 = Date.now();
-    const tick = () => {
-      if (now() === target || Date.now() - t0 > timeoutMs) {
-        // Two frames: let React commit + browser paint new VT names
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => resolve())
-        );
-        return;
-      }
-      requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  });
-}
-
-/** Navigate with View Transition when browser supports it */
+/** Navigate ASAP; optional View Transition snapshot without blocking */
 export function softNavigate(
   router: { push: (href: string) => void },
-  href: string,
-  startReactTransition: (cb: () => void) => void
+  href: string
 ) {
   const go = () => {
-    startReactTransition(() => {
-      router.push(href);
-    });
+    router.push(href);
   };
 
   if (typeof document === "undefined" || prefersReducedMotion()) {
@@ -84,11 +50,7 @@ export function softNavigate(
   }
 
   const doc = document as Document & {
-    startViewTransition?: (cb: () => void | Promise<void>) => {
-      finished: Promise<void>;
-      ready: Promise<void>;
-      updateCallbackDone: Promise<void>;
-    };
+    startViewTransition?: (cb: () => void) => unknown;
   };
 
   if (typeof doc.startViewTransition !== "function") {
@@ -97,10 +59,11 @@ export function softNavigate(
   }
 
   try {
-    // Async callback: hold VT open until Next has rendered the destination
-    doc.startViewTransition(async () => {
+    // Do NOT return a long Promise here — freezes the UI until it resolves.
+    // Next router is async; morph is best-effort, enter animation is guaranteed
+    // via LumenPageBody.
+    doc.startViewTransition(() => {
       go();
-      await waitForPathname(href);
     });
   } catch {
     go();
@@ -109,13 +72,11 @@ export function softNavigate(
 
 export function useSoftNavigate() {
   const router = useRouter();
-  const [, startReactTransition] = useTransition();
-
   return useCallback(
     (href: string) => {
-      softNavigate(router, href, startReactTransition);
+      softNavigate(router, href);
     },
-    [router, startReactTransition]
+    [router]
   );
 }
 
@@ -129,16 +90,12 @@ type SoftLinkProps = Omit<
     onClick?: (e: MouseEvent<HTMLAnchorElement>) => void;
   };
 
-/**
- * Drop-in Link that runs a *correct* startViewTransition around client nav.
- */
 export const SoftLink = forwardRef<HTMLAnchorElement, SoftLinkProps>(
   function SoftLink(
     { href, onClick, children, replace, scroll, prefetch, ...rest },
     ref
   ) {
     const router = useRouter();
-    const [, startReactTransition] = useTransition();
     const hrefStr = typeof href === "string" ? href : String(href);
 
     return (
@@ -168,13 +125,16 @@ export const SoftLink = forwardRef<HTMLAnchorElement, SoftLinkProps>(
           ) {
             return;
           }
-          // Same page — nothing to morph
-          if (normalizePath(hrefStr) === normalizePath(window.location.pathname)) {
+          if (
+            typeof window !== "undefined" &&
+            normalizePath(hrefStr) ===
+              normalizePath(window.location.pathname)
+          ) {
             e.preventDefault();
             return;
           }
           e.preventDefault();
-          softNavigate(router, hrefStr, startReactTransition);
+          softNavigate(router, hrefStr);
         }}
       >
         {children}
