@@ -291,7 +291,7 @@ function LegendItem({
   hint: string;
 }) {
   return (
-    <div className="flex items-start gap-2 min-w-0 overflow-hidden">
+    <div className="flex items-start gap-2 min-w-0">
       <div className="mt-0.5 shrink-0 flex items-center justify-center w-3.5 h-3.5">
         {shape === "dot" && (
           <span
@@ -321,11 +321,14 @@ function LegendItem({
           </span>
         )}
       </div>
-      <div className="min-w-0 overflow-hidden">
+      <div className="min-w-0">
         <div className="text-[10px] sm:text-[11px] font-medium text-[#D0D0D8] leading-tight truncate">
           {label}
         </div>
-        <div className="text-[9px] sm:text-[10px] text-[#6B6B78] leading-snug mt-0.5 line-clamp-1">
+        <div
+          className="text-[9px] sm:text-[10px] text-[#6B6B78] leading-snug mt-0.5 truncate"
+          title={hint}
+        >
           {hint}
         </div>
       </div>
@@ -959,12 +962,12 @@ function OracleBlock({
           </div>
         </div>
 
-        {/* Row 4: legend — fixed 2×3 grid incl. You */}
-        <div className="lumen-oracle-tile h-[8rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 overflow-hidden flex flex-col">
-          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2 shrink-0">
+        {/* Row 4: legend — 2×3 grid; height fits 3 rows of label+hint (was 8rem → clipped) */}
+        <div className="lumen-oracle-tile h-[10.75rem] sm:h-[11rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col min-h-0">
+          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-2 shrink-0 leading-none">
             Map legend
           </div>
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 flex-1 content-start">
+          <div className="grid grid-cols-2 gap-x-3 gap-y-2 flex-1 content-start min-h-0">
             <LegendItem
               shape="hex"
               color={theme.accent}
