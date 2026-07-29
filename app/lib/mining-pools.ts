@@ -103,6 +103,14 @@ export const KNOWN_MINING_POOLS: Record<string, KnownPool> = {
   "88dhgzEuTXaRiQFE6v9gNwgRHkJjtjntGQHcvhDSMnNbJzZsxsw97NQkcpu5d5qV8gHVeYv6yqqTCQr6": {
     name: "Pool yqqTCQr6",
   },
+
+  /* auto-catalog 2026-07-27 via watch-unknown-miners --auto */
+  /*
+   * auto-catalog · no public pool hash match · 1× · explorer="kS61iuTf"
+   */
+  "88dhgzEuTXaTjRpj66mK94XwLG7fuPVWSSg8oUcsopXzkFpLC8xVybkZ9dyC2LaxcV3Bjk26kS61iuTf": {
+    name: "Pool kS61iuTf",
+  },
 };
 
 /**
