@@ -58,10 +58,24 @@ next-env.d.ts
 tmp/
 temp/
 
+# Capacitor / Xcode (Phase 1 shell — source stays, build artifacts out)
+ios/App/Pods/
+ios/App/build/
+ios/DerivedData/
+ios/App/App/public/
+**/xcuserdata/
+*.xcuserstate
+*.ipa
+*.dSYM.zip
+.capacitor/
+android/
+
 # Network crawler catalog (regenerated)
 /data/
 data/network-catalog.json
 data/network-catalog.json.tmp
 data/unknown-miners.json
 data/catalog-prune-last.json
+data/push-tokens.json
+data/oracle-history.json
 
