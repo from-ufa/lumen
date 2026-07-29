@@ -10,6 +10,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 
@@ -103,6 +104,9 @@ function scoreMatch(node: SearchableNode, q: string): number {
 
 const MAX_RESULTS = 48;
 
+/** ~10 rows visible (row ≈ 52px + header) */
+const DROPDOWN_MAX_H = "min(560px, min(70vh, 70dvh))";
+
 export default function NodeMapSearch({
   nodes,
   onSelect,
@@ -125,30 +129,11 @@ export default function NodeMapSearch({
     top: number;
     left: number;
     width: number;
-    maxHeight: number;
   } | null>(null);
   const [mounted, setMounted] = useState(false);
-  /** Telegram: pin bar to top of visual viewport while keyboard open */
-  const [tgPinned, setTgPinned] = useState(false);
   const lastClearToken = useRef(clearToken);
-  const spacerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => setMounted(true), []);
-
-  const isTgMiniApp = useCallback(() => {
-    if (typeof document === "undefined") return false;
-    return document.documentElement.classList.contains("tg-miniapp");
-  }, []);
-
-  /** Space left below search bar inside visual viewport (above keyboard). */
-  const remainingListHeight = useCallback((barBottom: number) => {
-    const vv = typeof window !== "undefined" ? window.visualViewport : null;
-    const vvTop = vv?.offsetTop ?? 0;
-    const vvH = vv?.height ?? (typeof window !== "undefined" ? window.innerHeight : 600);
-    const vvBottom = vvTop + vvH;
-    // Keep list fully above keyboard / viewport bottom
-    return Math.max(140, Math.min(560, vvBottom - barBottom - 12));
-  }, []);
 
   /** Parent-driven full clear (input + dropdown) */
   useEffect(() => {
@@ -196,131 +181,37 @@ export default function NodeMapSearch({
     setActiveIdx(0);
   }, [trimmed]);
 
-  // Panel geometry under the search field; maxHeight stays above keyboard
+  // Portal panel under the search field (escapes map overflow / z-index)
   const updatePanelPos = useCallback(() => {
     const el = rootRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const pad = 10;
-    const maxW =
-      typeof window !== "undefined"
-        ? Math.min(window.innerWidth - pad * 2, 420)
-        : 420;
-    const top = r.bottom + 6;
     setPanelPos({
-      top,
-      left: Math.max(
-        pad,
-        Math.min(r.left, (window.innerWidth || 0) - maxW - pad)
-      ),
-      width: Math.min(Math.max(r.width, compact ? 280 : 300), maxW),
-      maxHeight: remainingListHeight(top),
+      top: r.bottom + 8,
+      left: r.left,
+      width: Math.max(r.width, compact ? 280 : 300),
     });
-  }, [compact, remainingListHeight]);
-
-  /** Scroll + pin search when TG keyboard opens (list stays attached to bar). */
-  const pinSearchToTopTg = useCallback(() => {
-    if (!isTgMiniApp()) return;
-    const el = rootRef.current;
-    if (!el) return;
-
-    try {
-      const rect = el.getBoundingClientRect();
-      const y = window.scrollY + rect.top - 8;
-      window.scrollTo({ top: Math.max(0, y), behavior: "auto" });
-    } catch {
-      el.scrollIntoView({ block: "start", behavior: "auto" });
-    }
-
-    setTgPinned(true);
-    requestAnimationFrame(() => updatePanelPos());
-  }, [isTgMiniApp, updatePanelPos]);
+  }, [compact]);
 
   useLayoutEffect(() => {
-    if (!tgPinned || !isTgMiniApp()) return;
-    const el = rootRef.current;
-    if (!el) return;
-
-    const applyPin = () => {
-      const vv = window.visualViewport;
-      const barH = el.offsetHeight || 44;
-      // ~2 bar heights below visual top (TG chrome)
-      const top = (vv?.offsetTop ?? 0) + barH * 2;
-      const left = 10;
-      const width = Math.max(200, (vv?.width ?? window.innerWidth) - 20);
-      el.style.position = "fixed";
-      el.style.top = `${top}px`;
-      el.style.left = `${left}px`;
-      el.style.right = "auto";
-      el.style.width = `${width}px`;
-      el.style.zIndex = "13000";
-      el.style.margin = "0";
-      if (spacerRef.current) {
-        spacerRef.current.style.height = `${barH}px`;
-      }
-      updatePanelPos();
-    };
-
-    applyPin();
-    const vv = window.visualViewport;
-    vv?.addEventListener("resize", applyPin);
-    vv?.addEventListener("scroll", applyPin);
-    window.addEventListener("resize", applyPin);
-    return () => {
-      vv?.removeEventListener("resize", applyPin);
-      vv?.removeEventListener("scroll", applyPin);
-      window.removeEventListener("resize", applyPin);
-    };
-  }, [tgPinned, isTgMiniApp, updatePanelPos, showPanel, query]);
-
-  // Unpin when focus ends
-  useEffect(() => {
-    if (focused || showPanel) return;
-    if (!tgPinned) return;
-    setTgPinned(false);
-    const el = rootRef.current;
-    if (el) {
-      el.style.position = "";
-      el.style.top = "";
-      el.style.left = "";
-      el.style.right = "";
-      el.style.width = "";
-      el.style.zIndex = "";
-      el.style.margin = "";
-    }
-    if (spacerRef.current) spacerRef.current.style.height = "0px";
-  }, [focused, showPanel, tgPinned]);
-
-  useLayoutEffect(() => {
-    if (!showPanel && !tgPinned) return;
+    if (!showPanel) return;
     updatePanelPos();
     const onScroll = () => updatePanelPos();
     window.addEventListener("resize", onScroll);
     window.addEventListener("scroll", onScroll, true);
-    window.visualViewport?.addEventListener("resize", onScroll);
-    window.visualViewport?.addEventListener("scroll", onScroll);
     return () => {
       window.removeEventListener("resize", onScroll);
       window.removeEventListener("scroll", onScroll, true);
-      window.visualViewport?.removeEventListener("resize", onScroll);
-      window.visualViewport?.removeEventListener("scroll", onScroll);
     };
-  }, [showPanel, updatePanelPos, results.length, query, tgPinned, focused]);
+  }, [showPanel, updatePanelPos, results.length, query]);
 
-  // Keep active row visible inside list only (do not scroll the page)
+  // Keep active row visible
   useEffect(() => {
     if (!showPanel || !listRef.current) return;
     const el = listRef.current.querySelector<HTMLElement>(
       `[data-idx="${activeIdx}"]`
     );
-    if (!el || !listRef.current) return;
-    const parent = listRef.current;
-    const pTop = parent.scrollTop;
-    const pBottom = pTop + parent.clientHeight;
-    const eTop = el.offsetTop;
-    const eBottom = eTop + el.offsetHeight;
-    if (eTop < pTop) parent.scrollTop = eTop;
-    else if (eBottom > pBottom) parent.scrollTop = eBottom - parent.clientHeight;
+    el?.scrollIntoView({ block: "nearest" });
   }, [activeIdx, showPanel, results.length]);
 
   // Outside click closes list (keeps query) — include portaled panel
@@ -404,25 +295,15 @@ export default function NodeMapSearch({
   };
 
   return (
-    <>
-      {/* Holds vertical space when search is fixed in TG keyboard mode */}
-      <div
-        ref={spacerRef}
-        className="w-full pointer-events-none"
-        style={{ height: 0 }}
-        aria-hidden
-      />
     <div
       ref={rootRef}
-      className={`relative pointer-events-auto ${className} ${
-        tgPinned ? "lumen-tg-search-pinned" : ""
-      }`}
+      className={`relative pointer-events-auto ${className}`}
       role="search"
     >
       <div
         className={`
           group relative flex items-center gap-2 rounded-2xl border border-white/10
-          bg-[#0A0A0F]/92 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)]
+          bg-[#0A0A0F]/88 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)]
           transition-all duration-300
           focus-within:border-[#00E5FF]/35 focus-within:shadow-[0_8px_40px_rgba(0,229,255,0.08)]
           ${compact ? "px-3 py-2" : "px-3.5 py-2.5"}
@@ -438,23 +319,15 @@ export default function NodeMapSearch({
           <input
             ref={inputRef}
             type="search"
-            enterKeyHint="search"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setOpen(true);
               setFocused(true);
-              if (isTgMiniApp()) setTgPinned(true);
             }}
             onFocus={() => {
               setOpen(true);
               setFocused(true);
-              if (isTgMiniApp()) {
-                // Defer until keyboard starts animating
-                pinSearchToTopTg();
-                window.setTimeout(pinSearchToTopTg, 50);
-                window.setTimeout(pinSearchToTopTg, 280);
-              }
             }}
             onBlur={() => {
               // delay so option click can fire first
@@ -511,150 +384,123 @@ export default function NodeMapSearch({
         </AnimatePresence>
       </div>
 
-      {/*
-        Results list:
-        - TG pinned (keyboard): attach under fixed bar so it never flies off-screen
-        - else: fixed portal (escapes map overflow)
-      */}
-      <AnimatePresence>
-        {showPanel && (
-          <motion.div
-            id={listId}
-            role="listbox"
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            style={
-              tgPinned
-                ? {
-                    position: "absolute",
-                    top: "100%",
-                    left: 0,
-                    right: 0,
-                    marginTop: 6,
-                    zIndex: 2,
-                    maxHeight: panelPos?.maxHeight ?? 280,
-                  }
-                : mounted && panelPos
-                  ? {
-                      position: "fixed",
-                      top: panelPos.top,
-                      left: panelPos.left,
-                      width: panelPos.width,
-                      maxWidth: "min(100vw - 16px, 420px)",
-                      zIndex: 13050,
-                      maxHeight: panelPos.maxHeight,
-                    }
-                  : {
-                      position: "absolute",
-                      top: "100%",
-                      left: 0,
-                      right: 0,
-                      marginTop: 6,
-                      zIndex: 50,
-                      maxHeight: 320,
-                    }
-            }
-            className="pointer-events-auto overflow-hidden rounded-2xl border border-white/12 bg-[#0A0A0F]/97 backdrop-blur-xl shadow-[0_20px_56px_rgba(0,0,0,0.65)]"
-          >
-            <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between shrink-0">
-              <span className="text-[9px] font-mono tracking-[0.2em] text-[#A0A0B0]/80">
-                {results.length > 0
-                  ? `${results.length}${results.length >= MAX_RESULTS ? "+" : ""} MATCHES`
-                  : "RESULTS"}
-              </span>
-              <span className="text-[9px] font-mono text-[#A0A0B0]/45 hidden sm:inline">
-                ↑↓ · Enter · Esc
-              </span>
-            </div>
-
-            {results.length === 0 ? (
-              <div className="px-4 py-6 text-center">
-                <div className="text-[12px] text-[#E8E8F0]/90 font-medium">
-                  No nodes found
-                </div>
-                <div className="mt-1 text-[10px] font-mono text-[#A0A0B0]/70">
-                  Try name, IP, country code, or version
-                </div>
-              </div>
-            ) : (
-              <div
-                ref={listRef}
-                className="overflow-y-auto overscroll-contain lumen-search-scroll pb-1.5"
+      {mounted &&
+        createPortal(
+          <AnimatePresence>
+            {showPanel && panelPos && (
+              <motion.div
+                id={listId}
+                role="listbox"
+                initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                 style={{
-                  maxHeight: Math.max(
-                    100,
-                    (panelPos?.maxHeight ?? 280) - 36
-                  ),
+                  position: "fixed",
+                  top: panelPos.top,
+                  left: panelPos.left,
+                  width: panelPos.width,
+                  maxWidth: "min(100vw - 16px, 420px)",
+                  zIndex: 12000,
                 }}
+                className="pointer-events-auto overflow-hidden rounded-2xl border border-white/12 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_20px_56px_rgba(0,0,0,0.65)]"
               >
-                {results.map((n, idx) => {
-                  const st = normalizeState(n.state);
-                  const meta = stateStyle(st);
-                  const active = idx === activeIdx;
-                  const selected = selectedId === n.id;
-                  const ver = shortVersion(n.version);
-                  const loc = [n.city, n.country].filter(Boolean).join(", ");
+                <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
+                  <span className="text-[9px] font-mono tracking-[0.2em] text-[#A0A0B0]/80">
+                    {results.length > 0
+                      ? `${results.length}${results.length >= MAX_RESULTS ? "+" : ""} MATCHES`
+                      : "RESULTS"}
+                  </span>
+                  <span className="text-[9px] font-mono text-[#A0A0B0]/45 hidden sm:inline">
+                    ↑↓ · Enter · Esc
+                  </span>
+                </div>
 
-                  return (
-                    <button
-                      key={n.id}
-                      type="button"
-                      id={`${listId}-opt-${idx}`}
-                      data-idx={idx}
-                      role="option"
-                      aria-selected={active}
-                      onMouseDown={(e) => e.preventDefault()}
-                      onMouseEnter={() => setActiveIdx(idx)}
-                      onClick={() => pick(n)}
-                      className={`
+                {results.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <div className="text-[12px] text-[#E8E8F0]/90 font-medium">
+                      No nodes found
+                    </div>
+                    <div className="mt-1 text-[10px] font-mono text-[#A0A0B0]/70">
+                      Try name, IP, country code, or version
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    ref={listRef}
+                    className="overflow-y-auto overscroll-contain lumen-search-scroll pb-1.5"
+                    style={{ maxHeight: DROPDOWN_MAX_H }}
+                  >
+                    {results.map((n, idx) => {
+                      const st = normalizeState(n.state);
+                      const meta = stateStyle(st);
+                      const active = idx === activeIdx;
+                      const selected = selectedId === n.id;
+                      const ver = shortVersion(n.version);
+                      const loc = [n.city, n.country]
+                        .filter(Boolean)
+                        .join(", ");
+
+                      return (
+                        <button
+                          key={n.id}
+                          type="button"
+                          id={`${listId}-opt-${idx}`}
+                          data-idx={idx}
+                          role="option"
+                          aria-selected={active}
+                          onMouseEnter={() => setActiveIdx(idx)}
+                          onClick={() => pick(n)}
+                          className={`
                         w-full text-left px-3 py-2.5 mx-0 flex gap-2.5 items-start
                         transition-colors duration-150
                         ${active || selected ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"}
                         ${selected ? "ring-1 ring-inset ring-[#00E5FF]/20" : ""}
                       `}
-                    >
-                      <span
-                        className="mt-1.5 w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_currentColor]"
-                        style={{
-                          background: meta.color,
-                          color: meta.color,
-                          opacity: st === "seen" ? 0.7 : 1,
-                        }}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2 min-w-0">
-                          <span className="text-[12px] font-medium text-white truncate">
-                            {n.name || "unknown"}
-                          </span>
+                        >
                           <span
-                            className="shrink-0 text-[9px] font-mono tracking-wider uppercase"
-                            style={{ color: meta.color }}
-                          >
-                            {meta.label}
+                            className="mt-1.5 w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_currentColor]"
+                            style={{
+                              background: meta.color,
+                              color: meta.color,
+                              opacity: st === "seen" ? 0.7 : 1,
+                            }}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="text-[12px] font-medium text-white truncate">
+                                {n.name || "unknown"}
+                              </span>
+                              <span
+                                className="shrink-0 text-[9px] font-mono tracking-wider uppercase"
+                                style={{ color: meta.color }}
+                              >
+                                {meta.label}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-[#A0A0B0]">
+                              <span className="text-[#E8E8F0]/75">
+                                {n.ip}
+                                {n.port ? `:${n.port}` : ""}
+                              </span>
+                              {loc ? <span>· {loc}</span> : null}
+                              {ver ? (
+                                <span className="text-[#00E5FF]/70">
+                                  v{ver}
+                                </span>
+                              ) : null}
+                            </span>
                           </span>
-                        </span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-[#A0A0B0]">
-                          <span className="text-[#E8E8F0]/75">
-                            {n.ip}
-                            {n.port ? `:${n.port}` : ""}
-                          </span>
-                          {loc ? <span>· {loc}</span> : null}
-                          {ver ? (
-                            <span className="text-[#00E5FF]/70">v{ver}</span>
-                          ) : null}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
             )}
-          </motion.div>
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
-    </>
   );
 }
