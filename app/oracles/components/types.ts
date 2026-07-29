@@ -25,6 +25,10 @@ export interface OracleNodeFeed {
   rewardTokens?: number | null;
   status: FeedStatus;
   isMine?: boolean;
+  /** Oracle key held but not actively posting */
+  idleKey?: boolean;
+  /** Short status blurb for tooltips */
+  detail?: string | null;
 }
 
 export interface MyOracleOperator {

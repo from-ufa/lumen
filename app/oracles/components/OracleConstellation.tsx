@@ -38,7 +38,13 @@ interface Oracle {
   isMine?: boolean;
   /** Host agent on lumen network pane — label lumen */
   isLumenHost?: boolean;
+  /** Key held · not posting (red idle) */
+  idleKey?: boolean;
+  detail?: string | null;
 }
+
+/** Red for key holders who are not posting */
+const IDLE_KEY_COLOR = "#EF4444";
 
 interface Datapoint {
   x: number;
@@ -135,24 +141,32 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
   const n = nodes.length;
   return nodes.map((node, i) => {
     const st = mapStatus(node.status);
-    const ring = (i % 3) + 1;
+    const idleKey = !!(node as { idleKey?: boolean }).idleKey || st === "Offline";
+    // Outer ring for idle keys so active operators stay on inner rings
+    const ring = idleKey ? 3 : (i % 2) + 1;
     const perRing = Math.ceil(n / 3) || 1;
     const idxInRing = Math.floor(i / 3);
     const angle =
       (idxInRing / perRing) * Math.PI * 2 + ring * 0.35 + i * 0.05;
-    const speed = ring === 1 ? 0.004 : ring === 2 ? 0.0025 : 0.0015;
+    const speed = idleKey
+      ? 0.0009
+      : ring === 1
+        ? 0.004
+        : ring === 2
+          ? 0.0025
+          : 0.0015;
     const age =
       feed.tipHeight != null && node.height != null
         ? Math.max(0, feed.tipHeight - node.height)
         : null;
     // Soft "accuracy" from freshness
     const accuracy =
-      st === "Offline"
+      st === "Offline" || idleKey
         ? 0
         : st === "Verifying"
           ? 96 + Math.min(3, Math.max(0, 10 - (age ?? 10)))
           : 98.5 + Math.min(1.4, Math.max(0, (20 - (age ?? 0)) * 0.05));
-    const size = st === "Active" ? 6 + (i % 3) : st === "Verifying" ? 5.5 : 4;
+    const size = st === "Active" ? 6 + (i % 3) : st === "Verifying" ? 5.5 : 4.5;
 
     const rawMine = !!(node as { isMine?: boolean }).isMine;
     // Only show special highlight for bridge "mine" as YOU, or host as lumen
@@ -171,7 +185,12 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
       ? "#FF7A3D"
       : isLumenHost
         ? "#00E5FF"
-        : statusColor(st);
+        : idleKey
+          ? IDLE_KEY_COLOR
+          : statusColor(st);
+    const detail =
+      (node as { detail?: string | null }).detail ??
+      (idleKey ? "Keys held · not posting" : null);
 
     return {
       name: label,
@@ -180,11 +199,13 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
       angle,
       speed: isSpecial ? speed * 0.85 : speed,
       color,
-      status: st,
+      status: idleKey ? "Offline" : st,
+      idleKey: idleKey || undefined,
+      detail,
       latency:
         age == null
           ? 0
-          : st === "Offline"
+          : st === "Offline" || idleKey
             ? 999
             : Math.min(200, 8 + age * 2),
       accuracy: Math.round(accuracy * 10) / 10,
@@ -845,6 +866,8 @@ export default function OracleConstellation({
 
       if (special)
         glow(o.x, o.y, 36 + flash * 20, specialColor, 0.35 + flash * 0.25);
+      else if (o.idleKey)
+        glow(o.x, o.y, 16, IDLE_KEY_COLOR, 0.12 + 0.06 * Math.sin(ad.time * 0.05));
       else if (o.status === "Active")
         glow(o.x, o.y, 22 + flash * 28, "#00D4AA", 0.18 + flash * 0.4);
       else if (o.status === "Verifying")
@@ -888,15 +911,26 @@ export default function OracleConstellation({
       const isHov = ad.hovered === o;
       const sz = o.size + (isHov ? 4 : 0) + flash * 3 + (special ? 1 : 0);
 
+      // Idle key holders: solid red (not dark gray)
       ctx.fillStyle =
-        o.status === "Offline" && !special
-          ? "#333"
-          : o.status === "Slashed"
-            ? "#EF4444"
-            : o.color;
+        o.idleKey && !special
+          ? IDLE_KEY_COLOR
+          : o.status === "Offline" && !special
+            ? "#333"
+            : o.status === "Slashed"
+              ? "#EF4444"
+              : o.color;
       ctx.beginPath();
       ctx.arc(o.x, o.y, sz, 0, Math.PI * 2);
       ctx.fill();
+
+      if (o.idleKey && !special) {
+        ctx.strokeStyle = hexToRgba(IDLE_KEY_COLOR, 0.55);
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, sz + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
 
       if (flash > 0.2 || special) {
         ctx.fillStyle = `rgba(255,255,255,${special ? 0.45 : flash * 0.55})`;
@@ -927,15 +961,19 @@ export default function OracleConstellation({
         ctx.stroke();
       }
 
-      if (special || o.size >= 7 || isHov || flash > 0.4) {
+      if (special || o.idleKey || o.size >= 7 || isHov || flash > 0.4) {
         ctx.fillStyle = special
           ? specialColor
-          : flash > 0.3
-            ? `rgba(226,232,240,${0.55 + flash * 0.4})`
-            : "rgba(226,232,240,0.55)";
+          : o.idleKey
+            ? hexToRgba(IDLE_KEY_COLOR, isHov ? 0.95 : 0.75)
+            : flash > 0.3
+              ? `rgba(226,232,240,${0.55 + flash * 0.4})`
+              : "rgba(226,232,240,0.55)";
         ctx.font = special
           ? "700 11px ui-monospace, monospace"
-          : "10px -apple-system, sans-serif";
+          : o.idleKey
+            ? "600 9px ui-monospace, monospace"
+            : "10px -apple-system, sans-serif";
         ctx.textAlign = "center";
         ctx.fillText(o.name, o.x, o.y + sz + 14);
         if (special) {
@@ -944,6 +982,10 @@ export default function OracleConstellation({
             : "rgba(0,229,255,0.75)";
           ctx.font = "9px ui-monospace, monospace";
           ctx.fillText(shortAddr(o.address), o.x, o.y + sz + 26);
+        } else if (o.idleKey && isHov) {
+          ctx.fillStyle = hexToRgba(IDLE_KEY_COLOR, 0.85);
+          ctx.font = "8px -apple-system, sans-serif";
+          ctx.fillText("keys · idle", o.x, o.y + sz + 24);
         }
       }
     }
@@ -1334,19 +1376,36 @@ export default function OracleConstellation({
                 {hovered.isMine ? "YOUR ORACLE" : "LUMEN HOST"}
               </div>
             )}
+            {hovered.idleKey && (
+              <div
+                style={{
+                  ...ttRowStyle,
+                  color: IDLE_KEY_COLOR,
+                  fontWeight: 600,
+                  letterSpacing: "0.04em",
+                  fontSize: 11,
+                  marginBottom: 6,
+                  lineHeight: 1.35,
+                }}
+              >
+                {hovered.detail || "Keys held · not posting"}
+              </div>
+            )}
             <div style={ttRowStyle}>
               <span>Status:</span>
               <span
                 style={{
                   color:
-                    hovered.status === "Active"
-                      ? "#00D4AA"
-                      : hovered.status === "Offline"
-                        ? "#777"
-                        : "#FBBF24",
+                    hovered.idleKey
+                      ? IDLE_KEY_COLOR
+                      : hovered.status === "Active"
+                        ? "#00D4AA"
+                        : hovered.status === "Offline"
+                          ? "#777"
+                          : "#FBBF24",
                 }}
               >
-                {hovered.status}
+                {hovered.idleKey ? "Idle key" : hovered.status}
               </span>
             </div>
             <div style={ttRowStyle}>

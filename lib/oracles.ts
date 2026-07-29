@@ -128,6 +128,13 @@ export interface OracleNodeInfo {
   status: OracleStatus;
   /** True when this address is the connected operator’s oracle */
   isMine?: boolean;
+  /**
+   * Holds an oracle key (seen in all_oracle_* metrics) but is not
+   * actively posting — show as idle / red on constellation.
+   */
+  idleKey?: boolean;
+  /** Short UI blurb (EN) */
+  detail?: string | null;
 }
 
 /** Identity of the operator attached via bridge / local agent metrics */
@@ -475,26 +482,47 @@ export function parseMetricsHealth(
 ): MetricsHealth | null {
   if (!text || typeof text !== "string") return null;
 
-  const posted = new Map<string, number>();
-  const collected = new Map<string, number>();
+  /** Active set (currently posting into the pool). */
+  const activePosted = new Map<string, number>();
+  const activeCollected = new Map<string, number>();
+  /** Full key-holder set (all_oracle_*) — includes dormant keys. */
+  const allPosted = new Map<string, number>();
+  const allCollected = new Map<string, number>();
   const rewards = new Map<string, number>();
 
   let m: RegExpExecArray | null;
-  const rePosted =
+  const reActivePosted =
     /ergo_oracle_active_oracle_box_height\{box_type="posted",oracle_address="([^"]+)"\}\s+(\d+)/g;
-  while ((m = rePosted.exec(text))) {
-    posted.set(m[1], Number(m[2]));
+  while ((m = reActivePosted.exec(text))) {
+    activePosted.set(m[1], Number(m[2]));
   }
-  const reCollected =
+  const reActiveCollected =
     /ergo_oracle_active_oracle_box_height\{box_type="collected",oracle_address="([^"]+)"\}\s+(\d+)/g;
-  while ((m = reCollected.exec(text))) {
-    collected.set(m[1], Number(m[2]));
+  while ((m = reActiveCollected.exec(text))) {
+    activeCollected.set(m[1], Number(m[2]));
+  }
+  // Prefer all_* when present (superset); fall back to active-only feeds
+  const reAllPosted =
+    /ergo_oracle_all_oracle_box_height\{box_type="posted",oracle_address="([^"]+)"\}\s+(\d+)/g;
+  while ((m = reAllPosted.exec(text))) {
+    allPosted.set(m[1], Number(m[2]));
+  }
+  const reAllCollected =
+    /ergo_oracle_all_oracle_box_height\{box_type="collected",oracle_address="([^"]+)"\}\s+(\d+)/g;
+  while ((m = reAllCollected.exec(text))) {
+    allCollected.set(m[1], Number(m[2]));
   }
   const reReward =
     /ergo_oracle_all_oracle_claimable_rewards\{oracle_address="([^"]+)"\}\s+(\d+(?:\.\d+)?)/g;
   while ((m = reReward.exec(text))) {
     rewards.set(m[1], Number(m[2]));
   }
+
+  // Merged heights: active wins when both exist (fresher path)
+  const posted = new Map<string, number>(allPosted);
+  for (const [a, h] of activePosted) posted.set(a, h);
+  const collected = new Map<string, number>(allCollected);
+  for (const [a, h] of activeCollected) collected.set(a, h);
 
   // Local agent identity (no address label — match by height / preferred)
   const myPostH = gaugeWithLabel(
@@ -543,9 +571,19 @@ export function parseMetricsHealth(
     }
   }
 
-  const addresses = new Set<string>([...posted.keys(), ...collected.keys()]);
+  const addresses = new Set<string>([
+    ...posted.keys(),
+    ...collected.keys(),
+    ...rewards.keys(),
+    ...activePosted.keys(),
+    ...activeCollected.keys(),
+  ]);
   if (mineAddress) addresses.add(mineAddress);
   if (addresses.size === 0 && !text.includes("ergo_oracle_")) return null;
+
+  /** In active_* series = currently participating (or recently). */
+  const isActiveKey = (address: string) =>
+    activePosted.has(address) || activeCollected.has(address);
 
   const nodes: OracleNodeInfo[] = [];
   for (const address of addresses) {
@@ -556,13 +594,29 @@ export function parseMetricsHealth(
       tipHeight != null && height != null && Number.isFinite(height)
         ? Math.max(0, tipHeight - height)
         : null;
-    const status: OracleStatus =
-      height == null
-        ? "offline"
-        : age == null
-          ? "live"
-          : statusFromAge(age, epochLength, true);
+    const inActiveSet = isActiveKey(address);
+    // Key holders not in active_* → idle keys (even if ancient posted height)
+    let status: OracleStatus;
+    if (!inActiveSet) {
+      status = "offline";
+    } else if (height == null) {
+      status = "offline";
+    } else if (age == null) {
+      status = "live";
+    } else {
+      status = statusFromAge(age, epochLength, true);
+    }
+    const idleKey =
+      !inActiveSet ||
+      (status === "offline" && (reward != null || height != null || coll != null));
     const isMine = !!(mineAddress && address === mineAddress);
+    const detail = idleKey
+      ? "Keys held · not posting"
+      : status === "live"
+        ? "Posting"
+        : status === "stale"
+          ? "Lagging"
+          : null;
     nodes.push({
       address,
       height: height != null && Number.isFinite(height) ? height : null,
@@ -575,12 +629,19 @@ export function parseMetricsHealth(
             : null,
       status,
       isMine,
+      idleKey: idleKey || undefined,
+      detail,
     });
   }
-  // My node first for UI lists
+  // Working first, then idle keys; mine always first
   nodes.sort((a, b) => {
     if (a.isMine && !b.isMine) return -1;
     if (!a.isMine && b.isMine) return 1;
+    if (!!a.idleKey !== !!b.idleKey) return a.idleKey ? 1 : -1;
+    if (a.status !== b.status) {
+      const rank = { live: 0, stale: 1, offline: 2 } as const;
+      return rank[a.status] - rank[b.status];
+    }
     return a.address.localeCompare(b.address);
   });
   const active = nodes.filter((n) => n.status === "live").length;

@@ -30,6 +30,8 @@ type OperatorRow = {
   pools: string[];
   accent: string;
   isMine?: boolean;
+  idleKey?: boolean;
+  detail?: string | null;
 };
 
 function shortAddr(addr: string) {
@@ -57,7 +59,13 @@ function poolTheme(feed: OracleFeedData) {
   };
 }
 
-function statusMeta(status: string) {
+function statusMeta(status: string, idleKey?: boolean) {
+  if (idleKey)
+    return {
+      label: "IDLE KEY",
+      color: "#EF4444",
+      glow: "rgba(239, 68, 68, 0.55)",
+    };
   if (status === "live")
     return { label: "LIVE", color: "#34D399", glow: "rgba(52, 211, 153, 0.55)" };
   if (status === "stale")
@@ -109,6 +117,8 @@ export default function OracleOperatorsLive({
             pools: [feed.pair],
             accent: th.accent,
             isMine: n.isMine,
+            idleKey: n.idleKey,
+            detail: n.detail,
           });
           continue;
         }
@@ -117,12 +127,22 @@ export default function OracleOperatorsLive({
           prev.status = n.status;
           prev.accent = th.accent;
         }
+        // If working on any pool, not idle overall
+        if (n.status === "live" || n.status === "stale") {
+          prev.idleKey = false;
+          prev.detail = n.detail ?? prev.detail;
+        } else if (n.idleKey && prev.status === "offline") {
+          prev.idleKey = true;
+          prev.detail = n.detail || prev.detail || "Keys held · not posting";
+        }
         if (!prev.pools.includes(feed.pair)) prev.pools.push(feed.pair);
         if (n.isMine) prev.isMine = true;
       }
     }
 
     const operators = Array.from(byAddr.values()).sort((a, b) => {
+      // Working first, idle keys last
+      if (!!a.idleKey !== !!b.idleKey) return a.idleKey ? 1 : -1;
       const dr = statusRank(b.status) - statusRank(a.status);
       if (dr !== 0) return dr;
       if (a.isMine && !b.isMine) return -1;
@@ -131,11 +151,13 @@ export default function OracleOperatorsLive({
     });
 
     const uniqueLive = operators.filter((o) => o.status === "live").length;
+    const idleKeys = operators.filter((o) => o.idleKey).length;
     const uniqueTotal = operators.length || totalSum;
 
     return {
       uniqueLive: uniqueLive || activeSum,
       uniqueTotal,
+      idleKeys,
       operators,
     };
   }, [feeds]);
@@ -370,10 +392,15 @@ export default function OracleOperatorsLive({
           <div className="mt-4 sm:mt-5">
             <div className="flex items-center justify-between gap-2 mb-2.5">
               <div className="text-[9px] font-mono tracking-[0.16em] text-[#5C5C6A] uppercase">
-                All operators · {stats.operators.length}
+                All key holders · {stats.operators.length}
+                {stats.idleKeys > 0 ? (
+                  <span className="text-[#EF4444]/90 ml-2">
+                    · {stats.idleKeys} idle
+                  </span>
+                ) : null}
               </div>
               <div className="text-[9px] font-mono tracking-[0.12em] text-[#4A4A56] uppercase hidden sm:block">
-                Tap → SigmaSpace
+                Red = keys held · not posting · Tap → SigmaSpace
               </div>
             </div>
 
@@ -383,18 +410,25 @@ export default function OracleOperatorsLive({
               aria-label="Oracle operator addresses"
             >
               {stats.operators.map((op) => {
-                const st = statusMeta(op.status);
+                const st = statusMeta(op.status, op.idleKey);
                 return (
                   <button
                     key={op.address}
                     type="button"
                     role="listitem"
                     onClick={() => requestOpen(op)}
-                    title={`${op.address}\n${op.pools.join(" · ")} · ${st.label}`}
+                    title={[
+                      op.address,
+                      op.pools.join(" · "),
+                      st.label,
+                      op.detail || (op.idleKey ? "Keys held · not posting" : ""),
+                    ]
+                      .filter(Boolean)
+                      .join("\n")}
                     className="lumen-ops-addr-cell group"
                     style={
                       {
-                        "--op-accent": op.accent,
+                        "--op-accent": op.idleKey ? "#EF4444" : op.accent,
                         "--op-status": st.color,
                       } as CSSProperties
                     }
@@ -406,9 +440,20 @@ export default function OracleOperatorsLive({
                         boxShadow: `0 0 6px ${st.glow}`,
                       }}
                     />
-                    <span className="font-mono text-[9px] sm:text-[10px] tabular-nums tracking-tight text-[#A0A0B0] group-hover:text-[#E8E8F0] transition-colors truncate">
+                    <span
+                      className={`font-mono text-[9px] sm:text-[10px] tabular-nums tracking-tight transition-colors truncate ${
+                        op.idleKey
+                          ? "text-[#F87171]/90 group-hover:text-[#FCA5A5]"
+                          : "text-[#A0A0B0] group-hover:text-[#E8E8F0]"
+                      }`}
+                    >
                       {shortAddr(op.address)}
                     </span>
+                    {op.idleKey && (
+                      <span className="text-[7px] font-mono tracking-wider text-[#EF4444] shrink-0 uppercase">
+                        idle
+                      </span>
+                    )}
                     {op.isMine && (
                       <span className="text-[8px] font-mono tracking-wider text-[#FF7A3D] shrink-0">
                         ME
@@ -427,11 +472,24 @@ export default function OracleOperatorsLive({
         accent="teal"
         title="Open on SigmaSpace?"
         subtitle="Leaves lumen · opens a new tab"
-        badge={confirmOp ? statusMeta(confirmOp.status).label : undefined}
-        badgeColor={
-          confirmOp ? statusMeta(confirmOp.status).color : undefined
+        badge={
+          confirmOp
+            ? statusMeta(confirmOp.status, confirmOp.idleKey).label
+            : undefined
         }
-        meta={confirmOp?.pools.join(" · ")}
+        badgeColor={
+          confirmOp
+            ? statusMeta(confirmOp.status, confirmOp.idleKey).color
+            : undefined
+        }
+        meta={[
+          confirmOp?.pools.join(" · "),
+          confirmOp?.idleKey
+            ? confirmOp.detail || "Keys held · not posting"
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         detail={confirmOp?.address || ""}
         hostLabel="sigmaspace.io"
         onCancel={cancelOpen}
