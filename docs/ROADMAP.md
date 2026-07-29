@@ -39,9 +39,9 @@ Full notes / rollback: [docs/ios.md](./ios.md)
 
 | Phase | Status | Scope |
 |-------|--------|--------|
-| **Phase 0 — design** | 📋 | Product surface: what opens in Telegram (dashboard lite / oracles / status / alerts) · auth model (Telegram user ↔ optional Bridge token) · theme (dark lumen glow in TG WebView) |
-| **Phase 1 — shell** | 📋 | Bot + Mini App URL (`https://ergolumen.net/…` or dedicated route) · `@twa-dev/sdk` / Telegram WebApp init · viewport / safe-area for TG · deep links |
-| **Phase 2 — product** | 📋 | Compact UI for TG (height limits) · optional inline alerts (pool lag, node height) · share cards · link Bridge “My Node” from chat |
+| **Phase 0 — design** | ✅ | Audit + roadmap; full Lumen in TG WebView (parity) |
+| **Phase 1 — shell** | 🔄 | On branch `feat/telegram-miniapp`: WebApp SDK, auth HMAC, bot webhook, deep links, haptics, low-end Orbit — see [telegram.md](./telegram.md). **Not merged to main until explicit command.** |
+| **Phase 2 — product** | 📋 | Alerts subscriptions · share polish · Attach menu |
 | **Phase 3 — notify** | ⏸ | Bot push / TG notifications (separate from APNs); rate limits; privacy |
 
 **Constraints:** no force of full 3D Orbit if TG WebView is weak — graceful lite mode. Same public APIs; don’t break main site.

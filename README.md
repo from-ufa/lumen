@@ -14,6 +14,7 @@ It turns node and oracle data into something you can *see and feel* — not anot
 | **Ops / handoff** | [LUMEN.md](./LUMEN.md) |
 | **Roadmap** | [docs/ROADMAP.md](./docs/ROADMAP.md) — iOS · Telegram Mini App · next |
 | **iOS (Capacitor)** | [docs/ios.md](./docs/ios.md) — Phase 1 shell + rollback notes |
+| **Telegram Mini App** | [docs/telegram.md](./docs/telegram.md) — WebApp SDK, bot, auth, rollback |
 
 ---
 

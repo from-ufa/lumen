@@ -8,6 +8,10 @@ import {
   passwordHash,
   readPublicPassword,
 } from "./lib/public-password";
+import {
+  TG_SESSION_COOKIE,
+  verifyTgSessionToken,
+} from "./app/lib/tg-auth";
 
 function unauthorized(): NextResponse {
   return new NextResponse("Authentication required for Lumen Public Mode", {
@@ -67,6 +71,18 @@ export function proxy(req: NextRequest) {
     return res;
   }
 
+  // Telegram Mini App: auth + webhook must be reachable without Basic Auth
+  // (client needs to POST initData; Telegram servers POST updates).
+  if (
+    pathname === "/api/tg/auth" ||
+    pathname === "/api/tg/webhook" ||
+    pathname === "/api/tg/status"
+  ) {
+    const res = NextResponse.next();
+    res.headers.set("X-Lumen-Auth", "tg-public-endpoint");
+    return res;
+  }
+
   // Always allow local access (SSH -L unchanged)
   if (isLocalRequest(req)) {
     const res = NextResponse.next();
@@ -95,6 +111,17 @@ export function proxy(req: NextRequest) {
     const res = NextResponse.next();
     res.headers.set("X-Lumen-Auth", "cookie-ok");
     return res;
+  }
+
+  // Telegram Mini App session (HMAC-validated initData → short-lived cookie)
+  const tgCookie = req.cookies.get(TG_SESSION_COOKIE)?.value;
+  if (tgCookie) {
+    const tg = verifyTgSessionToken(tgCookie);
+    if (tg.ok) {
+      const res = NextResponse.next();
+      res.headers.set("X-Lumen-Auth", "tg-session-ok");
+      return res;
+    }
   }
 
   // Share link: ?password=SECRET → set cookie, strip query

@@ -8,6 +8,14 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
   const value = String(text ?? "");
   if (!value) return false;
 
+  const hapticOk = () => {
+    try {
+      void import("./telegram").then((m) => m.hapticNotification("success"));
+    } catch {
+      /* */
+    }
+  };
+
   // Preferred API (HTTPS / localhost / secure contexts)
   if (
     typeof navigator !== "undefined" &&
@@ -18,6 +26,7 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
   ) {
     try {
       await navigator.clipboard.writeText(value);
+      hapticOk();
       return true;
     } catch {
       // fall through to legacy path
@@ -69,6 +78,7 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
 
     const ok = document.execCommand("copy");
     document.body.removeChild(ta);
+    if (ok) hapticOk();
     return ok;
   } catch {
     return false;

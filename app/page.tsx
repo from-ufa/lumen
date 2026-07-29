@@ -162,13 +162,32 @@ export default function LumenDashboard() {
     try {
       const v = new URLSearchParams(window.location.search).get("viz");
       if (v === "map" || v === "constellation") setViewMode(v);
+      // Telegram deep link: open settings once
+      const tg = new URLSearchParams(window.location.search).get("tg");
+      if (tg === "settings") {
+        setSettingsOpenKey((k) => k + 1);
+        setSettingsModalOpen(true);
+      }
     } catch {
       /* */
     }
   }, []);
 
+  // Telegram MainButton / deep link → settings
+  useEffect(() => {
+    const open = () => {
+      setSettingsOpenKey((k) => k + 1);
+      setSettingsModalOpen(true);
+    };
+    window.addEventListener("lumen:tg-open-settings", open);
+    return () => window.removeEventListener("lumen:tg-open-settings", open);
+  }, []);
+
   const onSelectVizMode = useCallback(
     (m: VizMode) => {
+      void import("./lib/telegram").then((tg) => {
+        tg.hapticImpact("light");
+      });
       if (m === "oracles") {
         softNav("/oracles");
         return;
