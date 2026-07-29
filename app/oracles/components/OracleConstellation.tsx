@@ -123,6 +123,15 @@ function statusColor(
   return "#555";
 }
 
+/** Stable 0..1 hash from address — for tiny phase jitter, not clustering. */
+function addrPhase(address: string): number {
+  let h = 0;
+  for (let i = 0; i < address.length; i++) {
+    h = (h * 33 + address.charCodeAt(i)) >>> 0;
+  }
+  return (h % 1000) / 1000;
+}
+
 function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
   const nodes = feed.nodes?.length
     ? feed.nodes
@@ -138,18 +147,29 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
   const isBridgeMine = feed.scope === "mine";
   const isLumenNetwork = feed.scope === "network" || feed.scope == null;
 
-  const n = nodes.length;
-  return nodes.map((node, i) => {
+  // Split first so idle can be laid evenly on the outermost orbit
+  type NodeRow = (typeof nodes)[number];
+  const working: { node: NodeRow; i: number }[] = [];
+  const idle: { node: NodeRow; i: number }[] = [];
+  nodes.forEach((node, i) => {
     const st = mapStatus(node.status);
-    const idleKey = !!(node as { idleKey?: boolean }).idleKey || st === "Offline";
-    // Outer ring for idle keys so active operators stay on inner rings
-    const ring = idleKey ? 3 : (i % 2) + 1;
-    const perRing = Math.ceil(n / 3) || 1;
-    const idxInRing = Math.floor(i / 3);
-    const angle =
-      (idxInRing / perRing) * Math.PI * 2 + ring * 0.35 + i * 0.05;
+    const idleKey =
+      !!(node as { idleKey?: boolean }).idleKey || st === "Offline";
+    (idleKey ? idle : working).push({ node, i });
+  });
+
+  const idleN = Math.max(1, idle.length);
+
+  function placeOne(
+    node: NodeRow,
+    opts: { ring: number; angle: number; idleKey: boolean; workIdx: number }
+  ): Oracle {
+    const st = mapStatus(node.status);
+    const idleKey = opts.idleKey;
+    const ring = opts.ring;
+    // Same angular speed for all idle → keep even spacing forever
     const speed = idleKey
-      ? 0.0009
+      ? 0.0007
       : ring === 1
         ? 0.004
         : ring === 2
@@ -159,17 +179,15 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
       feed.tipHeight != null && node.height != null
         ? Math.max(0, feed.tipHeight - node.height)
         : null;
-    // Soft "accuracy" from freshness
     const accuracy =
       st === "Offline" || idleKey
         ? 0
         : st === "Verifying"
           ? 96 + Math.min(3, Math.max(0, 10 - (age ?? 10)))
           : 98.5 + Math.min(1.4, Math.max(0, (20 - (age ?? 0)) * 0.05));
-    const size = st === "Active" ? 6 + (i % 3) : st === "Verifying" ? 5.5 : 4.5;
+    const size = st === "Active" ? 6 + (opts.workIdx % 3) : st === "Verifying" ? 5.5 : 4.5;
 
     const rawMine = !!(node as { isMine?: boolean }).isMine;
-    // Only show special highlight for bridge "mine" as YOU, or host as lumen
     const isYou = rawMine && isBridgeMine;
     const isLumenHost = rawMine && isLumenNetwork && !isBridgeMine;
     const isSpecial = isYou || isLumenHost;
@@ -196,7 +214,7 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
       name: label,
       address: node.address,
       ring: mineRing,
-      angle,
+      angle: opts.angle,
       speed: isSpecial ? speed * 0.85 : speed,
       color,
       status: idleKey ? "Offline" : st,
@@ -220,7 +238,61 @@ function buildOraclesFromFeed(feed: OracleFeedData): Oracle[] {
       isMine: isYou,
       isLumenHost,
     };
+  }
+
+  const out: Oracle[] = [];
+
+  // Active / working — rings 1–2, evenly spaced per ring
+  working.forEach(({ node }, wi) => {
+    const rawMine = !!(node as { isMine?: boolean }).isMine;
+    const isSpecial =
+      (rawMine && isBridgeMine) ||
+      (rawMine && isLumenNetwork && !isBridgeMine);
+    // ring 1 = inner (special + half of working), ring 2 = mid
+    const ring = isSpecial ? 1 : (wi % 2) + 1;
+    const onThisRing = working.filter((_, j) => {
+      const n2 = working[j].node;
+      const rm = !!(n2 as { isMine?: boolean }).isMine;
+      const sp =
+        (rm && isBridgeMine) || (rm && isLumenNetwork && !isBridgeMine);
+      const r = sp ? 1 : (j % 2) + 1;
+      return r === ring;
+    });
+    const idxOnRing = onThisRing.findIndex((x) => x.node.address === node.address);
+    const countOnRing = Math.max(1, onThisRing.length);
+    // Even spread + small stable phase from address (no packing)
+    const angle =
+      (idxOnRing / countOnRing) * Math.PI * 2 +
+      (ring === 1 ? 0.15 : 0.9) +
+      addrPhase(node.address) * 0.08;
+    out.push(
+      placeOne(node, {
+        ring,
+        angle,
+        idleKey: false,
+        workIdx: wi,
+      })
+    );
   });
+
+  // Idle key holders — farthest orbit (ring 4), equal angular spacing
+  // Same speed for all → stay evenly spaced; tiny phase only for start offset group
+  idle.forEach(({ node }, ii) => {
+    const angle =
+      (ii / idleN) * Math.PI * 2 +
+      Math.PI / idleN + // half-step so they don't align with axes as a clump
+      0.35;
+    out.push(
+      placeOne(node, {
+        ring: 4, // outermost — beyond working rings 1–3
+        angle,
+        idleKey: true,
+        workIdx: ii,
+      })
+    );
+  });
+
+  return out;
 }
 
 function historyToEpochBars(feed: OracleFeedData): EpochData[] {
@@ -370,13 +442,16 @@ export default function OracleConstellation({
     ad.oracles = nextOracles.map((o) => {
       const prev = prevByAddr.get(o.address);
       if (prev) {
-        o.angle = prev.angle;
-        o.x = prev.x;
-        o.y = prev.y;
+        // Idle keys: never keep old angles — they must stay evenly spaced on outer orbit
+        if (!o.idleKey) {
+          o.angle = prev.angle;
+          o.x = prev.x;
+          o.y = prev.y;
+        }
         o.pulse = prev.pulse;
         o.publishFlash = prev.publishFlash;
       }
-      // Keep isMine from latest feed build
+      // Keep isMine / idle layout from latest feed build
       return o;
     });
 
@@ -544,12 +619,14 @@ export default function OracleConstellation({
     function baseRings(): number[] {
       // Leave margin so rings sit inside corner metric chips
       // Snap radii to whole pixels — kills subpixel ring shimmer
+      // Ring 4 = farthest orbit for idle key holders (away from active pack)
       const m = Math.min(ad.W, ad.H);
       const s = Math.max(0.42, Math.min(0.95, m / (ad.compact ? 560 : 680)));
       return [
-        Math.round(78 * s),
-        Math.round(128 * s),
-        Math.round(176 * s),
+        Math.round(72 * s), // 1 — core / YOU
+        Math.round(118 * s), // 2 — active
+        Math.round(164 * s), // 3 — active outer
+        Math.round(228 * s), // 4 — idle keys only (farthest)
       ];
     }
 
@@ -750,9 +827,12 @@ export default function OracleConstellation({
     function drawOrbits() {
       const ringR = baseRings();
       ringR.forEach((r, i) => {
-        ctx.strokeStyle = `rgba(255,255,255,${0.025 + i * 0.008})`;
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 12]);
+        const isIdleOrbit = i === 3;
+        ctx.strokeStyle = isIdleOrbit
+          ? "rgba(239,68,68,0.12)"
+          : `rgba(255,255,255,${0.025 + i * 0.008})`;
+        ctx.lineWidth = isIdleOrbit ? 1.2 : 1;
+        ctx.setLineDash(isIdleOrbit ? [2, 10] : [4, 12]);
         ctx.beginPath();
         ctx.arc(ad.CX, ad.CY, r, 0, Math.PI * 2);
         ctx.stroke();
