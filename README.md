@@ -12,6 +12,7 @@ It turns node and oracle data into something you can *see and feel* — not anot
 | **GitHub** | [github.com/from-ufa/lumen](https://github.com/from-ufa/lumen) |
 | **Bridge WSS** | `wss://ergolumen.net/ws/bridge` |
 | **Ops / handoff** | [LUMEN.md](./LUMEN.md) |
+| **Roadmap** | [docs/ROADMAP.md](./docs/ROADMAP.md) — iOS · Telegram Mini App · next |
 | **iOS (Capacitor)** | [docs/ios.md](./docs/ios.md) — Phase 1 shell + rollback notes |
 
 ---

@@ -99,4 +99,5 @@ git revert <sha>
 
 ## Related
 
+- Product roadmap (iOS + Telegram Mini App): [ROADMAP.md](./ROADMAP.md)
 - Mobile audit: [ios-phase1-audit.md](./ios-phase1-audit.md)
