@@ -442,16 +442,19 @@ export default function OracleConstellation({
     ad.oracles = nextOracles.map((o) => {
       const prev = prevByAddr.get(o.address);
       if (prev) {
-        // Idle keys: never keep old angles — they must stay evenly spaced on outer orbit
-        if (!o.idleKey) {
-          o.angle = prev.angle;
-          o.x = prev.x;
-          o.y = prev.y;
-        }
+        // Always keep live angle/position across 5s polls — idle used to
+        // reset to buildOraclesFromFeed angles every refresh (snap-back).
+        // Same angular speed + preserved angles = even spacing stays.
+        o.angle = prev.angle;
+        o.x = prev.x;
+        o.y = prev.y;
         o.pulse = prev.pulse;
         o.publishFlash = prev.publishFlash;
+        // If still idle on outer orbit, keep ring 4 even if index shuffle
+        if (o.idleKey && prev.idleKey && prev.ring === 4) {
+          o.ring = 4;
+        }
       }
-      // Keep isMine / idle layout from latest feed build
       return o;
     });
 
