@@ -424,9 +424,6 @@ export default function OraclesPage() {
                   TIP · {data.tipHeight.toLocaleString()}
                 </span>
               )}
-              <span className="px-2.5 py-1 rounded-full border border-white/15 text-[#A0A0B0] bg-white/5">
-                AUTO · 5s
-              </span>
             </>
           }
         />
