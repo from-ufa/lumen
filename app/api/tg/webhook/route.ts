@@ -45,19 +45,9 @@ function esc(s: string): string {
 
 async function handleCommand(chatId: number, text: string) {
   const cmd = text.trim().split(/\s+/)[0].toLowerCase().replace(/@\w+$/, "");
-  const url = getWebAppUrl();
 
   if (cmd === "/start" || cmd === "/app") {
-    await replyHtml(
-      chatId,
-      [
-        "<b>lumen</b> — the living pulse of your Ergo node.",
-        "",
-        "Open the Mini App for Orbit, World Map, Oracles, and Bridge.",
-        "",
-        `Web: <a href="${esc(url)}">${esc(url)}</a>`,
-      ].join("\n")
-    );
+    await replyHtml(chatId, "Please run a node");
     return;
   }
 
