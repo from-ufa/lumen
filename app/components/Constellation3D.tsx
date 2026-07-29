@@ -1784,6 +1784,14 @@ function Scene({
   const [tgPaused, setTgPaused] = useState(false);
   const [tgLowEnd, setTgLowEnd] = useState(false);
   const [searchActive, setSearchActive] = useState(false);
+  /** Telegram Mini App — pin search flush to top of Orbit canvas */
+  const [isTg, setIsTg] = useState(false);
+  useEffect(() => {
+    setIsTg(
+      typeof document !== "undefined" &&
+        document.documentElement.classList.contains("tg-miniapp")
+    );
+  }, []);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const low =
@@ -1842,11 +1850,11 @@ function Scene({
         />
       </Canvas>
 
-      {/* Mobile search */}
+      {/* Search: flush top of Orbit (TG + mobile). No safe-area — already below page header. */}
       <div
-        className={`md:hidden absolute top-0 inset-x-0 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] ${
-          searchActive ? "z-[10040]" : "z-30"
-        }`}
+        className={`lumen-viz-search-hud absolute top-0 inset-x-0 pointer-events-none px-2.5 pt-2 space-y-1.5 ${
+          isTg ? "flex flex-col" : "md:hidden"
+        } ${searchActive ? "z-[12000]" : "z-[50]"}`}
       >
         <NodeMapSearch
           nodes={searchNodes}
@@ -1857,6 +1865,32 @@ function Scene({
           onActiveChange={setSearchActive}
           className="w-full"
         />
+        {focusAddress && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="pointer-events-auto rounded-xl border border-[#E8C97A]/40 bg-[#0A0A0F]/88 backdrop-blur-md px-3 py-2 shadow-[0_0_20px_rgba(232,201,122,0.12)]"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[8px] font-mono tracking-[0.18em] text-[#E8C97A]">
+                  FOUND
+                </div>
+                <div className="text-[11px] font-medium text-white truncate">
+                  {peers.find((p) => p.address === focusAddress)?.name ||
+                    focusAddress.replace(/^\//, "")}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={clearSearchFocus}
+                className="text-[10px] font-mono text-[#A0A0B0] hover:text-white shrink-0 px-1.5 py-0.5"
+              >
+                CLEAR
+              </button>
+            </div>
+          </motion.div>
+        )}
       </div>
 
       {/* Mobile FOCUS */}
@@ -1872,11 +1906,11 @@ function Scene({
         </div>
       )}
 
-      {/* Desktop left: search */}
-      {!hideControls && (
+      {/* Desktop browser left: search (TG uses full-width top strip) */}
+      {!hideControls && !isTg && (
         <div
           className={`hidden md:flex absolute top-4 left-4 flex-col gap-2 ${HUD_PANEL_W} pointer-events-none ${
-            searchActive ? "z-[10040]" : "z-20"
+            searchActive ? "z-[12000]" : "z-20"
           }`}
         >
           <NodeMapSearch

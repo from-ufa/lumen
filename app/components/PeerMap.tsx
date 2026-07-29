@@ -1555,6 +1555,14 @@ export default function PeerMap({
   const [searchFocus, setSearchFocus] = useState<PeerMapMarker | null>(null);
   /** Search focused / open — soft-hide Boom & Refresh */
   const [searchActive, setSearchActive] = useState(false);
+  /** Telegram Mini App — pin search flush to top of map canvas */
+  const [isTg, setIsTg] = useState(false);
+  useEffect(() => {
+    setIsTg(
+      typeof document !== "undefined" &&
+        document.documentElement.classList.contains("tg-miniapp")
+    );
+  }, []);
   /**
    * Map display filter:
    * - live (default Lumen): Connected + Live
@@ -2195,11 +2203,11 @@ export default function PeerMap({
         )}
       </div>
 
-      {/* ── Mobile map HUD: search top · BOOM left / REFRESH right bottom ── */}
+      {/* ── Search HUD: flush top of map (TG + mobile). No safe-area — map is already below page chrome. ── */}
       <div
-        className={`md:hidden absolute top-0 inset-x-0 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] space-y-2 ${
-          searchActive ? "z-[12000]" : "z-[40]"
-        }`}
+        className={`lumen-viz-search-hud absolute top-0 inset-x-0 pointer-events-none px-2.5 pt-2 space-y-1.5 ${
+          isTg ? "flex flex-col" : "md:hidden"
+        } ${searchActive ? "z-[12000]" : "z-[50]"}`}
       >
         <NodeMapSearch
           nodes={searchNodes}
@@ -2262,30 +2270,34 @@ export default function PeerMap({
                                          │ Stats panel ─────┘
       */}
 
-      {/* Top-left: node search */}
-      <div
-        className={`hidden md:flex absolute top-4 left-4 w-[min(300px,32vw)] flex-col gap-2 pointer-events-none ${
-          searchActive ? "z-[12000]" : "z-[40]"
-        }`}
-      >
-        <NodeMapSearch
-          nodes={searchNodes}
-          selectedId={selected?.id}
-          onSelect={(n) => {
-            handleSelectPeer(n as PeerMapMarker, { fly: true });
-          }}
-          onActiveChange={setSearchActive}
-          className="w-full"
-        />
-      </div>
+      {/* Desktop browser only: top-left search (TG uses full-width top strip) */}
+      {!isTg && (
+        <div
+          className={`hidden md:flex absolute top-4 left-4 w-[min(300px,32vw)] flex-col gap-2 pointer-events-none ${
+            searchActive ? "z-[12000]" : "z-[40]"
+          }`}
+        >
+          <NodeMapSearch
+            nodes={searchNodes}
+            selectedId={selected?.id}
+            onSelect={(n) => {
+              handleSelectPeer(n as PeerMapMarker, { fly: true });
+            }}
+            onActiveChange={setSearchActive}
+            className="w-full"
+          />
+        </div>
+      )}
 
-      {/* Top-center: live block timer */}
-      <div className="hidden md:flex absolute top-4 left-1/2 -translate-x-1/2 z-[40] pointer-events-none">
-        <BlockTimeIndicator
-          blockHeight={blockHeight}
-          lastBlockAt={lastBlockAt}
-        />
-      </div>
+      {/* Top-center: live block timer (desktop browser; TG has it under search) */}
+      {!isTg && (
+        <div className="hidden md:flex absolute top-4 left-1/2 -translate-x-1/2 z-[40] pointer-events-none">
+          <BlockTimeIndicator
+            blockHeight={blockHeight}
+            lastBlockAt={lastBlockAt}
+          />
+        </div>
+      )}
 
       {/* Top-right: actions */}
       {!hideControls && (
