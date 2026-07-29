@@ -1780,6 +1780,33 @@ function Scene({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orbitSpeed, musicOn, musicBusy]);
 
+  // Telegram low-end / hidden: cap DPR + pause when Mini App deactivated
+  const [tgPaused, setTgPaused] = useState(false);
+  const [tgLowEnd, setTgLowEnd] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const low =
+      document.documentElement.dataset.tgLowEnd === "1" ||
+      document.documentElement.classList.contains("tg-low-end");
+    setTgLowEnd(low);
+    const onVis = (e: Event) => {
+      const d = (e as CustomEvent<{ hidden?: boolean }>).detail;
+      setTgPaused(!!d?.hidden);
+    };
+    const onDocVis = () => {
+      setTgPaused(document.visibilityState === "hidden");
+    };
+    window.addEventListener("lumen:tg-visibility", onVis as EventListener);
+    document.addEventListener("visibilitychange", onDocVis);
+    return () => {
+      window.removeEventListener("lumen:tg-visibility", onVis as EventListener);
+      document.removeEventListener("visibilitychange", onDocVis);
+    };
+  }, []);
+
+  const dprMax = tgLowEnd ? 1 : 1.5;
+  const orbitLive = active && !tgPaused;
+
   return (
     <div ref={vizRef} className="absolute inset-0 w-full h-full">
       <Canvas
@@ -1787,14 +1814,14 @@ function Scene({
         className="!absolute !inset-0 !h-full !w-full"
         style={{ width: "100%", height: "100%", display: "block" }}
         resize={{ scroll: false, debounce: { scroll: 50, resize: 0 } }}
-        dpr={[1, 1.5]}
+        dpr={[1, dprMax]}
         /* keep-alive under Map: pause rAF so GPU rests; Earth stays warm */
-        frameloop={active ? "always" : "never"}
+        frameloop={orbitLive ? "always" : "never"}
         gl={{
           alpha: false,
-          antialias: true,
+          antialias: !tgLowEnd,
           preserveDrawingBuffer: true,
-          powerPreference: "high-performance",
+          powerPreference: tgLowEnd ? "low-power" : "high-performance",
         }}
         onPointerMissed={() => {
           /* sticky card — don't clear on miss */

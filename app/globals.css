@@ -9,6 +9,10 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+  /* Telegram Mini App (filled by app/lib/telegram.ts when present) */
+  --tg-vh: 100dvh;
+  --tg-button: var(--accent);
+  --tg-link: var(--accent-cyan);
   
   /* Lumen Design System - Deep Space + Ergo */
   --bg: #0A0A0F;
@@ -1410,3 +1414,22 @@ body {
 
 
 
+
+/* Telegram Mini App shell */
+html.tg-miniapp {
+  /* Prefer TG viewport height when set by JS */
+  min-height: var(--tg-vh, 100dvh);
+}
+html.tg-miniapp body {
+  /* Extra bottom room for TG MainButton */
+  padding-bottom: max(var(--safe-bottom), 12px);
+}
+html.tg-miniapp.tg-low-end .lumen-viz {
+  /* Hint GPU: still touch-none for Orbit */
+  touch-action: none;
+}
+html.tg-miniapp .lumen-viz {
+  /* Reinforce: vertical swipe must not steal Orbit */
+  overscroll-behavior: none;
+  touch-action: none;
+}

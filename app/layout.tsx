@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { Toaster } from "sonner";
 import Providers from "./components/Providers";
@@ -68,6 +69,11 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full min-h-dvh flex flex-col bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
+        {/* Telegram Mini App SDK — loads early; no-op outside Telegram */}
+        <Script
+          src="https://telegram.org/js/telegram-web-app.js"
+          strategy="beforeInteractive"
+        />
         <Providers>{children}</Providers>
         <Toaster
           position="top-center"
