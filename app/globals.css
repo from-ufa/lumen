@@ -1443,3 +1443,8 @@ html.tg-miniapp .lumen-viz-search-hud {
   padding-right: 0.625rem !important;
   z-index: 50;
 }
+
+/* While keyboard open: bar is position:fixed via JS at visualViewport top */
+html.tg-miniapp .lumen-tg-search-pinned {
+  max-width: 100vw;
+}

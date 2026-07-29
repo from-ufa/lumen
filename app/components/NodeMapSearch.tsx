@@ -131,9 +131,17 @@ export default function NodeMapSearch({
     width: number;
   } | null>(null);
   const [mounted, setMounted] = useState(false);
+  /** Telegram: pin bar to top of visual viewport while keyboard open */
+  const [tgPinned, setTgPinned] = useState(false);
   const lastClearToken = useRef(clearToken);
+  const spacerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => setMounted(true), []);
+
+  const isTgMiniApp = useCallback(() => {
+    if (typeof document === "undefined") return false;
+    return document.documentElement.classList.contains("tg-miniapp");
+  }, []);
 
   /** Parent-driven full clear (input + dropdown) */
   useEffect(() => {
@@ -186,12 +194,96 @@ export default function NodeMapSearch({
     const el = rootRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
+    const pad = 10;
+    const maxW =
+      typeof window !== "undefined"
+        ? Math.min(window.innerWidth - pad * 2, 420)
+        : 420;
     setPanelPos({
       top: r.bottom + 8,
-      left: r.left,
-      width: Math.max(r.width, compact ? 280 : 300),
+      left: Math.max(pad, Math.min(r.left, (window.innerWidth || 0) - maxW - pad)),
+      width: Math.min(Math.max(r.width, compact ? 280 : 300), maxW),
     });
   }, [compact]);
+
+  /** Scroll + pin search to top of phone when TG keyboard opens */
+  const pinSearchToTopTg = useCallback(() => {
+    if (!isTgMiniApp()) return;
+    const el = rootRef.current;
+    if (!el) return;
+
+    // 1) Scroll page so map/search area is near the top of the document
+    try {
+      const rect = el.getBoundingClientRect();
+      const y = window.scrollY + rect.top - 6;
+      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+    } catch {
+      el.scrollIntoView({ block: "start", behavior: "smooth" });
+    }
+
+    // 2) Fix bar to visualViewport top (survives keyboard resize)
+    setTgPinned(true);
+    requestAnimationFrame(() => {
+      updatePanelPos();
+    });
+  }, [isTgMiniApp, updatePanelPos]);
+
+  useLayoutEffect(() => {
+    if (!tgPinned || !isTgMiniApp()) return;
+    const el = rootRef.current;
+    if (!el) return;
+
+    const applyPin = () => {
+      const vv = window.visualViewport;
+      const top = (vv?.offsetTop ?? 0) + 6;
+      const left = 10;
+      const width = Math.max(
+        200,
+        (vv?.width ?? window.innerWidth) - 20
+      );
+      el.style.position = "fixed";
+      el.style.top = `${top}px`;
+      el.style.left = `${left}px`;
+      el.style.right = "auto";
+      el.style.width = `${width}px`;
+      el.style.zIndex = "13000";
+      el.style.margin = "0";
+      // Spacer keeps layout from jumping when bar leaves flow
+      if (spacerRef.current) {
+        spacerRef.current.style.height = `${el.offsetHeight}px`;
+      }
+      updatePanelPos();
+    };
+
+    applyPin();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", applyPin);
+    vv?.addEventListener("scroll", applyPin);
+    window.addEventListener("resize", applyPin);
+    return () => {
+      vv?.removeEventListener("resize", applyPin);
+      vv?.removeEventListener("scroll", applyPin);
+      window.removeEventListener("resize", applyPin);
+    };
+  }, [tgPinned, isTgMiniApp, updatePanelPos, showPanel, query]);
+
+  // Unpin when focus ends
+  useEffect(() => {
+    if (focused || showPanel) return;
+    if (!tgPinned) return;
+    setTgPinned(false);
+    const el = rootRef.current;
+    if (el) {
+      el.style.position = "";
+      el.style.top = "";
+      el.style.left = "";
+      el.style.right = "";
+      el.style.width = "";
+      el.style.zIndex = "";
+      el.style.margin = "";
+    }
+    if (spacerRef.current) spacerRef.current.style.height = "0px";
+  }, [focused, showPanel, tgPinned]);
 
   useLayoutEffect(() => {
     if (!showPanel) return;
@@ -199,11 +291,15 @@ export default function NodeMapSearch({
     const onScroll = () => updatePanelPos();
     window.addEventListener("resize", onScroll);
     window.addEventListener("scroll", onScroll, true);
+    window.visualViewport?.addEventListener("resize", onScroll);
+    window.visualViewport?.addEventListener("scroll", onScroll);
     return () => {
       window.removeEventListener("resize", onScroll);
       window.removeEventListener("scroll", onScroll, true);
+      window.visualViewport?.removeEventListener("resize", onScroll);
+      window.visualViewport?.removeEventListener("scroll", onScroll);
     };
-  }, [showPanel, updatePanelPos, results.length, query]);
+  }, [showPanel, updatePanelPos, results.length, query, tgPinned]);
 
   // Keep active row visible
   useEffect(() => {
@@ -295,15 +391,25 @@ export default function NodeMapSearch({
   };
 
   return (
+    <>
+      {/* Holds vertical space when search is fixed in TG keyboard mode */}
+      <div
+        ref={spacerRef}
+        className="w-full pointer-events-none"
+        style={{ height: 0 }}
+        aria-hidden
+      />
     <div
       ref={rootRef}
-      className={`relative pointer-events-auto ${className}`}
+      className={`relative pointer-events-auto ${className} ${
+        tgPinned ? "lumen-tg-search-pinned" : ""
+      }`}
       role="search"
     >
       <div
         className={`
           group relative flex items-center gap-2 rounded-2xl border border-white/10
-          bg-[#0A0A0F]/88 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)]
+          bg-[#0A0A0F]/92 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)]
           transition-all duration-300
           focus-within:border-[#00E5FF]/35 focus-within:shadow-[0_8px_40px_rgba(0,229,255,0.08)]
           ${compact ? "px-3 py-2" : "px-3.5 py-2.5"}
@@ -319,15 +425,23 @@ export default function NodeMapSearch({
           <input
             ref={inputRef}
             type="search"
+            enterKeyHint="search"
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
               setOpen(true);
               setFocused(true);
+              if (isTgMiniApp()) setTgPinned(true);
             }}
             onFocus={() => {
               setOpen(true);
               setFocused(true);
+              if (isTgMiniApp()) {
+                // Defer until keyboard starts animating
+                pinSearchToTopTg();
+                window.setTimeout(pinSearchToTopTg, 50);
+                window.setTimeout(pinSearchToTopTg, 280);
+              }
             }}
             onBlur={() => {
               // delay so option click can fire first
@@ -502,5 +616,6 @@ export default function NodeMapSearch({
           document.body
         )}
     </div>
+    </>
   );
 }
