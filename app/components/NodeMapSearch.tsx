@@ -10,7 +10,6 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 
@@ -104,9 +103,6 @@ function scoreMatch(node: SearchableNode, q: string): number {
 
 const MAX_RESULTS = 48;
 
-/** ~10 rows visible (row ≈ 52px + header) */
-const DROPDOWN_MAX_H = "min(560px, min(70vh, 70dvh))";
-
 export default function NodeMapSearch({
   nodes,
   onSelect,
@@ -129,6 +125,7 @@ export default function NodeMapSearch({
     top: number;
     left: number;
     width: number;
+    maxHeight: number;
   } | null>(null);
   const [mounted, setMounted] = useState(false);
   /** Telegram: pin bar to top of visual viewport while keyboard open */
@@ -141,6 +138,16 @@ export default function NodeMapSearch({
   const isTgMiniApp = useCallback(() => {
     if (typeof document === "undefined") return false;
     return document.documentElement.classList.contains("tg-miniapp");
+  }, []);
+
+  /** Space left below search bar inside visual viewport (above keyboard). */
+  const remainingListHeight = useCallback((barBottom: number) => {
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const vvTop = vv?.offsetTop ?? 0;
+    const vvH = vv?.height ?? (typeof window !== "undefined" ? window.innerHeight : 600);
+    const vvBottom = vvTop + vvH;
+    // Keep list fully above keyboard / viewport bottom
+    return Math.max(140, Math.min(560, vvBottom - barBottom - 12));
   }, []);
 
   /** Parent-driven full clear (input + dropdown) */
@@ -189,7 +196,7 @@ export default function NodeMapSearch({
     setActiveIdx(0);
   }, [trimmed]);
 
-  // Portal panel under the search field (escapes map overflow / z-index)
+  // Panel geometry under the search field; maxHeight stays above keyboard
   const updatePanelPos = useCallback(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -199,33 +206,34 @@ export default function NodeMapSearch({
       typeof window !== "undefined"
         ? Math.min(window.innerWidth - pad * 2, 420)
         : 420;
+    const top = r.bottom + 6;
     setPanelPos({
-      top: r.bottom + 8,
-      left: Math.max(pad, Math.min(r.left, (window.innerWidth || 0) - maxW - pad)),
+      top,
+      left: Math.max(
+        pad,
+        Math.min(r.left, (window.innerWidth || 0) - maxW - pad)
+      ),
       width: Math.min(Math.max(r.width, compact ? 280 : 300), maxW),
+      maxHeight: remainingListHeight(top),
     });
-  }, [compact]);
+  }, [compact, remainingListHeight]);
 
-  /** Scroll + pin search to top of phone when TG keyboard opens */
+  /** Scroll + pin search when TG keyboard opens (list stays attached to bar). */
   const pinSearchToTopTg = useCallback(() => {
     if (!isTgMiniApp()) return;
     const el = rootRef.current;
     if (!el) return;
 
-    // 1) Scroll page so map/search area is near the top of the document
     try {
       const rect = el.getBoundingClientRect();
-      const y = window.scrollY + rect.top - 6;
-      window.scrollTo({ top: Math.max(0, y), behavior: "smooth" });
+      const y = window.scrollY + rect.top - 8;
+      window.scrollTo({ top: Math.max(0, y), behavior: "auto" });
     } catch {
-      el.scrollIntoView({ block: "start", behavior: "smooth" });
+      el.scrollIntoView({ block: "start", behavior: "auto" });
     }
 
-    // 2) Fix bar to visualViewport top (survives keyboard resize)
     setTgPinned(true);
-    requestAnimationFrame(() => {
-      updatePanelPos();
-    });
+    requestAnimationFrame(() => updatePanelPos());
   }, [isTgMiniApp, updatePanelPos]);
 
   useLayoutEffect(() => {
@@ -235,14 +243,11 @@ export default function NodeMapSearch({
 
     const applyPin = () => {
       const vv = window.visualViewport;
-      // ~2 search-bar heights below viewport top (was too high under TG chrome)
       const barH = el.offsetHeight || 44;
+      // ~2 bar heights below visual top (TG chrome)
       const top = (vv?.offsetTop ?? 0) + barH * 2;
       const left = 10;
-      const width = Math.max(
-        200,
-        (vv?.width ?? window.innerWidth) - 20
-      );
+      const width = Math.max(200, (vv?.width ?? window.innerWidth) - 20);
       el.style.position = "fixed";
       el.style.top = `${top}px`;
       el.style.left = `${left}px`;
@@ -250,9 +255,8 @@ export default function NodeMapSearch({
       el.style.width = `${width}px`;
       el.style.zIndex = "13000";
       el.style.margin = "0";
-      // Spacer keeps layout from jumping when bar leaves flow
       if (spacerRef.current) {
-        spacerRef.current.style.height = `${el.offsetHeight}px`;
+        spacerRef.current.style.height = `${barH}px`;
       }
       updatePanelPos();
     };
@@ -288,7 +292,7 @@ export default function NodeMapSearch({
   }, [focused, showPanel, tgPinned]);
 
   useLayoutEffect(() => {
-    if (!showPanel) return;
+    if (!showPanel && !tgPinned) return;
     updatePanelPos();
     const onScroll = () => updatePanelPos();
     window.addEventListener("resize", onScroll);
@@ -301,15 +305,22 @@ export default function NodeMapSearch({
       window.visualViewport?.removeEventListener("resize", onScroll);
       window.visualViewport?.removeEventListener("scroll", onScroll);
     };
-  }, [showPanel, updatePanelPos, results.length, query, tgPinned]);
+  }, [showPanel, updatePanelPos, results.length, query, tgPinned, focused]);
 
-  // Keep active row visible
+  // Keep active row visible inside list only (do not scroll the page)
   useEffect(() => {
     if (!showPanel || !listRef.current) return;
     const el = listRef.current.querySelector<HTMLElement>(
       `[data-idx="${activeIdx}"]`
     );
-    el?.scrollIntoView({ block: "nearest" });
+    if (!el || !listRef.current) return;
+    const parent = listRef.current;
+    const pTop = parent.scrollTop;
+    const pBottom = pTop + parent.clientHeight;
+    const eTop = el.offsetTop;
+    const eBottom = eTop + el.offsetHeight;
+    if (eTop < pTop) parent.scrollTop = eTop;
+    else if (eBottom > pBottom) parent.scrollTop = eBottom - parent.clientHeight;
   }, [activeIdx, showPanel, results.length]);
 
   // Outside click closes list (keeps query) — include portaled panel
@@ -500,123 +511,149 @@ export default function NodeMapSearch({
         </AnimatePresence>
       </div>
 
-      {mounted &&
-        createPortal(
-          <AnimatePresence>
-            {showPanel && panelPos && (
-              <motion.div
-                id={listId}
-                role="listbox"
-                initial={{ opacity: 0, y: -8, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                style={{
-                  position: "fixed",
-                  top: panelPos.top,
-                  left: panelPos.left,
-                  width: panelPos.width,
-                  maxWidth: "min(100vw - 16px, 420px)",
-                  zIndex: 12000,
-                }}
-                className="pointer-events-auto overflow-hidden rounded-2xl border border-white/12 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_20px_56px_rgba(0,0,0,0.65)]"
-              >
-                <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
-                  <span className="text-[9px] font-mono tracking-[0.2em] text-[#A0A0B0]/80">
-                    {results.length > 0
-                      ? `${results.length}${results.length >= MAX_RESULTS ? "+" : ""} MATCHES`
-                      : "RESULTS"}
-                  </span>
-                  <span className="text-[9px] font-mono text-[#A0A0B0]/45 hidden sm:inline">
-                    ↑↓ · Enter · Esc
-                  </span>
+      {/*
+        Results list:
+        - TG pinned (keyboard): attach under fixed bar so it never flies off-screen
+        - else: fixed portal (escapes map overflow)
+      */}
+      <AnimatePresence>
+        {showPanel && (
+          <motion.div
+            id={listId}
+            role="listbox"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            style={
+              tgPinned
+                ? {
+                    position: "absolute",
+                    top: "100%",
+                    left: 0,
+                    right: 0,
+                    marginTop: 6,
+                    zIndex: 2,
+                    maxHeight: panelPos?.maxHeight ?? 280,
+                  }
+                : mounted && panelPos
+                  ? {
+                      position: "fixed",
+                      top: panelPos.top,
+                      left: panelPos.left,
+                      width: panelPos.width,
+                      maxWidth: "min(100vw - 16px, 420px)",
+                      zIndex: 13050,
+                      maxHeight: panelPos.maxHeight,
+                    }
+                  : {
+                      position: "absolute",
+                      top: "100%",
+                      left: 0,
+                      right: 0,
+                      marginTop: 6,
+                      zIndex: 50,
+                      maxHeight: 320,
+                    }
+            }
+            className="pointer-events-auto overflow-hidden rounded-2xl border border-white/12 bg-[#0A0A0F]/97 backdrop-blur-xl shadow-[0_20px_56px_rgba(0,0,0,0.65)]"
+          >
+            <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between shrink-0">
+              <span className="text-[9px] font-mono tracking-[0.2em] text-[#A0A0B0]/80">
+                {results.length > 0
+                  ? `${results.length}${results.length >= MAX_RESULTS ? "+" : ""} MATCHES`
+                  : "RESULTS"}
+              </span>
+              <span className="text-[9px] font-mono text-[#A0A0B0]/45 hidden sm:inline">
+                ↑↓ · Enter · Esc
+              </span>
+            </div>
+
+            {results.length === 0 ? (
+              <div className="px-4 py-6 text-center">
+                <div className="text-[12px] text-[#E8E8F0]/90 font-medium">
+                  No nodes found
                 </div>
+                <div className="mt-1 text-[10px] font-mono text-[#A0A0B0]/70">
+                  Try name, IP, country code, or version
+                </div>
+              </div>
+            ) : (
+              <div
+                ref={listRef}
+                className="overflow-y-auto overscroll-contain lumen-search-scroll pb-1.5"
+                style={{
+                  maxHeight: Math.max(
+                    100,
+                    (panelPos?.maxHeight ?? 280) - 36
+                  ),
+                }}
+              >
+                {results.map((n, idx) => {
+                  const st = normalizeState(n.state);
+                  const meta = stateStyle(st);
+                  const active = idx === activeIdx;
+                  const selected = selectedId === n.id;
+                  const ver = shortVersion(n.version);
+                  const loc = [n.city, n.country].filter(Boolean).join(", ");
 
-                {results.length === 0 ? (
-                  <div className="px-4 py-8 text-center">
-                    <div className="text-[12px] text-[#E8E8F0]/90 font-medium">
-                      No nodes found
-                    </div>
-                    <div className="mt-1 text-[10px] font-mono text-[#A0A0B0]/70">
-                      Try name, IP, country code, or version
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    ref={listRef}
-                    className="overflow-y-auto overscroll-contain lumen-search-scroll pb-1.5"
-                    style={{ maxHeight: DROPDOWN_MAX_H }}
-                  >
-                    {results.map((n, idx) => {
-                      const st = normalizeState(n.state);
-                      const meta = stateStyle(st);
-                      const active = idx === activeIdx;
-                      const selected = selectedId === n.id;
-                      const ver = shortVersion(n.version);
-                      const loc = [n.city, n.country]
-                        .filter(Boolean)
-                        .join(", ");
-
-                      return (
-                        <button
-                          key={n.id}
-                          type="button"
-                          id={`${listId}-opt-${idx}`}
-                          data-idx={idx}
-                          role="option"
-                          aria-selected={active}
-                          onMouseEnter={() => setActiveIdx(idx)}
-                          onClick={() => pick(n)}
-                          className={`
+                  return (
+                    <button
+                      key={n.id}
+                      type="button"
+                      id={`${listId}-opt-${idx}`}
+                      data-idx={idx}
+                      role="option"
+                      aria-selected={active}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onMouseEnter={() => setActiveIdx(idx)}
+                      onClick={() => pick(n)}
+                      className={`
                         w-full text-left px-3 py-2.5 mx-0 flex gap-2.5 items-start
                         transition-colors duration-150
                         ${active || selected ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"}
                         ${selected ? "ring-1 ring-inset ring-[#00E5FF]/20" : ""}
                       `}
-                        >
-                          <span
-                            className="mt-1.5 w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_currentColor]"
-                            style={{
-                              background: meta.color,
-                              color: meta.color,
-                              opacity: st === "seen" ? 0.7 : 1,
-                            }}
-                          />
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-2 min-w-0">
-                              <span className="text-[12px] font-medium text-white truncate">
-                                {n.name || "unknown"}
-                              </span>
-                              <span
-                                className="shrink-0 text-[9px] font-mono tracking-wider uppercase"
-                                style={{ color: meta.color }}
-                              >
-                                {meta.label}
-                              </span>
-                            </span>
-                            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-[#A0A0B0]">
-                              <span className="text-[#E8E8F0]/75">
-                                {n.ip}
-                                {n.port ? `:${n.port}` : ""}
-                              </span>
-                              {loc ? <span>· {loc}</span> : null}
-                              {ver ? (
-                                <span className="text-[#00E5FF]/70">
-                                  v{ver}
-                                </span>
-                              ) : null}
-                            </span>
+                    >
+                      <span
+                        className="mt-1.5 w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_currentColor]"
+                        style={{
+                          background: meta.color,
+                          color: meta.color,
+                          opacity: st === "seen" ? 0.7 : 1,
+                        }}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="text-[12px] font-medium text-white truncate">
+                            {n.name || "unknown"}
                           </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </motion.div>
+                          <span
+                            className="shrink-0 text-[9px] font-mono tracking-wider uppercase"
+                            style={{ color: meta.color }}
+                          >
+                            {meta.label}
+                          </span>
+                        </span>
+                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-[#A0A0B0]">
+                          <span className="text-[#E8E8F0]/75">
+                            {n.ip}
+                            {n.port ? `:${n.port}` : ""}
+                          </span>
+                          {loc ? <span>· {loc}</span> : null}
+                          {ver ? (
+                            <span className="text-[#00E5FF]/70">v{ver}</span>
+                          ) : null}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             )}
-          </AnimatePresence>,
-          document.body
+          </motion.div>
         )}
+      </AnimatePresence>
     </div>
     </>
   );
