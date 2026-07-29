@@ -24,15 +24,36 @@ type Props = {
   isFetching?: boolean;
 };
 
+/** me = user's bridge oracle; lumen = host network oracle (not personal) */
+type OperatorIdentity = "me" | "lumen";
+
 type OperatorRow = {
   address: string;
   status: FeedStatus;
   pools: string[];
   accent: string;
-  isMine?: boolean;
+  /** Who this address is for — never show ME for lumen host keys */
+  identity?: OperatorIdentity | null;
   idleKey?: boolean;
   detail?: string | null;
 };
+
+/**
+ * isMine from metrics means "this host/agent's oracle box".
+ * On network / lumen public feeds that is LUMEN, not the visitor.
+ * Only My Oracle (scope=mine) is personal ME.
+ */
+function nodeIdentity(
+  node: { isMine?: boolean },
+  feed: OracleFeedData,
+  view?: string | null
+): OperatorIdentity | null {
+  if (!node.isMine) return null;
+  // Personal only when My Oracle (bridge) scope
+  if (feed.scope === "mine" || view === "my") return "me";
+  // Public / network dashboard: host metrics isMine = LUMEN, not visitor
+  return "lumen";
+}
 
 function shortAddr(addr: string) {
   if (addr.length < 14) return addr;
@@ -103,12 +124,14 @@ export default function OracleOperatorsLive({
     const byAddr = new Map<string, OperatorRow>();
     let activeSum = 0;
     let totalSum = 0;
+    const view = data?.view ?? null;
 
     for (const feed of feeds) {
       activeSum += liveCount(feed);
       totalSum += totalCount(feed);
       const th = poolTheme(feed);
       for (const n of feed.nodes || []) {
+        const identity = nodeIdentity(n, feed, view);
         const prev = byAddr.get(n.address);
         if (!prev) {
           byAddr.set(n.address, {
@@ -116,7 +139,7 @@ export default function OracleOperatorsLive({
             status: n.status,
             pools: [feed.pair],
             accent: th.accent,
-            isMine: n.isMine,
+            identity,
             idleKey: n.idleKey,
             detail: n.detail,
           });
@@ -136,7 +159,11 @@ export default function OracleOperatorsLive({
           prev.detail = n.detail || prev.detail || "Keys held · not posting";
         }
         if (!prev.pools.includes(feed.pair)) prev.pools.push(feed.pair);
-        if (n.isMine) prev.isMine = true;
+        // Prefer personal ME over lumen host tag if both ever appear
+        if (identity === "me") prev.identity = "me";
+        else if (identity === "lumen" && prev.identity !== "me") {
+          prev.identity = "lumen";
+        }
       }
     }
 
@@ -145,8 +172,8 @@ export default function OracleOperatorsLive({
       if (!!a.idleKey !== !!b.idleKey) return a.idleKey ? 1 : -1;
       const dr = statusRank(b.status) - statusRank(a.status);
       if (dr !== 0) return dr;
-      if (a.isMine && !b.isMine) return -1;
-      if (!a.isMine && b.isMine) return 1;
+      // Highlight tagged ops (me / lumen) first
+      if (!!a.identity !== !!b.identity) return a.identity ? -1 : 1;
       return a.address.localeCompare(b.address);
     });
 
@@ -160,7 +187,7 @@ export default function OracleOperatorsLive({
       idleKeys,
       operators,
     };
-  }, [feeds]);
+  }, [feeds, data?.view]);
 
   const empty = !isLoading && (isError || feeds.length === 0);
 
@@ -454,9 +481,14 @@ export default function OracleOperatorsLive({
                         idle
                       </span>
                     )}
-                    {op.isMine && (
+                    {op.identity === "me" && (
                       <span className="text-[8px] font-mono tracking-wider text-[#FF7A3D] shrink-0">
                         ME
+                      </span>
+                    )}
+                    {op.identity === "lumen" && (
+                      <span className="text-[8px] font-mono tracking-wider text-[#00E5FF] shrink-0">
+                        LUMEN
                       </span>
                     )}
                   </button>
