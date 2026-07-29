@@ -235,7 +235,9 @@ export default function NodeMapSearch({
 
     const applyPin = () => {
       const vv = window.visualViewport;
-      const top = (vv?.offsetTop ?? 0) + 6;
+      // ~2 search-bar heights below viewport top (was too high under TG chrome)
+      const barH = el.offsetHeight || 44;
+      const top = (vv?.offsetTop ?? 0) + barH * 2;
       const left = 10;
       const width = Math.max(
         200,
