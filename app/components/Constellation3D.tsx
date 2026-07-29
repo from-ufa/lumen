@@ -1206,6 +1206,18 @@ function CameraRig({
 }) {
   const { camera, gl } = useThree();
   const controlsRef = useRef<any>(null);
+  /** Touch phones: one finger rotate, pinch zoom; pan stays mouse/desktop */
+  const [isTouchUi] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return (
+        window.matchMedia("(pointer: coarse)").matches ||
+        window.matchMedia("(max-width: 767px)").matches
+      );
+    } catch {
+      return false;
+    }
+  });
   const flyRef = useRef<{
     active: boolean;
     t0: number;
@@ -1297,7 +1309,8 @@ function CameraRig({
     <OrbitControls
       ref={controlsRef}
       args={[camera, gl.domElement]}
-      enablePan
+      /* Desktop: pan + zoom + rotate as before. Touch: rotate/pinch only. */
+      enablePan={!isTouchUi}
       enableZoom
       enableRotate
       autoRotate={false}
@@ -1306,11 +1319,19 @@ function CameraRig({
       maxDistance={42}
       enableDamping
       dampingFactor={0.06}
-      rotateSpeed={0.48}
-      zoomSpeed={0.7}
+      rotateSpeed={isTouchUi ? 0.55 : 0.48}
+      zoomSpeed={isTouchUi ? 0.85 : 0.7}
       target={[0, 0.2, 0]}
       maxPolarAngle={Math.PI * 0.92}
       minPolarAngle={0.12}
+      touches={
+        isTouchUi
+          ? {
+              ONE: THREE.TOUCH.ROTATE,
+              TWO: THREE.TOUCH.DOLLY_PAN,
+            }
+          : undefined
+      }
     />
   );
 }

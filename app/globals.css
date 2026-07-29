@@ -3,6 +3,12 @@
 :root {
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Safe-area (notch / home indicator / Capacitor WebView) */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
   
   /* Lumen Design System - Deep Space + Ergo */
   --bg: #0A0A0F;
@@ -31,9 +37,10 @@ body {
   color: var(--text);
   font-family: var(--font-geist-sans);
   overflow-x: hidden;
-  /* Safe areas for notched phones / PWA standalone */
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  /* Safe areas for notched phones / PWA / Capacitor */
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+  padding-bottom: var(--safe-bottom);
 }
 
 /* Orbit ↔ Map crossfade accent wash */
@@ -52,6 +59,11 @@ body {
   height: min(52dvh, 420px);
   min-height: 280px;
   max-height: 780px;
+  /* Orbit/Map: gestures stay on canvas; page does not steal one-finger drag */
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 @media (min-width: 640px) {
   .lumen-viz {
@@ -62,6 +74,17 @@ body {
 @media (min-width: 1024px) {
   .lumen-viz {
     min-height: 520px;
+  }
+}
+
+/* Narrow phones (~390px): prevent horizontal bleed from dense UI */
+@media (max-width: 390px) {
+  .lumen-glow-panel--metric {
+    min-height: 104px;
+  }
+  .metric-value {
+    font-size: 1.35rem;
+    letter-spacing: -0.03em;
   }
 }
 
