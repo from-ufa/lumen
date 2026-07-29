@@ -4,11 +4,13 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, X } from "lucide-react";
 
@@ -37,6 +39,8 @@ type NodeMapSearchProps = {
    * Value 0 / undefined = no-op on mount.
    */
   clearToken?: number;
+  /** True while search is focused / open — parent can hide Boom/Refresh */
+  onActiveChange?: (active: boolean) => void;
 };
 
 function normalizeState(s?: string | null): string {
@@ -100,6 +104,9 @@ function scoreMatch(node: SearchableNode, q: string): number {
 
 const MAX_RESULTS = 48;
 
+/** ~10 rows visible (row ≈ 52px + header) */
+const DROPDOWN_MAX_H = "min(560px, min(70vh, 70dvh))";
+
 export default function NodeMapSearch({
   nodes,
   onSelect,
@@ -107,6 +114,7 @@ export default function NodeMapSearch({
   compact = false,
   className = "",
   clearToken = 0,
+  onActiveChange,
 }: NodeMapSearchProps) {
   const listId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -115,8 +123,17 @@ export default function NodeMapSearch({
 
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
+  const [panelPos, setPanelPos] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const [mounted, setMounted] = useState(false);
   const lastClearToken = useRef(clearToken);
+
+  useEffect(() => setMounted(true), []);
 
   /** Parent-driven full clear (input + dropdown) */
   useEffect(() => {
@@ -154,10 +171,39 @@ export default function NodeMapSearch({
   }, [nodes, trimmed]);
 
   const showPanel = open && trimmed.length > 0;
+  const searchActive = focused || showPanel;
+
+  useEffect(() => {
+    onActiveChange?.(searchActive);
+  }, [searchActive, onActiveChange]);
 
   useEffect(() => {
     setActiveIdx(0);
   }, [trimmed]);
+
+  // Portal panel under the search field (escapes map overflow / z-index)
+  const updatePanelPos = useCallback(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setPanelPos({
+      top: r.bottom + 8,
+      left: r.left,
+      width: Math.max(r.width, compact ? 280 : 300),
+    });
+  }, [compact]);
+
+  useLayoutEffect(() => {
+    if (!showPanel) return;
+    updatePanelPos();
+    const onScroll = () => updatePanelPos();
+    window.addEventListener("resize", onScroll);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [showPanel, updatePanelPos, results.length, query]);
 
   // Keep active row visible
   useEffect(() => {
@@ -168,17 +214,25 @@ export default function NodeMapSearch({
     el?.scrollIntoView({ block: "nearest" });
   }, [activeIdx, showPanel, results.length]);
 
-  // Outside click closes list (keeps query)
+  // Outside click closes list (keeps query) — include portaled panel
   useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current?.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    if (!open && !focused) return;
+    const onDown = (e: Event) => {
+      const t = e.target as Node;
+      if (rootRef.current?.contains(t)) return;
+      if (listRef.current?.contains(t)) return;
+      const panel = document.getElementById(listId);
+      if (panel?.contains(t)) return;
+      setOpen(false);
+      setFocused(false);
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+    document.addEventListener("touchstart", onDown);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+    };
+  }, [open, focused, listId]);
 
   const pick = useCallback(
     (node: SearchableNode) => {
@@ -269,8 +323,20 @@ export default function NodeMapSearch({
             onChange={(e) => {
               setQuery(e.target.value);
               setOpen(true);
+              setFocused(true);
             }}
-            onFocus={() => setOpen(true)}
+            onFocus={() => {
+              setOpen(true);
+              setFocused(true);
+            }}
+            onBlur={() => {
+              // delay so option click can fire first
+              window.setTimeout(() => {
+                if (!listRef.current?.contains(document.activeElement)) {
+                  setFocused(false);
+                }
+              }, 120);
+            }}
             onKeyDown={onKeyDown}
             placeholder=""
             autoComplete="off"
@@ -318,106 +384,123 @@ export default function NodeMapSearch({
         </AnimatePresence>
       </div>
 
-      <AnimatePresence>
-        {showPanel && (
-          <motion.div
-            id={listId}
-            role="listbox"
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.98 }}
-            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute top-full left-0 right-0 mt-2 z-50 overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/94 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
-          >
-            <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
-              <span className="text-[9px] font-mono tracking-[0.2em] text-[#A0A0B0]/80">
-                {results.length > 0
-                  ? `${results.length}${results.length >= MAX_RESULTS ? "+" : ""} MATCHES`
-                  : "RESULTS"}
-              </span>
-              <span className="text-[9px] font-mono text-[#A0A0B0]/45 hidden sm:inline">
-                ↑↓ · Enter · Esc
-              </span>
-            </div>
-
-            {results.length === 0 ? (
-              <div className="px-4 py-8 text-center">
-                <div className="text-[12px] text-[#E8E8F0]/90 font-medium">
-                  No nodes found
-                </div>
-                <div className="mt-1 text-[10px] font-mono text-[#A0A0B0]/70">
-                  Try name, IP, country code, or version
-                </div>
-              </div>
-            ) : (
-              <div
-                ref={listRef}
-                className="max-h-[min(340px,42vh)] overflow-y-auto overscroll-contain lumen-search-scroll pb-1.5"
+      {mounted &&
+        createPortal(
+          <AnimatePresence>
+            {showPanel && panelPos && (
+              <motion.div
+                id={listId}
+                role="listbox"
+                initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                style={{
+                  position: "fixed",
+                  top: panelPos.top,
+                  left: panelPos.left,
+                  width: panelPos.width,
+                  maxWidth: "min(100vw - 16px, 420px)",
+                  zIndex: 10050,
+                }}
+                className="pointer-events-auto overflow-hidden rounded-2xl border border-white/12 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_20px_56px_rgba(0,0,0,0.65)]"
               >
-                {results.map((n, idx) => {
-                  const st = normalizeState(n.state);
-                  const meta = stateStyle(st);
-                  const active = idx === activeIdx;
-                  const selected = selectedId === n.id;
-                  const ver = shortVersion(n.version);
-                  const loc = [n.city, n.country].filter(Boolean).join(", ");
+                <div className="px-3 pt-2.5 pb-1.5 flex items-center justify-between">
+                  <span className="text-[9px] font-mono tracking-[0.2em] text-[#A0A0B0]/80">
+                    {results.length > 0
+                      ? `${results.length}${results.length >= MAX_RESULTS ? "+" : ""} MATCHES`
+                      : "RESULTS"}
+                  </span>
+                  <span className="text-[9px] font-mono text-[#A0A0B0]/45 hidden sm:inline">
+                    ↑↓ · Enter · Esc
+                  </span>
+                </div>
 
-                  return (
-                    <button
-                      key={n.id}
-                      type="button"
-                      id={`${listId}-opt-${idx}`}
-                      data-idx={idx}
-                      role="option"
-                      aria-selected={active}
-                      onMouseEnter={() => setActiveIdx(idx)}
-                      onClick={() => pick(n)}
-                      className={`
+                {results.length === 0 ? (
+                  <div className="px-4 py-8 text-center">
+                    <div className="text-[12px] text-[#E8E8F0]/90 font-medium">
+                      No nodes found
+                    </div>
+                    <div className="mt-1 text-[10px] font-mono text-[#A0A0B0]/70">
+                      Try name, IP, country code, or version
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    ref={listRef}
+                    className="overflow-y-auto overscroll-contain lumen-search-scroll pb-1.5"
+                    style={{ maxHeight: DROPDOWN_MAX_H }}
+                  >
+                    {results.map((n, idx) => {
+                      const st = normalizeState(n.state);
+                      const meta = stateStyle(st);
+                      const active = idx === activeIdx;
+                      const selected = selectedId === n.id;
+                      const ver = shortVersion(n.version);
+                      const loc = [n.city, n.country]
+                        .filter(Boolean)
+                        .join(", ");
+
+                      return (
+                        <button
+                          key={n.id}
+                          type="button"
+                          id={`${listId}-opt-${idx}`}
+                          data-idx={idx}
+                          role="option"
+                          aria-selected={active}
+                          onMouseEnter={() => setActiveIdx(idx)}
+                          onClick={() => pick(n)}
+                          className={`
                         w-full text-left px-3 py-2.5 mx-0 flex gap-2.5 items-start
                         transition-colors duration-150
                         ${active || selected ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"}
                         ${selected ? "ring-1 ring-inset ring-[#00E5FF]/20" : ""}
                       `}
-                    >
-                      <span
-                        className="mt-1.5 w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_currentColor]"
-                        style={{
-                          background: meta.color,
-                          color: meta.color,
-                          opacity: st === "seen" ? 0.7 : 1,
-                        }}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2 min-w-0">
-                          <span className="text-[12px] font-medium text-white truncate">
-                            {n.name || "unknown"}
-                          </span>
+                        >
                           <span
-                            className="shrink-0 text-[9px] font-mono tracking-wider uppercase"
-                            style={{ color: meta.color }}
-                          >
-                            {meta.label}
+                            className="mt-1.5 w-2 h-2 rounded-full shrink-0 shadow-[0_0_8px_currentColor]"
+                            style={{
+                              background: meta.color,
+                              color: meta.color,
+                              opacity: st === "seen" ? 0.7 : 1,
+                            }}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-2 min-w-0">
+                              <span className="text-[12px] font-medium text-white truncate">
+                                {n.name || "unknown"}
+                              </span>
+                              <span
+                                className="shrink-0 text-[9px] font-mono tracking-wider uppercase"
+                                style={{ color: meta.color }}
+                              >
+                                {meta.label}
+                              </span>
+                            </span>
+                            <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-[#A0A0B0]">
+                              <span className="text-[#E8E8F0]/75">
+                                {n.ip}
+                                {n.port ? `:${n.port}` : ""}
+                              </span>
+                              {loc ? <span>· {loc}</span> : null}
+                              {ver ? (
+                                <span className="text-[#00E5FF]/70">
+                                  v{ver}
+                                </span>
+                              ) : null}
+                            </span>
                           </span>
-                        </span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-[#A0A0B0]">
-                          <span className="text-[#E8E8F0]/75">
-                            {n.ip}
-                            {n.port ? `:${n.port}` : ""}
-                          </span>
-                          {loc ? <span>· {loc}</span> : null}
-                          {ver ? (
-                            <span className="text-[#00E5FF]/70">v{ver}</span>
-                          ) : null}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </motion.div>
             )}
-          </motion.div>
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
   );
 }

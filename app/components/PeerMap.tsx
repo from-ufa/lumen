@@ -1553,6 +1553,8 @@ export default function PeerMap({
   const [focusToken, setFocusToken] = useState(0);
   /** Node highlighted with premium FOUND rings (search only) */
   const [searchFocus, setSearchFocus] = useState<PeerMapMarker | null>(null);
+  /** Search focused / open — soft-hide Boom & Refresh */
+  const [searchActive, setSearchActive] = useState(false);
   /**
    * Map display filter:
    * - live (default Lumen): Connected + Live
@@ -2194,7 +2196,11 @@ export default function PeerMap({
       </div>
 
       {/* ── Mobile map HUD: search top · BOOM left / REFRESH right bottom ── */}
-      <div className="md:hidden absolute top-0 inset-x-0 z-[40] pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] space-y-2">
+      <div
+        className={`md:hidden absolute top-0 inset-x-0 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] space-y-2 ${
+          searchActive ? "z-[10040]" : "z-[40]"
+        }`}
+      >
         <NodeMapSearch
           nodes={searchNodes}
           selectedId={selected?.id}
@@ -2202,6 +2208,7 @@ export default function PeerMap({
           onSelect={(n) => {
             handleSelectPeer(n as PeerMapMarker, { fly: true });
           }}
+          onActiveChange={setSearchActive}
           className="w-full"
         />
         <div className="flex justify-center">
@@ -2213,23 +2220,36 @@ export default function PeerMap({
       </div>
       {!hideControls && (
         <div className="md:hidden absolute bottom-0 inset-x-0 z-[40] pointer-events-none flex items-end justify-between gap-3 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-          <button
-            type="button"
-            onClick={simulateBoom}
-            className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-[#FF7A3D]/50 bg-[#0A0A0F]/92 text-[#FF7A3D] shadow-lg backdrop-blur-md active:scale-[0.97]"
-          >
-            <Zap className="w-3.5 h-3.5 shrink-0" /> BOOM
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleRefresh()}
-            className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/92 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 shrink-0 ${isFetching ? "animate-spin" : ""}`}
-            />
-            REFRESH
-          </button>
+          <AnimatePresence>
+            {!searchActive && (
+              <motion.div
+                key="map-mobile-actions"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 12 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                className="contents"
+              >
+                <button
+                  type="button"
+                  onClick={simulateBoom}
+                  className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-[#FF7A3D]/50 bg-[#0A0A0F]/92 text-[#FF7A3D] shadow-lg backdrop-blur-md active:scale-[0.97]"
+                >
+                  <Zap className="w-3.5 h-3.5 shrink-0" /> BOOM
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleRefresh()}
+                  className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/92 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 shrink-0 ${isFetching ? "animate-spin" : ""}`}
+                  />
+                  REFRESH
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
@@ -2243,13 +2263,18 @@ export default function PeerMap({
       */}
 
       {/* Top-left: node search */}
-      <div className="hidden md:flex absolute top-4 left-4 z-[40] w-[min(300px,32vw)] flex-col gap-2 pointer-events-none">
+      <div
+        className={`hidden md:flex absolute top-4 left-4 w-[min(300px,32vw)] flex-col gap-2 pointer-events-none ${
+          searchActive ? "z-[10040]" : "z-[40]"
+        }`}
+      >
         <NodeMapSearch
           nodes={searchNodes}
           selectedId={selected?.id}
           onSelect={(n) => {
             handleSelectPeer(n as PeerMapMarker, { fly: true });
           }}
+          onActiveChange={setSearchActive}
           className="w-full"
         />
       </div>
@@ -2265,23 +2290,36 @@ export default function PeerMap({
       {/* Top-right: actions */}
       {!hideControls && (
         <div className="hidden md:flex absolute top-4 right-4 z-[40] gap-2 pointer-events-none">
-          <button
-            type="button"
-            onClick={() => void handleRefresh()}
-            className="pointer-events-auto glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-white/10 hover:border-[#FF7A3D]/40 flex items-center gap-1.5 text-[#E8E8F0]"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
-            />
-            REFRESH
-          </button>
-          <button
-            type="button"
-            onClick={simulateBoom}
-            className="pointer-events-auto glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-[#FF7A3D]/35 bg-[#FF7A3D]/10 hover:bg-[#FF7A3D]/20 text-[#FF7A3D] flex items-center gap-1.5"
-          >
-            <Zap className="w-3.5 h-3.5" /> BOOM
-          </button>
+          <AnimatePresence>
+            {!searchActive && (
+              <motion.div
+                key="map-desktop-actions"
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                className="flex gap-2 pointer-events-none"
+              >
+                <button
+                  type="button"
+                  onClick={() => void handleRefresh()}
+                  className="pointer-events-auto glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-white/10 hover:border-[#FF7A3D]/40 flex items-center gap-1.5 text-[#E8E8F0]"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`}
+                  />
+                  REFRESH
+                </button>
+                <button
+                  type="button"
+                  onClick={simulateBoom}
+                  className="pointer-events-auto glass px-3.5 py-2 rounded-xl text-[10px] font-mono tracking-widest border border-[#FF7A3D]/35 bg-[#FF7A3D]/10 hover:bg-[#FF7A3D]/20 text-[#FF7A3D] flex items-center gap-1.5"
+                >
+                  <Zap className="w-3.5 h-3.5" /> BOOM
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 

@@ -1783,6 +1783,7 @@ function Scene({
   // Telegram low-end / hidden: cap DPR + pause when Mini App deactivated
   const [tgPaused, setTgPaused] = useState(false);
   const [tgLowEnd, setTgLowEnd] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const low =
@@ -1842,19 +1843,24 @@ function Scene({
       </Canvas>
 
       {/* Mobile search */}
-      <div className="md:hidden absolute top-0 inset-x-0 z-30 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
+      <div
+        className={`md:hidden absolute top-0 inset-x-0 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] ${
+          searchActive ? "z-[10040]" : "z-30"
+        }`}
+      >
         <NodeMapSearch
           nodes={searchNodes}
           selectedId={focusAddress}
           compact
           clearToken={searchClearToken}
           onSelect={handleSearchSelect}
+          onActiveChange={setSearchActive}
           className="w-full"
         />
       </div>
 
       {/* Mobile FOCUS */}
-      {!hideControls && (
+      {!hideControls && !searchActive && (
         <div className="md:hidden absolute bottom-0 inset-x-0 z-30 pointer-events-none flex items-end justify-end gap-3 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
@@ -1869,13 +1875,16 @@ function Scene({
       {/* Desktop left: search */}
       {!hideControls && (
         <div
-          className={`hidden md:flex absolute top-4 left-4 z-20 flex-col gap-2 ${HUD_PANEL_W} pointer-events-none`}
+          className={`hidden md:flex absolute top-4 left-4 flex-col gap-2 ${HUD_PANEL_W} pointer-events-none ${
+            searchActive ? "z-[10040]" : "z-20"
+          }`}
         >
           <NodeMapSearch
             nodes={searchNodes}
             selectedId={focusAddress}
             clearToken={searchClearToken}
             onSelect={handleSearchSelect}
+            onActiveChange={setSearchActive}
             className="w-full"
           />
           {focusAddress && (

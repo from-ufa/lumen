@@ -2,33 +2,48 @@
 
 /**
  * Client bootstrap for Telegram Mini App:
- * init chrome, auth session, deep links, Orbit swipe guard, MainButton.
+ * init chrome, auth session, deep links, Orbit swipe guard,
+ * soft floating "My Node" pill (not native full-width MainButton).
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import {
   authenticateTelegramSession,
   getStartParam,
+  getWebApp,
   hapticImpact,
   initTelegramApp,
   isTelegramLowEnd,
   isTelegramMiniApp,
   parseStartView,
   setTelegramVerticalSwipes,
-  setupMainButton,
 } from "../lib/telegram";
 
 export default function TelegramBootstrap() {
   const router = useRouter();
   const pathname = usePathname();
   const deepLinkDone = useRef(false);
+  const [mounted, setMounted] = useState(false);
+  const [inTg, setInTg] = useState(false);
 
-  // Early ready() + theme
+  useEffect(() => setMounted(true), []);
+
+  // Early ready() + theme; hide native MainButton (huge bar)
   useEffect(() => {
     initTelegramApp();
-    if (!isTelegramMiniApp()) return;
+    if (!isTelegramMiniApp()) {
+      setInTg(false);
+      return;
+    }
+    setInTg(true);
     void authenticateTelegramSession();
+    try {
+      getWebApp()?.MainButton?.hide();
+    } catch {
+      /* */
+    }
   }, []);
 
   // Deep link start_param once
@@ -83,20 +98,55 @@ export default function TelegramBootstrap() {
     }
   }, [pathname, router]);
 
-  // MainButton → Settings / Connect (dashboard only)
+  // Keep native MainButton hidden (Telegram redraws it sometimes)
   useEffect(() => {
-    if (!isTelegramMiniApp()) return;
-    if (pathname !== "/") {
-      return;
-    }
-    return setupMainButton({
-      text: "My Node",
-      onClick: () => {
-        hapticImpact("medium");
-        window.dispatchEvent(new CustomEvent("lumen:tg-open-settings"));
-      },
-    });
-  }, [pathname]);
+    if (!inTg) return;
+    const hide = () => {
+      try {
+        getWebApp()?.MainButton?.hide();
+      } catch {
+        /* */
+      }
+    };
+    hide();
+    const id = window.setInterval(hide, 2000);
+    return () => window.clearInterval(id);
+  }, [inTg, pathname]);
 
-  return null;
+  const showMyNodePill = inTg && pathname === "/";
+
+  const openSettings = () => {
+    hapticImpact("medium");
+    window.dispatchEvent(new CustomEvent("lumen:tg-open-settings"));
+  };
+
+  return (
+    <>
+      {mounted &&
+        showMyNodePill &&
+        createPortal(
+          <button
+            type="button"
+            onClick={openSettings}
+            aria-label="My Node — open settings"
+            className="lumen-tg-my-node-pill fixed left-1/2 z-[10020] -translate-x-1/2 pointer-events-auto
+              px-5 py-2.5 rounded-full
+              text-[11px] font-mono font-medium tracking-[0.14em] uppercase
+              text-[#FFD4BE]/95
+              border border-[#FF7A3D]/35
+              bg-[#FF7A3D]/22 backdrop-blur-md
+              shadow-[0_8px_28px_rgba(0,0,0,0.35),0_0_20px_rgba(255,122,61,0.12)]
+              hover:bg-[#FF7A3D]/32 hover:border-[#FF7A3D]/50
+              active:scale-[0.97] transition-all duration-200
+              select-none"
+            style={{
+              bottom: "max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))",
+            }}
+          >
+            My Node
+          </button>,
+          document.body
+        )}
+    </>
+  );
 }
