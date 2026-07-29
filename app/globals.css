@@ -773,14 +773,12 @@ body {
 .leaflet-control-attribution a {
   color: #00E5FF !important;
 }
-.leaflet-control-zoom a {
-  background: rgba(18, 18, 24, 0.9) !important;
-  color: #E8E8F0 !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-}
-.leaflet-control-zoom a:hover {
-  background: rgba(255, 122, 61, 0.2) !important;
-  color: #FF7A3D !important;
+/* Hide Leaflet +/- zoom (pinch / wheel still work) */
+.leaflet-control-zoom,
+.leaflet-bar.leaflet-control-zoom {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 .leaflet-popup-content-wrapper,
 .lumen-map-popup .leaflet-popup-content-wrapper {

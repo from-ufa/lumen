@@ -2126,7 +2126,7 @@ export default function PeerMap({
               width: "100%",
               zIndex: 1,
             }}
-            zoomControl={true}
+            zoomControl={false}
             attributionControl={true}
             worldCopyJump={false}
           >
@@ -2198,7 +2198,7 @@ export default function PeerMap({
       {/* ── Mobile map HUD: search top · BOOM left / REFRESH right bottom ── */}
       <div
         className={`md:hidden absolute top-0 inset-x-0 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] space-y-2 ${
-          searchActive ? "z-[10040]" : "z-[40]"
+          searchActive ? "z-[12000]" : "z-[40]"
         }`}
       >
         <NodeMapSearch
@@ -2265,7 +2265,7 @@ export default function PeerMap({
       {/* Top-left: node search */}
       <div
         className={`hidden md:flex absolute top-4 left-4 w-[min(300px,32vw)] flex-col gap-2 pointer-events-none ${
-          searchActive ? "z-[10040]" : "z-[40]"
+          searchActive ? "z-[12000]" : "z-[40]"
         }`}
       >
         <NodeMapSearch

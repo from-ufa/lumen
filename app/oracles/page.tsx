@@ -82,6 +82,16 @@ export default function OraclesPage() {
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const [settingsModalOpen, setSettingsModalOpen] = useState(false);
 
+  // Telegram floating pill / deep link → open oracle ConnectionSettings
+  useEffect(() => {
+    const open = () => {
+      setSettingsOpenKey((k) => k + 1);
+      setSettingsModalOpen(true);
+    };
+    window.addEventListener("lumen:tg-open-settings", open);
+    return () => window.removeEventListener("lumen:tg-open-settings", open);
+  }, []);
+
   // Prefetch dashboard + map chunk so Orbit/Map taps feel instant
   useEffect(() => {
     const warm = () => {

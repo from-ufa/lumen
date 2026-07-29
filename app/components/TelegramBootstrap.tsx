@@ -113,7 +113,13 @@ export default function TelegramBootstrap() {
     return () => window.clearInterval(id);
   }, [inTg, pathname]);
 
-  const showMyNodePill = inTg && pathname === "/";
+  // Soft oval CTA: dashboard = My Node, oracles = My Oracle → connection modal
+  const pill =
+    inTg && pathname === "/"
+      ? { label: "My Node", aria: "My Node — open connection settings" }
+      : inTg && (pathname === "/oracles" || pathname?.startsWith("/oracles"))
+        ? { label: "My Oracle", aria: "My Oracle — open connection settings" }
+        : null;
 
   const openSettings = () => {
     hapticImpact("medium");
@@ -123,13 +129,13 @@ export default function TelegramBootstrap() {
   return (
     <>
       {mounted &&
-        showMyNodePill &&
+        pill &&
         createPortal(
           <button
             type="button"
             onClick={openSettings}
-            aria-label="My Node — open settings"
-            className="lumen-tg-my-node-pill fixed left-1/2 z-[10020] -translate-x-1/2 pointer-events-auto
+            aria-label={pill.aria}
+            className="lumen-tg-connect-pill fixed left-1/2 z-[10020] -translate-x-1/2 pointer-events-auto
               px-5 py-2.5 rounded-full
               text-[11px] font-mono font-medium tracking-[0.14em] uppercase
               text-[#FFD4BE]/95
@@ -140,10 +146,11 @@ export default function TelegramBootstrap() {
               active:scale-[0.97] transition-all duration-200
               select-none"
             style={{
-              bottom: "max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))",
+              bottom:
+                "max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem))",
             }}
           >
-            My Node
+            {pill.label}
           </button>,
           document.body
         )}

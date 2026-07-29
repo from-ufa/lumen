@@ -401,7 +401,7 @@ export default function NodeMapSearch({
                   left: panelPos.left,
                   width: panelPos.width,
                   maxWidth: "min(100vw - 16px, 420px)",
-                  zIndex: 10050,
+                  zIndex: 12000,
                 }}
                 className="pointer-events-auto overflow-hidden rounded-2xl border border-white/12 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_20px_56px_rgba(0,0,0,0.65)]"
               >
