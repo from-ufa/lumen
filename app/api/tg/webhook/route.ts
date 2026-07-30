@@ -276,15 +276,17 @@ export async function POST(req: NextRequest) {
   }
 
   const msg = update.message;
-  // Fire-and-forget: always ACK fast (Telegram webhook timeout otherwise).
-  // Long-poll local forward also benefits from non-blocking handler.
+  // MUST await: fire-and-forget is killed after response in Next.js,
+  // so /help never replied. Long-poll hits localhost — no Telegram webhook timeout.
   if (msg?.text && msg.chat?.id != null) {
-    void handleCommand(msg.chat.id, msg.text, msg.from?.id).catch((e) => {
+    try {
+      await handleCommand(msg.chat.id, msg.text, msg.from?.id);
+    } catch (e) {
       console.warn(
         "[tg/webhook] handler error",
         e instanceof Error ? e.message : "err"
       );
-    });
+    }
   }
 
   return NextResponse.json({ ok: true });
