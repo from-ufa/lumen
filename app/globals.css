@@ -1303,7 +1303,7 @@ body {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Page route transitions: no View Transitions (left body blank / jerked).
-   Soft opacity enter is LumenPageBody only — same calm path as Mini App. */
+   Soft opacity enter is LumenPageBody CSS only — same calm path as Mini App. */
 @view-transition {
   navigation: none;
 }
@@ -1326,6 +1326,29 @@ body {
 
 .vt-lumen-header {
   z-index: 40;
+}
+
+/* Soft page enter — opacity only, always ends visible (no stuck opacity:0) */
+@keyframes lumen-page-soft-enter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.lumen-page-body-soft {
+  /* Base is always visible; animation only softens the first paint */
+  opacity: 1;
+  animation: lumen-page-soft-enter 0.22s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lumen-page-body-soft {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 
