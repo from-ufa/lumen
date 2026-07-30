@@ -1340,85 +1340,77 @@ body {
   z-index: 40;
 }
 
-/* Group morph timing (position/size) */
+/* Group morph timing — snappy craft (UI < 300ms feel) */
 ::view-transition-group(lumen-brand),
 ::view-transition-group(lumen-nav-primary),
 ::view-transition-group(lumen-kicker),
 ::view-transition-group(lumen-title) {
-  animation-duration: 0.48s;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-duration: 0.28s;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
   z-index: 60;
 }
 ::view-transition-group(lumen-body) {
-  animation-duration: 0.4s;
-  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  animation-duration: 0.26s;
+  animation-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
   z-index: 1;
 }
 
-/* Soft content crossfade while the group morphs geometry */
+/* Soft content crossfade — opacity only (no heavy blur over dashboard) */
 ::view-transition-old(lumen-brand),
 ::view-transition-old(lumen-nav-primary),
 ::view-transition-old(lumen-kicker),
 ::view-transition-old(lumen-title) {
-  animation: lumen-vt-morph-out 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: lumen-vt-morph-out 0.22s cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 ::view-transition-new(lumen-brand),
 ::view-transition-new(lumen-nav-primary),
 ::view-transition-new(lumen-kicker),
 ::view-transition-new(lumen-title) {
-  animation: lumen-vt-morph-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: lumen-vt-morph-in 0.26s cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 
 ::view-transition-old(lumen-body) {
-  animation: lumen-vt-fade-out 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: lumen-vt-fade-out 0.22s cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 ::view-transition-new(lumen-body) {
-  animation: lumen-vt-fade-in 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: lumen-vt-fade-in 0.26s cubic-bezier(0.23, 1, 0.32, 1) both;
 }
 
 @keyframes lumen-vt-morph-out {
   from {
     opacity: 1;
-    filter: blur(0);
   }
   to {
     opacity: 0;
-    filter: blur(4px);
   }
 }
 @keyframes lumen-vt-morph-in {
   from {
     opacity: 0;
-    filter: blur(4px);
   }
   to {
     opacity: 1;
-    filter: blur(0);
   }
 }
 
 @keyframes lumen-vt-fade-out {
   from {
     opacity: 1;
-    filter: blur(0);
     transform: scale(1);
   }
   to {
     opacity: 0;
-    filter: blur(8px);
-    transform: scale(0.992);
+    transform: scale(0.995);
   }
 }
 
 @keyframes lumen-vt-fade-in {
   from {
     opacity: 0;
-    filter: blur(10px);
-    transform: scale(1.01) translateY(8px);
+    transform: scale(1.006) translateY(4px);
   }
   to {
     opacity: 1;
-    filter: blur(0);
     transform: scale(1) translateY(0);
   }
 }

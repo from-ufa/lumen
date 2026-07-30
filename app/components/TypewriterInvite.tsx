@@ -59,10 +59,24 @@ export default function TypewriterInvite({
   /** True once the panel has been shown (delay elapsed or wake). */
   const [hasOpened, setHasOpened] = useState(false);
   const [slotH, setSlotH] = useState(0);
+  /** Pause typewriter + glow when off-screen (Emil: don't burn cycles) */
+  const [inView, setInView] = useState(true);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const firstCompleteSent = useRef(false);
   const onFirstCompleteRef = useRef(onFirstComplete);
   onFirstCompleteRef.current = onFirstComplete;
+
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      ([e]) => setInView(!!e?.isIntersecting),
+      { root: null, threshold: 0.05, rootMargin: "40px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!enabled) {
@@ -92,7 +106,7 @@ export default function TypewriterInvite({
   }, [enabled, wakeEvent]);
 
   useEffect(() => {
-    if (!open || !enabled) return;
+    if (!open || !enabled || !inView) return;
 
     // After first type-out without loop: refresh text quietly (live stats)
     if (firstCompleteSent.current && !loop) {
@@ -149,7 +163,7 @@ export default function TypewriterInvite({
       cancelled = true;
       clearTimers();
     };
-  }, [open, enabled, cycle, fullText, loop]);
+  }, [open, enabled, cycle, fullText, loop, inView]);
 
   // Remember open height so closed slot keeps the stack stable
   useLayoutEffect(() => {
@@ -186,6 +200,7 @@ export default function TypewriterInvite({
 
   return (
     <div
+      ref={rootRef}
       className="relative flex justify-end w-full"
       style={holdingSlot ? { minHeight: heldHeight } : undefined}
     >
@@ -194,27 +209,36 @@ export default function TypewriterInvite({
           <motion.div
             key="typewriter-invite"
             ref={panelRef}
-            initial={{ opacity: 0, scaleX: 0.06, scaleY: 0.4 }}
-            animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
+            initial={{ opacity: 0, scale: 0.96, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={
               holdClosedSlot
                 ? { opacity: 0 }
-                : { opacity: 0, scaleX: 0.1, scaleY: 0.4 }
+                : { opacity: 0, scale: 0.97, y: -2 }
             }
-            transition={{ duration: holdClosedSlot ? 0.28 : 0.7, ease: [0.16, 1, 0.3, 1] }}
+            transition={{
+              duration: holdClosedSlot ? 0.2 : 0.28,
+              ease: [0.23, 1, 0.32, 1],
+            }}
             style={{ originX: 1, originY: 0, transformOrigin: "right top" }}
             className="relative w-full max-w-[min(100%,22rem)] md:max-w-[22rem]"
           >
-            <motion.div
-              aria-hidden
-              className="pointer-events-none absolute -inset-2 rounded-2xl"
-              animate={{ opacity: [0.25, 0.55, 0.25] }}
-              transition={{ duration: 2.8, ease: "easeInOut", repeat: Infinity }}
-              style={{
-                boxShadow:
-                  "0 0 0 1px rgba(232,232,240,0.08), 0 0 28px rgba(232,197,71,0.14)",
-              }}
-            />
+            {inView && (
+              <motion.div
+                aria-hidden
+                className="pointer-events-none absolute -inset-2 rounded-2xl"
+                animate={{ opacity: [0.25, 0.5, 0.25] }}
+                transition={{
+                  duration: 2.4,
+                  ease: [0.45, 0, 0.55, 1],
+                  repeat: Infinity,
+                }}
+                style={{
+                  boxShadow:
+                    "0 0 0 1px rgba(232,232,240,0.08), 0 0 28px rgba(232,197,71,0.14)",
+                }}
+              />
+            )}
 
             <div
               className="
@@ -222,7 +246,7 @@ export default function TypewriterInvite({
                 bg-[#0A0A0F]/92 backdrop-blur-xl
                 shadow-[0_8px_32px_rgba(0,0,0,0.45)]
                 px-3.5 py-2.5 pr-9
-                transition-colors duration-300
+                lumen-ui-transition
                 hover:border-white/20
               "
             >

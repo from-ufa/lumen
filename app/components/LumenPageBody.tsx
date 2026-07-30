@@ -4,7 +4,7 @@
  * Page content shell under sticky header.
  * - view-transition-name: lumen-body (CSS dissolve on SoftLink nav — desktop)
  * - Framer enter as reliable fallback when VT doesn't fire
- * - Mobile: light opacity fade only (no blur — GPU cost on WebGL pages)
+ * - Craft: opacity + slight y only (no blur — GPU cost)
  */
 
 import { useState } from "react";
@@ -12,11 +12,10 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { isMobileUi } from "./soft-nav";
 
-const EASE = [0.22, 1, 0.36, 1] as const;
+const EASE = [0.23, 1, 0.32, 1] as const;
 
 export default function LumenPageBody({ children }: { children: ReactNode }) {
   const reduce = useReducedMotion();
-  // Client-only; false on SSR so desktop markup stays stable
   const [mobile] = useState(() => isMobileUi());
 
   const softMobile = !!mobile && !reduce;
@@ -28,21 +27,13 @@ export default function LumenPageBody({ children }: { children: ReactNode }) {
         reduce
           ? false
           : softMobile
-            ? { opacity: 0, y: 6 }
-            : { opacity: 0, y: 12, filter: "blur(10px)" }
+            ? { opacity: 0, y: 4 }
+            : { opacity: 0, y: 8 }
       }
-      animate={
-        softMobile
-          ? { opacity: 1, y: 0 }
-          : { opacity: 1, y: 0, filter: "blur(0px)" }
-      }
+      animate={{ opacity: 1, y: 0 }}
       transition={{
-        duration: reduce ? 0.12 : softMobile ? 0.22 : 0.4,
+        duration: reduce ? 0.1 : softMobile ? 0.18 : 0.24,
         ease: EASE,
-        opacity: { duration: reduce ? 0.1 : softMobile ? 0.18 : 0.34 },
-        ...(softMobile
-          ? {}
-          : { filter: { duration: reduce ? 0.1 : 0.38 } }),
       }}
     >
       {children}
