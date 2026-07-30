@@ -3,8 +3,8 @@
 /**
  * Page content shell under sticky header.
  * - view-transition-name: lumen-body (CSS dissolve on SoftLink nav — desktop)
- * - Framer enter as reliable fallback when VT doesn't fire
- * - Craft: opacity + slight y only (no blur — GPU cost)
+ * - Framer enter only when View Transitions won't cover it (mobile / no VT)
+ * - Calm craft: opacity only — no y/scale (avoids double-jerk with VT)
  */
 
 import { useState } from "react";
@@ -12,27 +12,37 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { isMobileUi } from "./soft-nav";
 
-const EASE = [0.23, 1, 0.32, 1] as const;
+const EASE = [0.25, 0.1, 0.25, 1] as const;
+
+function supportsViewTransition(): boolean {
+  if (typeof document === "undefined") return false;
+  return (
+    typeof (document as Document & { startViewTransition?: unknown })
+      .startViewTransition === "function"
+  );
+}
 
 export default function LumenPageBody({ children }: { children: ReactNode }) {
   const reduce = useReducedMotion();
   const [mobile] = useState(() => isMobileUi());
+  // Desktop + VT: skip Framer enter (VT already fades body)
+  const [skipEnter] = useState(
+    () => !reduce && !isMobileUi() && supportsViewTransition()
+  );
 
-  const softMobile = !!mobile && !reduce;
+  if (reduce || skipEnter) {
+    return (
+      <div className="lumen-page-body flex-1 min-w-0">{children}</div>
+    );
+  }
 
   return (
     <motion.div
       className="lumen-page-body flex-1 min-w-0"
-      initial={
-        reduce
-          ? false
-          : softMobile
-            ? { opacity: 0, y: 4 }
-            : { opacity: 0, y: 8 }
-      }
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       transition={{
-        duration: reduce ? 0.1 : softMobile ? 0.18 : 0.24,
+        duration: mobile ? 0.15 : 0.18,
         ease: EASE,
       }}
     >
