@@ -39,6 +39,10 @@ export interface MyOracleOperator {
   rewardsDelta: number | null;
   walletNanoErg: number | null;
   walletErg: number | null;
+  /** Reward tokens held in wallet (already claimed) */
+  walletRewardTokens?: number | null;
+  /** Est. total earned ≈ held + claimable */
+  totalEarnedTokens?: number | null;
   postHeight: number | null;
   collectedHeight: number | null;
   postAgeBlocks: number | null;

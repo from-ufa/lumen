@@ -138,6 +138,31 @@ function formatDailyTokens(n: number | null | undefined): string {
   return n.toFixed(2);
 }
 
+/** Compact integer with separators: 6201 → 6,201 */
+function formatInt(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return Math.round(n).toLocaleString();
+}
+
+/** Human age from block lag (≈2 min/block). */
+function formatBlockAge(
+  blocks: number | null | undefined,
+  blockMs = 120_000
+): { primary: string; secondary: string } {
+  if (blocks == null || !Number.isFinite(blocks)) {
+    return { primary: "—", secondary: "" };
+  }
+  const b = Math.max(0, Math.round(blocks));
+  const ms = b * blockMs;
+  let primary: string;
+  if (ms < 90_000) primary = "just now";
+  else if (ms < 3_600_000) primary = `${Math.max(1, Math.round(ms / 60_000))}m ago`;
+  else if (ms < 86_400_000)
+    primary = `${Math.max(1, Math.round(ms / 3_600_000))}h ago`;
+  else primary = `${Math.max(1, Math.round(ms / 86_400_000))}d ago`;
+  return { primary, secondary: `${b} blk` };
+}
+
 /**
  * Per-pool reward card: token, spot, and est. operator earnings per day.
  * Daily = (tokens per oracle per epoch) × (epochs/day), if collected every epoch.
@@ -913,17 +938,18 @@ function OracleBlock({
         row-for-row (identity / price / activity / legend).
       */}
       <div className="shrink-0 px-3 sm:px-4 py-3 sm:py-3.5 grid grid-cols-1 gap-2.5 sm:gap-3">
-        {/* Row 1: Tier-1 operator / network cockpit — equal height both panes */}
+        {/* Row 1: operator / network cockpit — equal fixed height both panes */}
         {(isMineScope || isNetworkScope) && (
           <div
-            className="lumen-oracle-tile h-[14.5rem] rounded-xl border px-3.5 py-3 overflow-hidden flex flex-col"
+            className="lumen-oracle-tile h-[17.5rem] sm:h-[18rem] rounded-xl border px-3.5 sm:px-4 py-3 overflow-hidden flex flex-col"
             style={
               isMineScope
                 ? {
-                    borderColor: "rgba(255,122,61,0.35)",
+                    borderColor: "rgba(255,122,61,0.38)",
                     background:
-                      "linear-gradient(160deg, rgba(255,122,61,0.12) 0%, rgba(0,0,0,0.5) 50%)",
-                    boxShadow: "0 0 32px rgba(255,122,61,0.14)",
+                      "linear-gradient(165deg, rgba(255,122,61,0.14) 0%, rgba(12,10,14,0.94) 42%, rgba(0,0,0,0.55) 100%)",
+                    boxShadow:
+                      "0 0 36px rgba(255,122,61,0.12), inset 0 1px 0 rgba(255,122,61,0.12)",
                   }
                 : {
                     borderColor: "rgba(0,229,255,0.28)",
@@ -952,210 +978,296 @@ function OracleBlock({
               );
             })()}
 
-            <div className="flex items-center justify-between gap-2 shrink-0">
-              <div
-                className="text-[9px] font-mono tracking-[0.18em] uppercase"
-                style={{ color: isMineScope ? "#FF7A3D" : "#00E5FF" }}
-              >
-                {isMineScope
-                  ? "Your oracle · bridge"
-                  : "Network · lumen host"}
-              </div>
-              <span
-                className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border shrink-0"
-                style={
-                  isMineScope
-                    ? {
-                        color:
-                          mine?.isHealthy === true
-                            ? "#34D399"
-                            : mine?.isHealthy === false
-                              ? "#F87171"
-                              : "#8B8B9A",
-                        borderColor:
-                          mine?.isHealthy === true
-                            ? "rgba(52,211,153,0.35)"
-                            : mine?.isHealthy === false
-                              ? "rgba(248,113,113,0.35)"
-                              : "rgba(255,255,255,0.1)",
-                      }
-                    : {
-                        color: "#00E5FF",
-                        borderColor: "rgba(0,229,255,0.3)",
-                      }
-                }
-              >
-                {isMineScope
-                  ? mine?.isHealthy === true
-                    ? "HEALTHY"
-                    : mine?.isHealthy === false
-                      ? "DOWN"
-                      : "—"
-                  : "NOT YOURS"}
-              </span>
-            </div>
+            {isMineScope && mine ? (
+              <>
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2 shrink-0">
+                  <div className="min-w-0">
+                    <div className="text-[9px] font-mono tracking-[0.2em] uppercase text-[#FF7A3D]">
+                      Your oracle · bridge
+                    </div>
+                    <div className="mt-0.5 font-mono text-[12px] sm:text-[13px] text-[#F0F0F5] truncate tracking-tight">
+                      {shortMine || "identity matching…"}
+                    </div>
+                  </div>
+                  <span
+                    className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border shrink-0"
+                    style={{
+                      color:
+                        mine.isHealthy === true
+                          ? "#34D399"
+                          : mine.isHealthy === false
+                            ? "#F87171"
+                            : "#8B8B9A",
+                      borderColor:
+                        mine.isHealthy === true
+                          ? "rgba(52,211,153,0.35)"
+                          : mine.isHealthy === false
+                            ? "rgba(248,113,113,0.35)"
+                            : "rgba(255,255,255,0.1)",
+                      background:
+                        mine.isHealthy === true
+                          ? "rgba(52,211,153,0.08)"
+                          : "transparent",
+                    }}
+                  >
+                    {mine.isHealthy === true
+                      ? "HEALTHY"
+                      : mine.isHealthy === false
+                        ? "DOWN"
+                        : "—"}
+                  </span>
+                </div>
 
-            <div
-              className="mt-1 font-mono text-[12px] truncate shrink-0"
-              style={{ color: isMineScope ? "#F0F0F5" : "#B0B0BC" }}
-            >
-              {isMineScope
-                ? shortMine || "identity matching…"
-                : "Public pool · host metrics"}
-            </div>
+                {/* Token wealth: claimable · held · total */}
+                {(() => {
+                  const ticker = feed.rewardToken?.ticker || "TOKEN";
+                  const claim =
+                    mine.claimableRewards ?? mineNode?.rewardTokens ?? null;
+                  const held = mine.walletRewardTokens ?? null;
+                  const total =
+                    mine.totalEarnedTokens ??
+                    (claim != null || held != null
+                      ? (claim ?? 0) + (held ?? 0)
+                      : null);
+                  const px = feed.rewardTokenPriceUsd;
+                  const toUsd = (n: number | null) =>
+                    n != null && px != null ? n * px : null;
+                  const cells: {
+                    label: string;
+                    value: number | null;
+                    accent: string;
+                    hint: string;
+                  }[] = [
+                    {
+                      label: "To claim",
+                      value: claim,
+                      accent: "#E8C547",
+                      hint: "Still in oracle box",
+                    },
+                    {
+                      label: "In wallet",
+                      value: held,
+                      accent: "#FFB48A",
+                      hint: "Already claimed",
+                    },
+                    {
+                      label: "Total est.",
+                      value: total,
+                      accent: "#FF7A3D",
+                      hint: "Held + claimable",
+                    },
+                  ];
+                  return (
+                    <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2 shrink-0">
+                      {cells.map((c) => (
+                        <div
+                          key={c.label}
+                          className="rounded-lg border border-white/[0.07] bg-black/30 px-1.5 sm:px-2 py-1.5 sm:py-2 min-w-0"
+                          title={c.hint}
+                        >
+                          <div className="text-[8px] font-mono tracking-[0.12em] uppercase text-[#7A7A88] truncate">
+                            {c.label}
+                          </div>
+                          <div
+                            className="mt-1 font-mono text-[13px] sm:text-[15px] font-semibold tabular-nums leading-none truncate tracking-tight"
+                            style={{ color: c.accent }}
+                          >
+                            {formatInt(c.value)}
+                            {c.label === "To claim" &&
+                              mine.rewardsDelta != null &&
+                              mine.rewardsDelta !== 0 && (
+                                <span
+                                  className="ml-1 text-[10px] font-normal"
+                                  style={{
+                                    color:
+                                      mine.rewardsDelta > 0
+                                        ? "#34D399"
+                                        : "#F87171",
+                                  }}
+                                >
+                                  {mine.rewardsDelta > 0
+                                    ? `+${mine.rewardsDelta}`
+                                    : `${mine.rewardsDelta}`}
+                                </span>
+                              )}
+                          </div>
+                          <div className="mt-0.5 flex items-baseline justify-between gap-1 min-w-0">
+                            <span className="text-[9px] font-mono text-[#6B6B78] truncate">
+                              {ticker}
+                            </span>
+                            <span className="text-[9px] font-mono tabular-nums text-[#8B8B9A] shrink-0">
+                              {formatUsdSpot(toUsd(c.value))}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
 
-            {/* 2×3 metric grid — same slots both panes */}
-            <div className="mt-2.5 grid grid-cols-3 gap-x-2 gap-y-2.5 text-center shrink-0">
-              <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  {isMineScope ? "Last post" : "Pool lag"}
+                {/* Status strip: last publish · gas · refresh */}
+                {(() => {
+                  const postAge = formatBlockAge(mine.postAgeBlocks);
+                  const collAge = formatBlockAge(mine.collectedAgeBlocks);
+                  return (
+                    <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2 shrink-0">
+                      <div className="min-w-0">
+                        <div className="text-[8px] font-mono tracking-[0.12em] uppercase text-[#7A7A88]">
+                          Last publish
+                        </div>
+                        <div className="mt-0.5 font-mono text-[12px] sm:text-[13px] font-medium tabular-nums text-[#FF7A3D] leading-tight truncate">
+                          {postAge.primary}
+                        </div>
+                        <div className="text-[9px] font-mono text-[#6B6B78] tabular-nums">
+                          {postAge.secondary || "\u00a0"}
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[8px] font-mono tracking-[0.12em] uppercase text-[#7A7A88]">
+                          Gas wallet
+                        </div>
+                        <div className="mt-0.5 font-mono text-[12px] sm:text-[13px] font-medium tabular-nums text-[#E8E8F0] leading-tight truncate">
+                          {walletErg != null
+                            ? `${walletErg < 10 ? walletErg.toFixed(2) : walletErg.toFixed(1)}`
+                            : "—"}
+                          {walletErg != null && (
+                            <span className="text-[9px] text-[#6B6B78] ml-1 font-normal">
+                              ERG
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-[9px] font-mono text-[#6B6B78]">
+                          for posting txs
+                        </div>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[8px] font-mono tracking-[0.12em] uppercase text-[#7A7A88]">
+                          In last refresh
+                        </div>
+                        <div
+                          className="mt-0.5 font-mono text-[12px] sm:text-[13px] font-medium leading-tight"
+                          style={{
+                            color:
+                              mine.inLastRefresh === true
+                                ? "#34D399"
+                                : mine.inLastRefresh === false
+                                  ? "#D4A574"
+                                  : "#8B8B9A",
+                          }}
+                        >
+                          {mine.inLastRefresh === true
+                            ? "Yes · collected"
+                            : mine.inLastRefresh === false
+                              ? "No · missed"
+                              : "—"}
+                        </div>
+                        <div className="text-[9px] font-mono text-[#6B6B78] tabular-nums truncate">
+                          {collAge.primary !== "—"
+                            ? `collect ${collAge.primary}`
+                            : "\u00a0"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                <div className="mt-auto pt-2 border-t border-white/[0.06] min-h-[1.35rem] overflow-hidden">
+                  {myActivity.length > 0 ? (
+                    <p className="text-[10px] font-mono truncate text-[#FF7A3D]/90">
+                      ◆ {myActivity[0].message}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-[#6B6B78] truncate">
+                      YOU on map · posts flash orange when you publish
+                    </p>
+                  )}
                 </div>
-                <div
-                  className="mt-0.5 font-mono text-[13px] tabular-nums leading-none"
-                  style={{ color: isMineScope ? "#FF7A3D" : "#00E5FF" }}
-                >
-                  {isMineScope
-                    ? mine?.postAgeBlocks != null
-                      ? `${mine.postAgeBlocks}`
-                      : "—"
-                    : feed.ageBlocks != null
-                      ? `${feed.ageBlocks}`
-                      : "—"}
-                  <span className="text-[9px] text-[#6B6B78] ml-0.5">blk</span>
+              </>
+            ) : (
+              <>
+                {/* Network host cockpit — mirrors height, different metrics */}
+                <div className="flex items-center justify-between gap-2 shrink-0">
+                  <div className="text-[9px] font-mono tracking-[0.18em] uppercase text-[#00E5FF]">
+                    Network · lumen host
+                  </div>
+                  <span className="text-[9px] font-mono tracking-wider uppercase px-2 py-0.5 rounded-full border shrink-0 text-[#00E5FF] border-[#00E5FF]/30">
+                    NOT YOURS
+                  </span>
                 </div>
-              </div>
-              <div>
-                <div
-                  className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider"
-                  title={
-                    isMineScope
-                      ? "Unclaimed reward tokens waiting to be claimed (not daily earnings)"
-                      : undefined
-                  }
-                >
-                  {isMineScope ? "Claimable" : "Active"}
+                <div className="mt-1 font-mono text-[12px] text-[#B0B0BC] truncate shrink-0">
+                  Public pool · host metrics
                 </div>
-                <div
-                  className="mt-0.5 font-mono text-[13px] tabular-nums leading-none"
-                  style={{ color: isMineScope ? "#E8C547" : "#E8E8F0" }}
-                >
-                  {isMineScope
-                    ? mine?.claimableRewards != null
-                      ? mine.claimableRewards.toLocaleString()
-                      : mineNode?.rewardTokens != null
-                        ? mineNode.rewardTokens.toLocaleString()
-                        : "—"
-                    : `${activeN ?? "—"}`}
-                  {isMineScope && mine?.rewardsDelta != null && (
-                    <span
-                      className="ml-1 text-[10px]"
+                <div className="mt-2.5 grid grid-cols-3 gap-x-2 gap-y-3 text-center shrink-0">
+                  <div>
+                    <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                      Pool lag
+                    </div>
+                    <div className="mt-1 font-mono text-[15px] tabular-nums leading-none text-[#00E5FF]">
+                      {feed.ageBlocks != null ? `${feed.ageBlocks}` : "—"}
+                      <span className="text-[9px] text-[#6B6B78] ml-0.5">
+                        blk
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                      Active
+                    </div>
+                    <div className="mt-1 font-mono text-[15px] tabular-nums leading-none text-[#E8E8F0]">
+                      {activeN ?? "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                      Need
+                    </div>
+                    <div className="mt-1 font-mono text-[15px] tabular-nums leading-none text-[#E8E8F0]">
+                      {needN ?? "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                      Missing
+                    </div>
+                    <div
+                      className="mt-1 font-mono text-[14px] tabular-nums leading-none font-medium"
                       style={{
                         color:
-                          mine.rewardsDelta > 0
-                            ? "#34D399"
-                            : mine.rewardsDelta < 0
-                              ? "#F87171"
-                              : "#6B6B78",
+                          missingN != null && missingN > 0
+                            ? "#D4A574"
+                            : "#34D399",
                       }}
                     >
-                      {mine.rewardsDelta > 0
-                        ? `+${mine.rewardsDelta}`
-                        : mine.rewardsDelta === 0
-                          ? "±0"
-                          : `${mine.rewardsDelta}`}
-                    </span>
-                  )}
+                      {missingN != null ? `${missingN}` : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                      Quorum
+                    </div>
+                    <div className="mt-1 font-mono text-[14px] tabular-nums leading-none text-[#E8E8F0]">
+                      {activeN != null && needN != null
+                        ? `${activeN}/${needN}`
+                        : "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
+                      Pool
+                    </div>
+                    <div className="mt-1 font-mono text-[14px] tabular-nums leading-none text-[#B0B0BC]">
+                      {health.label === "—" ? "—" : health.label}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  {isMineScope ? "Wallet" : "Need"}
-                </div>
-                <div className="mt-0.5 font-mono text-[13px] tabular-nums leading-none text-[#E8E8F0]">
-                  {isMineScope
-                    ? walletErg != null
-                      ? `${walletErg < 10 ? walletErg.toFixed(2) : walletErg.toFixed(1)}`
-                      : "—"
-                    : `${needN ?? "—"}`}
-                  {isMineScope && walletErg != null && (
-                    <span className="text-[9px] text-[#6B6B78] ml-0.5">
-                      ERG
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  {isMineScope ? "In refresh" : "Missing"}
-                </div>
-                <div
-                  className="mt-0.5 font-mono text-[12px] tabular-nums leading-none font-medium"
-                  style={{
-                    color: isMineScope
-                      ? mine?.inLastRefresh === true
-                        ? "#34D399"
-                        : mine?.inLastRefresh === false
-                          ? "#D4A574"
-                          : "#8B8B9A"
-                      : missingN != null && missingN > 0
-                        ? "#D4A574"
-                        : "#34D399",
-                  }}
-                >
-                  {isMineScope
-                    ? mine?.inLastRefresh === true
-                      ? "YES"
-                      : mine?.inLastRefresh === false
-                        ? "NO"
-                        : "—"
-                    : missingN != null
-                      ? `${missingN}`
-                      : "—"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  Quorum
-                </div>
-                <div className="mt-0.5 font-mono text-[12px] tabular-nums leading-none text-[#E8E8F0]">
-                  {activeN != null && needN != null
-                    ? `${activeN}/${needN}`
-                    : "—"}
-                </div>
-              </div>
-              <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  {isMineScope ? "Collect" : "Pool"}
-                </div>
-                <div className="mt-0.5 font-mono text-[12px] tabular-nums leading-none text-[#B0B0BC]">
-                  {isMineScope
-                    ? mine?.collectedAgeBlocks != null
-                      ? `${mine.collectedAgeBlocks} blk`
-                      : "—"
-                    : health.label === "—"
-                      ? "—"
-                      : health.label}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-auto pt-2 border-t border-white/[0.06] h-[1.85rem] overflow-hidden">
-              {isMineScope ? (
-                myActivity.length > 0 ? (
-                  <p className="text-[10px] font-mono truncate text-[#FF7A3D]/90">
-                    ◆ {myActivity[0].message}
-                  </p>
-                ) : (
+                <div className="mt-auto pt-2 border-t border-white/[0.06] min-h-[1.35rem] overflow-hidden">
                   <p className="text-[10px] text-[#6B6B78] truncate">
-                    YOU on map · posts flash orange when you publish
+                    Attach this pool in ORACLE SETTINGS to run as YOURS
                   </p>
-                )
-              ) : (
-                <p className="text-[10px] text-[#6B6B78] truncate">
-                  Attach this pool in ORACLE SETTINGS to run as YOURS
-                </p>
-              )}
-            </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
