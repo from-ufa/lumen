@@ -19,27 +19,22 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // S1: always require internal/webhook secret (no localhost bypass)
   const secret =
     req.headers.get("x-lumen-internal") ||
     req.headers.get("x-telegram-bot-api-secret-token");
-  if (!verifyInternalSecret(secret)) {
-    // Allow localhost without secret only if no secret configured
-    const hasSecret = !!(
-      process.env.LUMEN_INTERNAL_SECRET?.trim() ||
-      process.env.TELEGRAM_WEBHOOK_SECRET?.trim()
+  const hasSecret = !!(
+    process.env.LUMEN_INTERNAL_SECRET?.trim() ||
+    process.env.TELEGRAM_WEBHOOK_SECRET?.trim()
+  );
+  if (!hasSecret) {
+    return NextResponse.json(
+      { ok: false, error: "internal_secret_not_configured" },
+      { status: 503 }
     );
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      req.headers.get("x-real-ip") ||
-      "";
-    const local =
-      ip === "127.0.0.1" ||
-      ip === "::1" ||
-      ip === "" ||
-      ip.startsWith("127.");
-    if (hasSecret || !local) {
-      return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-    }
+  }
+  if (!verifyInternalSecret(secret)) {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
   try {

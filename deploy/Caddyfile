@@ -20,12 +20,7 @@ ergolumen.net, www.ergolumen.net {
 		reverse_proxy 127.0.0.1:3100
 	}
 
-	handle_path /devnet/* {
-		reverse_proxy 127.0.0.1:9153 {
-			header_up api_key "hello"
-			header_up Host {host}
-		}
-	}
+	# /devnet/* removed (S1 security) — no devnet node on this host; was dead proxy to :9153
 
 	handle {
 		reverse_proxy 127.0.0.1:3000 {
@@ -52,11 +47,5 @@ ergolumen.net, www.ergolumen.net {
 
 http://80.209.232.82, http://toa.c.hostens.cloud {
 	bind 0.0.0.0
-
-	handle_path /devnet/* {
-		reverse_proxy 127.0.0.1:9153 {
-			header_up api_key "hello"
-		}
-	}
 	redir https://ergolumen.net{uri} permanent
 }

@@ -1,11 +1,83 @@
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { bridgeServerFetch } from "../../../lib/bridge-server";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-/** POST /api/bridge/tokens — create a new lumen_* bridge token */
+/** Simple in-process rate limit for mint (S2). Resets on process restart. */
+const mintHits = new Map<string, number[]>();
+const MINT_WINDOW_MS = 60 * 60 * 1000;
+const MINT_MAX_PER_WINDOW = 10;
+
+function clientIp(req: NextRequest): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip")?.trim() ||
+    "unknown"
+  );
+}
+
+function allowMint(ip: string): boolean {
+  const now = Date.now();
+  const arr = (mintHits.get(ip) || []).filter((t) => now - t < MINT_WINDOW_MS);
+  if (arr.length >= MINT_MAX_PER_WINDOW) {
+    mintHits.set(ip, arr);
+    return false;
+  }
+  arr.push(now);
+  mintHits.set(ip, arr);
+  return true;
+}
+
+/** Redact any accidental plaintext tokens in list responses (defense in depth). */
+function redactTokensPayload(data: unknown): unknown {
+  if (!data || typeof data !== "object") return data;
+  const d = data as { tokens?: unknown[]; mode?: string };
+  if (!Array.isArray(d.tokens)) return data;
+  return {
+    ...d,
+    mode: d.mode || "redacted",
+    tokens: d.tokens.map((row) => {
+      if (!row || typeof row !== "object") return row;
+      const t = row as Record<string, unknown>;
+      if (typeof t.token === "string") {
+        const token = t.token;
+        const fp =
+          typeof t.tokenFp === "string"
+            ? t.tokenFp
+            : createHash("sha256").update(token).digest("hex").slice(0, 12);
+        const { token: _drop, ...rest } = t;
+        return {
+          ...rest,
+          tokenFp: fp,
+          tokenTail:
+            typeof t.tokenTail === "string"
+              ? t.tokenTail
+              : token.slice(-4),
+        };
+      }
+      return t;
+    }),
+  };
+}
+
+/**
+ * POST /api/bridge/tokens — create a new lumen_* bridge token.
+ * Returns full token once (needed for Docker/Settings). Rate-limited per IP.
+ */
 export async function POST(req: NextRequest) {
+  const ip = clientIp(req);
+  if (!allowMint(ip)) {
+    return NextResponse.json(
+      {
+        error: "rate_limited",
+        message: "Too many token creates. Try again later (max 10/hour).",
+      },
+      { status: 429 }
+    );
+  }
+
   let body: unknown = {};
   try {
     body = await req.json();
@@ -21,6 +93,7 @@ export async function POST(req: NextRequest) {
       timeoutMs: 8_000,
     });
     const data = await upstream.json().catch(() => ({}));
+    // POST still returns full token once — required for agent setup
     return NextResponse.json(data, {
       status: upstream.status,
       headers: { "Cache-Control": "no-store" },
@@ -38,7 +111,10 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** GET /api/bridge/tokens — list tokens (debug) */
+/**
+ * GET /api/bridge/tokens — public list is redacted (tokenFp only).
+ * Full secrets never exposed on this public route.
+ */
 export async function GET() {
   try {
     const upstream = await bridgeServerFetch("/tokens", {
@@ -46,7 +122,8 @@ export async function GET() {
       timeoutMs: 8_000,
     });
     const data = await upstream.json().catch(() => ({}));
-    return NextResponse.json(data, {
+    const safe = redactTokensPayload(data);
+    return NextResponse.json(safe, {
       status: upstream.status,
       headers: { "Cache-Control": "no-store" },
     });

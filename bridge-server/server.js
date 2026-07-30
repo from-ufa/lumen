@@ -171,9 +171,28 @@ async function handleHttp(req, res) {
     return;
   }
 
-  // List tokens (debug)
+  // List tokens — redacted by default (S2). Full secrets only on loopback + ?full=1
   if (req.method === "GET" && (path === "/tokens" || path === "/api/tokens")) {
-    sendJson(res, 200, { tokens: registry.listTokens() });
+    const remote =
+      req.socket?.remoteAddress ||
+      req.headers["x-forwarded-for"] ||
+      "";
+    const ra = String(remote).replace("::ffff:", "");
+    const isLoopback =
+      ra === "127.0.0.1" || ra === "::1" || ra === "localhost";
+    const wantFull = url.searchParams.get("full") === "1";
+    if (isLoopback && wantFull) {
+      sendJson(res, 200, {
+        tokens: registry.listTokens(),
+        mode: "full",
+        warning: "localhost-only full token list",
+      });
+      return;
+    }
+    sendJson(res, 200, {
+      tokens: registry.listTokensPublic(),
+      mode: "redacted",
+    });
     return;
   }
 

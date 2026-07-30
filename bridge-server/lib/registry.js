@@ -161,12 +161,32 @@ class BridgeRegistry {
   }
 
   listTokens() {
+    // Full secrets — only for trusted/local admin paths (avoid on public API)
     return [...this.tokens.values()].map((t) => ({
       token: t.token,
       createdAt: t.createdAt,
       label: t.label,
       connected: this.connections.has(t.token),
     }));
+  }
+
+  /** Public-safe list: no plaintext token (S2 security) */
+  listTokensPublic() {
+    const crypto = require("crypto");
+    return [...this.tokens.values()].map((t) => {
+      const fp = crypto
+        .createHash("sha256")
+        .update(t.token)
+        .digest("hex")
+        .slice(0, 12);
+      return {
+        tokenFp: fp,
+        tokenTail: t.token.slice(-4),
+        createdAt: t.createdAt,
+        label: t.label ?? null,
+        connected: this.connections.has(t.token),
+      };
+    });
   }
 
   registerConnection(token, ws, meta = {}) {

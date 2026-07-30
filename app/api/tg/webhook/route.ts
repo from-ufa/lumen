@@ -346,12 +346,17 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // S1: fail-closed — never accept updates without configured secret
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
-  if (secret) {
-    const hdr = req.headers.get("x-telegram-bot-api-secret-token");
-    if (hdr !== secret) {
-      return NextResponse.json({ ok: false, error: "bad_secret" }, { status: 401 });
-    }
+  if (!secret || secret.length < 16) {
+    return NextResponse.json(
+      { ok: false, error: "webhook_secret_not_configured" },
+      { status: 503 }
+    );
+  }
+  const hdr = req.headers.get("x-telegram-bot-api-secret-token");
+  if (hdr !== secret) {
+    return NextResponse.json({ ok: false, error: "bad_secret" }, { status: 401 });
   }
 
   let update: TgUpdate;
