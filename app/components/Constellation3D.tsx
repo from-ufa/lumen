@@ -79,7 +79,7 @@ const HUD_PANEL_W = "w-[min(280px,32vw)]";
 const HUD_CARD =
   "glass rounded-2xl border border-white/10 px-4 py-3 w-full box-border";
 const HUD_BTN =
-  "glass w-full h-11 px-4 rounded-2xl text-[11px] font-mono tracking-widest border border-white/10 hover:border-white/25 flex items-center justify-center gap-2 transition-all active:scale-[0.985] box-border";
+  "glass w-full h-11 px-4 rounded-2xl text-[11px] font-mono tracking-widest border border-white/10 hover:border-white/25 flex items-center justify-center gap-2 lumen-ui-transition active:scale-[0.985] box-border";
 
 /** Orbital radii (world units) — altitude ~½ of previous (2× closer to Earth) */
 const EARTH_R = 3.2;
@@ -1928,7 +1928,7 @@ function Scene({
             <button
               type="button"
               onClick={toggleAutoOrbit}
-              className="w-full h-9 flex items-center gap-2 text-[11px] font-mono tracking-widest transition-all active:scale-[0.985]"
+              className="w-full h-9 flex items-center gap-2 text-[11px] font-mono tracking-widest lumen-ui-transition active:scale-[0.985]"
             >
               <span className={isAutoOrbit ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>
                 ◉
@@ -1972,7 +1972,7 @@ function Scene({
               type="button"
               onClick={() => void toggleMusic()}
               disabled={musicBusy}
-              className="w-full h-9 flex items-center gap-2 text-[11px] font-mono tracking-widest transition-all active:scale-[0.985] disabled:opacity-50"
+              className="w-full h-9 flex items-center gap-2 text-[11px] font-mono tracking-widest lumen-ui-transition active:scale-[0.985] disabled:opacity-50"
             >
               <span className={musicOn ? "text-[#E8C48A]" : "text-[#A0A0B0]"}>
                 {musicOn ? "♪" : "♩"}

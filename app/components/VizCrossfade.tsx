@@ -3,14 +3,14 @@
 /**
  * Premium Orbit ↔ Map crossfade with **keep-alive**.
  * Fixed-height slot so mode switches never reflow the page.
- * Mobile: opacity-only (no blur) + shorter duration — blur was the main lag.
+ * Craft: opacity-only, sub-300ms on desktop (no heavy blur over WebGL).
  */
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useReducedMotion } from "framer-motion";
 import { isMobileUi } from "./soft-nav";
 
-const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
+const EASE = "cubic-bezier(0.23, 1, 0.32, 1)";
 
 export type OrbitMapMode = "constellation" | "map";
 
@@ -25,16 +25,8 @@ function Layer({
   mobile: boolean;
   children: ReactNode;
 }) {
-  const fast = reduce || mobile;
-  const styleTransition = fast
-    ? {
-        transitionDuration: reduce ? "120ms" : "220ms",
-        transitionTimingFunction: "ease",
-      }
-    : {
-        transitionDuration: "480ms",
-        transitionTimingFunction: EASE,
-      };
+  // All platforms: snappy opacity crossfade (Emil: UI < 300ms)
+  const ms = reduce ? 100 : mobile ? 180 : 240;
 
   return (
     <div
@@ -42,14 +34,12 @@ function Layer({
         absolute inset-0 w-full h-full
         will-change-[opacity]
         transition-[opacity]
-        ${fast ? "duration-200" : "duration-500"}
         ${on ? "z-[2] opacity-100" : "z-[1] opacity-0 pointer-events-none"}
         overflow-hidden
       `}
       style={{
-        ...styleTransition,
-        // Blur only on desktop — filter:blur is very expensive over WebGL/map
-        filter: mobile || reduce || on ? "none" : "blur(8px)",
+        transitionDuration: `${ms}ms`,
+        transitionTimingFunction: EASE,
       }}
       aria-hidden={!on}
     >
@@ -79,7 +69,7 @@ export default function VizCrossfade({
     if (mode !== "map") return;
     const kick = () => window.dispatchEvent(new Event("resize"));
     const t0 = window.setTimeout(kick, 40);
-    const t1 = window.setTimeout(kick, mobile ? 240 : 520);
+    const t1 = window.setTimeout(kick, mobile ? 200 : 280);
     return () => {
       window.clearTimeout(t0);
       window.clearTimeout(t1);
@@ -95,17 +85,17 @@ export default function VizCrossfade({
         lg:min-h-[520px]
       "
     >
-      {/* Wash only desktop — extra paint on mobile not worth it */}
+      {/* Soft accent wash — short, no blur on layers */}
       {!reduce && !mobile && (
         <div
           aria-hidden
           key={mode}
-          className="pointer-events-none absolute inset-0 z-[3] rounded-[1.25rem] sm:rounded-2xl animate-[lumen-viz-wash_0.55s_ease-out_forwards]"
+          className="pointer-events-none absolute inset-0 z-[3] rounded-[1.25rem] sm:rounded-2xl animate-[lumen-viz-wash_0.28s_ease-out_forwards]"
           style={{
             background:
               mode === "map"
-                ? "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(0,229,255,0.12), transparent 70%)"
-                : "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(255,122,61,0.14), transparent 70%)",
+                ? "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(0,229,255,0.10), transparent 70%)"
+                : "radial-gradient(ellipse 70% 55% at 50% 40%, rgba(255,122,61,0.12), transparent 70%)",
           }}
         />
       )}

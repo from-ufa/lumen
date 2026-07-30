@@ -83,7 +83,7 @@ export function HeaderPill({
   const base =
     "lumen-header-pill inline-flex items-center justify-center gap-2 h-10 px-4 rounded-full " +
     "text-[10px] font-mono font-medium tracking-[0.16em] uppercase " +
-    "border transition-all duration-200 ease-[cubic-bezier(0.23,1,0.32,1)] " +
+    "border lumen-ui-transition ease-[cubic-bezier(0.23,1,0.32,1)] " +
     "select-none whitespace-nowrap " +
     t.wrap +
     (className ? ` ${className}` : "");
@@ -156,7 +156,7 @@ export function HeaderIconButton({
         "lumen-header-icon inline-flex items-center justify-center h-10 w-10 rounded-full " +
         "border border-white/10 bg-white/[0.04] text-[#E8E8F0] " +
         "hover:border-white/25 hover:bg-white/[0.07] " +
-        "transition-all duration-200 active:scale-[0.97] " +
+        "lumen-ui-transition active:scale-[0.97] " +
         (active
           ? "border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] "
           : "") +

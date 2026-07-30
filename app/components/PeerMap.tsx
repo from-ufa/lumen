@@ -1880,7 +1880,7 @@ export default function PeerMap({
             key={f.id}
             type="button"
             onClick={() => setMapFilter(f.id)}
-            className={`flex-1 ${compact ? "px-2 py-2" : "px-2 py-1.5"} rounded-[10px] text-[10px] font-mono tracking-widest transition-all ${
+            className={`flex-1 ${compact ? "px-2 py-2" : "px-2 py-1.5"} rounded-[10px] text-[10px] font-mono tracking-widest lumen-ui-transition ${
               active
                 ? filterView.chipActiveClass
                 : "text-[#A0A0B0] hover:text-[#E8E8F0]"

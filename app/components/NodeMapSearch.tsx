@@ -304,7 +304,7 @@ export default function NodeMapSearch({
         className={`
           group relative flex items-center gap-2 rounded-2xl border border-white/10
           bg-[#0A0A0F]/88 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.45)]
-          transition-all duration-300
+          lumen-ui-transition
           focus-within:border-[#00E5FF]/35 focus-within:shadow-[0_8px_40px_rgba(0,229,255,0.08)]
           ${compact ? "px-3 py-2" : "px-3.5 py-2.5"}
         `}

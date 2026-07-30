@@ -232,7 +232,7 @@ export default function ExternalOpenConfirm({
                 onConfirm();
               }}
               disabled={busy}
-              className={`flex-1 h-11 rounded-xl border ${a.btnBorder} ${a.btnBg} text-[11px] font-mono tracking-[0.14em] uppercase ${a.btnText} transition-all active:scale-[0.98] ${a.btnShadow} disabled:opacity-50`}
+              className={`flex-1 h-11 rounded-xl border ${a.btnBorder} ${a.btnBg} text-[11px] font-mono tracking-[0.14em] uppercase ${a.btnText} lumen-ui-transition active:scale-[0.98] ${a.btnShadow} disabled:opacity-50`}
             >
               {busy ? "Opening…" : confirmLabel}
             </button>

@@ -162,9 +162,9 @@ export default function MetricsCards({
                 boxShadow:
                   "0 0 14px rgba(0,229,255,0.45), 0 0 10px rgba(255,122,61,0.35)",
               }}
-              initial={{ width: 0 }}
-              animate={{ width: `${syncProgress}%` }}
-              transition={{ duration: 0.65, ease: [0.23, 1, 0.32, 1] }}
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: Math.min(1, Math.max(0, syncProgress / 100)) }}
+              transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
             />
           </div>
         </div>

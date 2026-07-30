@@ -111,12 +111,12 @@ function CopyButton({
       disabled={!value || busy}
       className={
         primary
-          ? `flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-mono tracking-widest disabled:opacity-40 transition-all ${
+          ? `flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-mono tracking-widest disabled:opacity-40 lumen-ui-transition ${
               copied
                 ? "border-[#10B981]/50 bg-[#10B981]/15 text-[#10B981]"
                 : "border-[#00E5FF]/40 bg-[#00E5FF]/15 text-[#00E5FF] hover:bg-[#00E5FF]/25"
             }`
-          : `flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] font-mono tracking-widest disabled:opacity-40 transition-all ${
+          : `flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[10px] font-mono tracking-widest disabled:opacity-40 lumen-ui-transition ${
               copied
                 ? "border-[#10B981]/40 bg-[#10B981]/10 text-[#10B981]"
                 : "border-white/15 hover:bg-white/5 text-[#A0A0B0] hover:text-white"
@@ -152,7 +152,7 @@ function StepCard({
 }) {
   return (
     <div
-      className={`rounded-2xl border p-4 space-y-3 transition-all ${
+      className={`rounded-2xl border p-4 space-y-3 lumen-ui-transition ${
         done
           ? "border-[#10B981]/30 bg-[#10B981]/5"
           : active
@@ -509,7 +509,7 @@ export default function ConnectionSettings({
                     <button
                       type="button"
                       onClick={() => handleMode("lumen")}
-                      className={`flex flex-col items-start gap-1 px-3 py-3 rounded-xl text-left transition-all ${
+                      className={`flex flex-col items-start gap-1 px-3 py-3 rounded-xl text-left lumen-ui-transition ${
                         nodeMode === "lumen"
                           ? "bg-[#FF7A3D]/15 border border-[#FF7A3D]/40 text-[#FF7A3D]"
                           : "text-[#A0A0B0] hover:text-white border border-transparent"
@@ -528,7 +528,7 @@ export default function ConnectionSettings({
                     <button
                       type="button"
                       onClick={() => handleMode("my")}
-                      className={`flex flex-col items-start gap-1 px-3 py-3 rounded-xl text-left transition-all ${
+                      className={`flex flex-col items-start gap-1 px-3 py-3 rounded-xl text-left lumen-ui-transition ${
                         nodeMode === "my"
                           ? "bg-[#00E5FF]/12 border border-[#00E5FF]/40 text-[#00E5FF]"
                           : "text-[#A0A0B0] hover:text-white border border-transparent"
@@ -597,7 +597,7 @@ export default function ConnectionSettings({
                       type="button"
                       onClick={handleStartConnect}
                       disabled={creatingToken}
-                      className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-xs font-mono tracking-widest hover:bg-[#00E5FF]/15 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.985] transition-all"
+                      className="w-full flex items-center justify-center gap-2 py-4 rounded-2xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-xs font-mono tracking-widest hover:bg-[#00E5FF]/15 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.985] lumen-ui-transition"
                     >
                       {creatingToken ? (
                         <Loader2 size={15} className="animate-spin" />
@@ -622,7 +622,7 @@ export default function ConnectionSettings({
                             <button
                               type="button"
                               onClick={() => setOracleUsd((v) => !v)}
-                              className={`px-3 py-2.5 rounded-xl border text-left text-[11px] font-mono tracking-wider transition-all ${
+                              className={`px-3 py-2.5 rounded-xl border text-left text-[11px] font-mono tracking-wider lumen-ui-transition ${
                                 oracleUsd
                                   ? "border-[#2DD4BF]/40 bg-[#2DD4BF]/10 text-[#2DD4BF]"
                                   : "border-white/10 text-[#6B6B78]"
@@ -636,7 +636,7 @@ export default function ConnectionSettings({
                             <button
                               type="button"
                               onClick={() => setOracleXau((v) => !v)}
-                              className={`px-3 py-2.5 rounded-xl border text-left text-[11px] font-mono tracking-wider transition-all ${
+                              className={`px-3 py-2.5 rounded-xl border text-left text-[11px] font-mono tracking-wider lumen-ui-transition ${
                                 oracleXau
                                   ? "border-[#C9A84C]/40 bg-[#C9A84C]/10 text-[#C9A84C]"
                                   : "border-white/10 text-[#6B6B78]"
@@ -902,7 +902,7 @@ export default function ConnectionSettings({
                 <div className="flex flex-col sm:flex-row gap-3 pt-1">
                   <button
                     onClick={() => setModalOpen(false)}
-                    className="flex-1 py-4 rounded-2xl bg-[#FF7A3D] text-black font-semibold tracking-wider text-sm active:scale-[0.985] transition-all"
+                    className="flex-1 py-4 rounded-2xl bg-[#FF7A3D] text-black font-semibold tracking-wider text-sm active:scale-[0.985] lumen-ui-transition"
                   >
                     DONE
                   </button>
@@ -934,7 +934,7 @@ export default function ConnectionSettings({
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="lumen-header-pill inline-flex items-center justify-center gap-2 h-10 px-4 rounded-full border border-white/10 bg-white/[0.04] text-[#E8E8F0] text-[10px] font-mono font-medium tracking-[0.16em] uppercase hover:border-white/25 hover:bg-white/[0.07] transition-all duration-200 active:scale-[0.98] box-border"
+          className="lumen-header-pill inline-flex items-center justify-center gap-2 h-10 px-4 rounded-full border border-white/10 bg-white/[0.04] text-[#E8E8F0] text-[10px] font-mono font-medium tracking-[0.16em] uppercase hover:border-white/25 hover:bg-white/[0.07] lumen-ui-transition active:scale-[0.98] box-border"
         >
           <Settings className="w-3.5 h-3.5 shrink-0 opacity-90" />
           <span>SETTINGS</span>
