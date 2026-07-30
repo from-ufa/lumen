@@ -258,6 +258,8 @@ export default function ConnectionSettings({
   const [linkBusy, setLinkBusy] = useState(false);
   const [linkHint, setLinkHint] = useState<string | null>(null);
   const [linkExpiresIn, setLinkExpiresIn] = useState<number | null>(null);
+  const [linkTokenFp, setLinkTokenFp] = useState<string | null>(null);
+  const [linkTokenTail, setLinkTokenTail] = useState<string | null>(null);
 
   const bridgeOnline = !!bridgeStatus?.connected;
   const bridgeKnown = bridgeStatus?.known !== false;
@@ -1105,6 +1107,8 @@ export default function ConnectionSettings({
                                 expiresInSec?: number;
                                 error?: string;
                                 botHint?: string;
+                                tokenFp?: string;
+                                tokenTail?: string;
                               };
                               if (!res.ok || !data.ok || !data.code) {
                                 toast.error(data.error || "Could not create code");
@@ -1112,6 +1116,8 @@ export default function ConnectionSettings({
                               }
                               setLinkCode(data.code);
                               setLinkExpiresIn(data.expiresInSec ?? 900);
+                              setLinkTokenFp(data.tokenFp || null);
+                              setLinkTokenTail(data.tokenTail || null);
                               setLinkHint(
                                 `Open @ergolumen_bot → send: /link ${data.code}`
                               );
@@ -1139,6 +1145,22 @@ export default function ConnectionSettings({
                             <div className="mt-1 font-mono text-2xl sm:text-3xl tracking-[0.35em] text-[#00E5FF] font-semibold tabular-nums">
                               {linkCode}
                             </div>
+                            {(linkTokenFp || linkTokenTail) && (
+                              <div className="mt-2 text-[10px] font-mono text-[#8B8B9A]">
+                                Linking token{" "}
+                                {linkTokenFp ? (
+                                  <span className="text-[#E8E8F0]">
+                                    {linkTokenFp}…
+                                  </span>
+                                ) : null}
+                                {linkTokenTail ? (
+                                  <span className="text-[#00E5FF]">
+                                    {" "}
+                                    ends …{linkTokenTail}
+                                  </span>
+                                ) : null}
+                              </div>
+                            )}
                             <button
                               type="button"
                               className="mt-2 text-[10px] font-mono text-[#A0A0B0] hover:text-white underline-offset-2 hover:underline"
@@ -1168,12 +1190,57 @@ export default function ConnectionSettings({
                         )}
                       </>
                     ) : (
-                      <p className="text-[10px] font-mono text-[#A0A0B0] leading-relaxed">
-                        If Settings empty: open browser on desktop → Link
-                        Telegram → in bot send{" "}
-                        <span className="text-[#00E5FF]">/link CODE</span> →
-                        reopen Mini App.
-                      </p>
+                      <div className="space-y-2">
+                        <p className="text-[10px] font-mono text-[#A0A0B0] leading-relaxed">
+                          After browser{" "}
+                          <span className="text-[#00E5FF]">/link CODE</span>,
+                          force-restore vault into this Mini App:
+                        </p>
+                        <button
+                          type="button"
+                          disabled={linkBusy}
+                          onClick={async () => {
+                            setLinkBusy(true);
+                            try {
+                              const { hydrateSettingsFromTelegramVault } =
+                                await import("../lib/node-api");
+                              const h = await hydrateSettingsFromTelegramVault({
+                                force: true,
+                              });
+                              if (h.applied) {
+                                toast.success(
+                                  `Restored …${h.tokenTail || h.tokenFp || "token"}`
+                                );
+                                window.dispatchEvent(
+                                  new CustomEvent("lumen:settings-hydrated", {
+                                    detail: {
+                                      tokenFp: h.tokenFp,
+                                      tokenTail: h.tokenTail,
+                                    },
+                                  })
+                                );
+                              } else if (h.reason === "already_synced") {
+                                toast.message(
+                                  `Already synced …${h.tokenTail || ""}`
+                                );
+                              } else if (h.reason === "no_vault") {
+                                toast.error(
+                                  "No vault — run /link CODE in bot first"
+                                );
+                              } else {
+                                toast.error(h.reason || "Restore failed");
+                              }
+                            } catch {
+                              toast.error("Restore failed");
+                            } finally {
+                              setLinkBusy(false);
+                            }
+                          }}
+                          className="w-full py-3 rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-[11px] font-mono tracking-widest hover:bg-[#00E5FF]/15 disabled:opacity-40"
+                        >
+                          {linkBusy ? "…" : "RESTORE FROM VAULT"}
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}

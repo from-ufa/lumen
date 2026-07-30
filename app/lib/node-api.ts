@@ -210,13 +210,17 @@ export function saveBridgeToken(token: string): void {
 
 /**
  * TS-1: pull vault settings into localStorage for Telegram Mini App.
- * Never overwrites a non-empty local bridge token (safe for existing users).
+ * - Default: never overwrite non-empty local token (safe).
+ * - After /link: forceHydrateOnce=true → overwrite once even if local differs.
  */
-export async function hydrateSettingsFromTelegramVault(): Promise<{
+export async function hydrateSettingsFromTelegramVault(opts?: {
+  force?: boolean;
+}): Promise<{
   ok: boolean;
   applied: boolean;
   reason?: string;
   tokenFp?: string;
+  tokenTail?: string;
 }> {
   if (typeof window === "undefined") {
     return { ok: false, applied: false, reason: "ssr" };
@@ -243,22 +247,49 @@ export async function hydrateSettingsFromTelegramVault(): Promise<{
         nodeMode?: string | null;
         oracleView?: string | null;
         tokenFp?: string;
+        tokenTail?: string;
+        forceHydrateOnce?: boolean;
       } | null;
     };
     if (!data.ok || !data.hasVault || !data.settings?.bridgeToken) {
       return { ok: true, applied: false, reason: "no_vault" };
     }
+    const vaultToken = data.settings.bridgeToken;
     const local = loadBridgeToken();
-    if (local) {
-      // Keep local; do not clobber
+    const force =
+      !!opts?.force ||
+      !!data.settings.forceHydrateOnce ||
+      // same user re-linked and tokens differ
+      (!!local && local !== vaultToken && !!data.settings.forceHydrateOnce);
+
+    if (local && local === vaultToken) {
+      // Already correct — clear force if needed
+      if (data.settings.forceHydrateOnce) {
+        void fetch("/api/tg/settings?consumeForce=1", {
+          credentials: "include",
+          cache: "no-store",
+        });
+      }
+      return {
+        ok: true,
+        applied: false,
+        reason: "already_synced",
+        tokenFp: data.settings.tokenFp,
+        tokenTail: data.settings.tokenTail,
+      };
+    }
+
+    if (local && !force) {
       return {
         ok: true,
         applied: false,
         reason: "local_token_present",
         tokenFp: data.settings.tokenFp,
+        tokenTail: data.settings.tokenTail,
       };
     }
-    saveBridgeToken(data.settings.bridgeToken);
+
+    saveBridgeToken(vaultToken);
     if (data.settings.nodeMode === "my" || data.settings.nodeMode === "lumen") {
       saveNodeMode(data.settings.nodeMode);
     }
@@ -268,10 +299,17 @@ export async function hydrateSettingsFromTelegramVault(): Promise<{
     ) {
       saveOracleViewMode(data.settings.oracleView);
     }
+    // Consume force flag
+    void fetch("/api/tg/settings?consumeForce=1", {
+      credentials: "include",
+      cache: "no-store",
+    });
     return {
       ok: true,
       applied: true,
+      reason: force ? "force_from_link" : "empty_local",
       tokenFp: data.settings.tokenFp,
+      tokenTail: data.settings.tokenTail,
     };
   } catch {
     return { ok: false, applied: false, reason: "network" };

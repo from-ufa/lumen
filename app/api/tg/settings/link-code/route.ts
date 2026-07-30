@@ -40,16 +40,19 @@ export async function POST(req: NextRequest) {
       : null;
 
   try {
-    const { code, expiresAt, expiresInSec } = createLinkCode({
-      bridgeToken,
-      nodeMode,
-      oracleView,
-    });
+    const { code, expiresAt, expiresInSec, tokenFp, tokenTail } =
+      createLinkCode({
+        bridgeToken,
+        nodeMode,
+        oracleView,
+      });
     return NextResponse.json({
       ok: true,
       code,
       expiresAt,
       expiresInSec,
+      tokenFp,
+      tokenTail,
       botHint: `/link ${code}`,
       instructions: [
         "1. Open @ergolumen_bot in Telegram",

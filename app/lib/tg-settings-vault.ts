@@ -27,6 +27,11 @@ export type TgVaultSettings = {
   nodeMode?: "lumen" | "my" | null;
   oracleView?: "network" | "my" | null;
   updatedAt: string;
+  /**
+   * After /link claim: Mini App must overwrite localStorage once
+   * even if a different/stale token is already present.
+   */
+  forceHydrateOnce?: boolean;
 };
 
 export type PendingLink = {
@@ -99,7 +104,13 @@ export function createLinkCode(opts: {
   bridgeToken: string;
   nodeMode?: "lumen" | "my" | null;
   oracleView?: "network" | "my" | null;
-}): { code: string; expiresAt: number; expiresInSec: number } {
+}): {
+  code: string;
+  expiresAt: number;
+  expiresInSec: number;
+  tokenFp: string;
+  tokenTail: string;
+} {
   const token = opts.bridgeToken.trim();
   if (token.length < 10) throw new Error("token_too_short");
   const store = loadSettingsStore();
@@ -119,6 +130,8 @@ export function createLinkCode(opts: {
     code,
     expiresAt,
     expiresInSec: Math.floor(LINK_TTL_MS / 1000),
+    tokenFp: tokenFingerprint(token),
+    tokenTail: token.slice(-6),
   };
 }
 
@@ -146,6 +159,7 @@ export function claimLinkCode(
     nodeMode: link.nodeMode ?? null,
     oracleView: link.oracleView ?? null,
     updatedAt: new Date().toISOString(),
+    forceHydrateOnce: true,
   };
   saveSettingsStore(store);
   return {
@@ -163,6 +177,8 @@ export function getVaultForUser(tgUserId: number): {
   nodeMode: string | null;
   oracleView: string | null;
   updatedAt: string;
+  forceHydrateOnce: boolean;
+  tokenTail: string;
 } | null {
   const store = loadSettingsStore();
   const v = store.vault[String(tgUserId)];
@@ -174,7 +190,19 @@ export function getVaultForUser(tgUserId: number): {
     nodeMode: v.nodeMode ?? null,
     oracleView: v.oracleView ?? null,
     updatedAt: v.updatedAt,
+    forceHydrateOnce: !!v.forceHydrateOnce,
+    tokenTail: plain.slice(-6),
   };
+}
+
+/** Clear forceHydrateOnce after Mini App applied vault token. */
+export function clearForceHydrate(tgUserId: number): void {
+  const store = loadSettingsStore();
+  const v = store.vault[String(tgUserId)];
+  if (!v?.forceHydrateOnce) return;
+  v.forceHydrateOnce = false;
+  v.updatedAt = new Date().toISOString();
+  saveSettingsStore(store);
 }
 
 export function putVaultForUser(
@@ -192,6 +220,7 @@ export function putVaultForUser(
     nodeMode: opts.nodeMode ?? prev?.nodeMode ?? null,
     oracleView: opts.oracleView ?? prev?.oracleView ?? null,
     updatedAt: new Date().toISOString(),
+    forceHydrateOnce: false,
   };
   saveSettingsStore(store);
 }

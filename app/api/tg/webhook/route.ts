@@ -144,11 +144,12 @@ async function handleCommand(
       return;
     }
     const fp = tokenFingerprint(result.settings.bridgeToken);
+    const tail = result.settings.bridgeToken.slice(-6);
     await replyHtml(
       chatId,
       [
         "✅ <b>Settings linked</b>",
-        `Token · <code>${fp}…</code>`,
+        `Token · <code>${fp}…</code> · ends <code>…${tail}</code>`,
         result.settings.nodeMode
           ? `Node mode · ${result.settings.nodeMode}`
           : "",
@@ -156,7 +157,13 @@ async function handleCommand(
           ? `Oracle view · ${result.settings.oracleView}`
           : "",
         "",
-        "Open <b>Mini App</b> — token hydrates automatically.",
+        "1. Close Mini App completely",
+        "2. Open Lumen again from the bot",
+        "3. Settings must show the same ends <code>…" +
+          tail +
+          "</code>",
+        "",
+        "If still wrong: Mini App Settings → <b>Restore from vault</b>",
         "Docker / bridge on your machine stays as-is.",
       ]
         .filter(Boolean)

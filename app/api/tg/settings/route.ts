@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  clearForceHydrate,
   clearVaultForUser,
   getVaultForUser,
   putVaultForUser,
@@ -41,6 +42,13 @@ export async function GET(req: NextRequest) {
       settings: null,
     });
   }
+  // Optional: Mini App signals it applied vault → clear force flag
+  const consume =
+    req.nextUrl.searchParams.get("consumeForce") === "1" ||
+    req.nextUrl.searchParams.get("consumeForce") === "true";
+  if (consume && v.forceHydrateOnce) {
+    clearForceHydrate(userId);
+  }
   return NextResponse.json({
     ok: true,
     hasVault: true,
@@ -49,6 +57,8 @@ export async function GET(req: NextRequest) {
       nodeMode: v.nodeMode,
       oracleView: v.oracleView,
       tokenFp: tokenFingerprint(v.bridgeToken),
+      tokenTail: v.tokenTail,
+      forceHydrateOnce: consume ? false : v.forceHydrateOnce,
       updatedAt: v.updatedAt,
     },
   });

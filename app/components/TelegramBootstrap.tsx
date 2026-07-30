@@ -41,13 +41,17 @@ export default function TelegramBootstrap() {
     setInTg(true);
     void (async () => {
       await authenticateTelegramSession();
-      // TS-1: restore bridge token from server vault if localStorage empty
+      // TS-1: vault hydrate (force after /link even if stale local token)
       const h = await hydrateSettingsFromTelegramVault();
-      if (h.applied) {
+      if (h.applied || h.reason === "already_synced") {
         try {
           window.dispatchEvent(
             new CustomEvent("lumen:settings-hydrated", {
-              detail: { tokenFp: h.tokenFp },
+              detail: {
+                tokenFp: h.tokenFp,
+                tokenTail: h.tokenTail,
+                applied: h.applied,
+              },
             })
           );
         } catch {
