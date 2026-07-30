@@ -2,6 +2,7 @@
 
 /**
  * My Oracle invite — typewriter CTA (same UX as My Node invite).
+ * Parent enables only when no bridge token (bridge-invite-policy).
  */
 
 import TypewriterInvite, { wakeInvite } from "./TypewriterInvite";

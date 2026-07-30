@@ -31,6 +31,7 @@ import {
   saveBridgeToken,
   saveOracleViewMode,
 } from "../lib/node-api";
+import { shouldShowBridgeConnectInvites } from "../lib/bridge-invite-policy";
 
 /** Heavy dual canvas — load after shell paints (cuts first-switch jank) */
 const OraclesDualView = dynamic(() => import("./components/OraclesDualView"), {
@@ -226,22 +227,36 @@ export default function OraclesPage() {
   const feeds = data?.feeds ?? [];
   const nodeMode = viewToNodeMode(viewMode);
   const bridgeOnline = !!bridgeStatus?.connected;
-  /** Hide invite when My Oracle is already connected via bridge */
-  const oracleInviteEnabled = !(viewMode === "my" && bridgeOnline);
-  /** Second typewriter (bridge ops count) — 3s after first finishes typing */
+  /**
+   * Connect recruitment — hide when bridge token is configured
+   * (browser / mobile / Mini App). Live status stays on badges.
+   */
+  const showBridgeConnectInvites = shouldShowBridgeConnectInvites(bridgeToken);
+  /** Primary "Connect your oracle" — only while recruiting on network view */
+  const oracleInviteEnabled =
+    showBridgeConnectInvites && viewMode === "network";
+  /** Second typewriter (hub join CTA) — only while recruiting */
   const [bridgeInviteReady, setBridgeInviteReady] = useState(false);
 
   useEffect(() => {
-    // If first invite is hidden, still show bridge stats after a short wait
-    if (oracleInviteEnabled) return;
+    if (!showBridgeConnectInvites) {
+      setBridgeInviteReady(false);
+      return;
+    }
+    if (oracleInviteEnabled) {
+      setBridgeInviteReady(false);
+      return;
+    }
+    // Recruiting but primary off (My Oracle without token) → hub after 3s
     setBridgeInviteReady(false);
     const t = window.setTimeout(() => setBridgeInviteReady(true), 3000);
     return () => window.clearTimeout(t);
-  }, [oracleInviteEnabled]);
+  }, [showBridgeConnectInvites, oracleInviteEnabled]);
 
   const onOracleInviteTyped = useCallback(() => {
+    if (!shouldShowBridgeConnectInvites(bridgeToken)) return;
     window.setTimeout(() => setBridgeInviteReady(true), 3000);
-  }, []);
+  }, [bridgeToken]);
 
   return (
     <div className="min-h-screen min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] overflow-x-hidden">
@@ -416,11 +431,13 @@ export default function OraclesPage() {
                   onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
                 />
               ) : null}
-              <BridgeOperatorsInvite
-                enabled={bridgeInviteReady}
-                delayMs={0}
-                onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
-              />
+              {showBridgeConnectInvites ? (
+                <BridgeOperatorsInvite
+                  enabled={bridgeInviteReady}
+                  delayMs={0}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+                />
+              ) : null}
             </div>
           }
           badges={

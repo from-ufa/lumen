@@ -1,9 +1,12 @@
 "use client";
 
 /**
- * Typewriter panel — live bridge hub counts.
+ * Typewriter panel — live bridge hub counts + join CTA.
  * variant "oracle" → operators; "node" → node agents.
  * Same chrome as Connect*Invite; stacks under the first invite.
+ *
+ * Parent must pass enabled=false when bridge token is configured
+ * (see lib/bridge-invite-policy). Connected users must not see join CTAs.
  */
 
 import { useMemo } from "react";

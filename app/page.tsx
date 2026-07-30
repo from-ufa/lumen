@@ -67,6 +67,7 @@ import {
   saveBridgeToken,
   saveNodeMode,
 } from './lib/node-api';
+import { shouldShowBridgeConnectInvites } from './lib/bridge-invite-policy';
 
 /** Headers window for AVG BLOCK TIME (matches MetricsCards sublabel). */
 const AVG_BLOCK_WINDOW = 100;
@@ -88,8 +89,15 @@ export default function LumenDashboard() {
   const softNav = useSoftNavigate();
   /** Fixed Lumen REST base — custom URL was removed from Node Settings. */
   const nodeUrl = DEFAULT_LUMEN_NODE_URL;
-  const [nodeMode, setNodeModeState] = useState<NodeMode>("lumen");
-  const [bridgeToken, setBridgeTokenState] = useState("");
+  const [nodeMode, setNodeModeState] = useState<NodeMode>(() => {
+    if (typeof window === "undefined") return "lumen";
+    return loadNodeMode();
+  });
+  /** Eager load so connect invites never flash when token already saved */
+  const [bridgeToken, setBridgeTokenState] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return loadBridgeToken();
+  });
   const [recentBlocks, setRecentBlocks] = useState<RecentBlock[]>([]);
   const [lastBlockHeight, setLastBlockHeight] = useState(0);
   const [avgBlockTime, setAvgBlockTime] = useState<number | null>(null);
@@ -105,9 +113,16 @@ export default function LumenDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
-  /** Second typewriter — bridge node counts, 3s after first finishes */
+  /**
+   * Connect recruitment (ConnectNode + hub join CTAs).
+   * Token configured ⇒ never nag — browser / mobile / Mini App share this.
+   */
+  const showBridgeConnectInvites = shouldShowBridgeConnectInvites(bridgeToken);
+  /** Primary "Connect your Ergo node" — only on public lumen source, no token */
+  const nodeInviteEnabled =
+    showBridgeConnectInvites && nodeMode === "lumen";
+  /** Second typewriter — bridge hub counts, only while recruiting */
   const [bridgeNodeInviteReady, setBridgeNodeInviteReady] = useState(false);
-  const nodeInviteEnabled = nodeMode === "lumen";
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -221,19 +236,26 @@ export default function LumenDashboard() {
   );
 
   useEffect(() => {
-    // First invite hidden (My Node mode) → still show bridge stats after 3s
+    // Hub join panel only for users without a bridge token
+    if (!showBridgeConnectInvites) {
+      setBridgeNodeInviteReady(false);
+      return;
+    }
+    // Primary invite will stack the hub panel after it finishes typing
     if (nodeInviteEnabled) {
       setBridgeNodeInviteReady(false);
       return;
     }
+    // Rare: recruiting but primary off (e.g. My Node without token) → hub after 3s
     setBridgeNodeInviteReady(false);
     const t = window.setTimeout(() => setBridgeNodeInviteReady(true), 3000);
     return () => window.clearTimeout(t);
-  }, [nodeInviteEnabled]);
+  }, [showBridgeConnectInvites, nodeInviteEnabled]);
 
   const onNodeInviteTyped = useCallback(() => {
+    if (!shouldShowBridgeConnectInvites(bridgeToken)) return;
     window.setTimeout(() => setBridgeNodeInviteReady(true), 3000);
-  }, []);
+  }, [bridgeToken]);
 
   const setNodeMode = useCallback((mode: NodeMode) => {
     setNodeModeState(mode);
@@ -802,12 +824,14 @@ export default function LumenDashboard() {
                   onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
                 />
               ) : null}
-              <BridgeOperatorsInvite
-                variant="node"
-                enabled={bridgeNodeInviteReady}
-                delayMs={0}
-                onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
-              />
+              {showBridgeConnectInvites ? (
+                <BridgeOperatorsInvite
+                  variant="node"
+                  enabled={bridgeNodeInviteReady}
+                  delayMs={0}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+                />
+              ) : null}
             </div>
           }
           badges={

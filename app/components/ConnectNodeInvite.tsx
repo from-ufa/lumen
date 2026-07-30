@@ -2,6 +2,7 @@
 
 /**
  * My Node invite — thin wrapper over TypewriterInvite.
+ * Parent enables only when no bridge token (bridge-invite-policy).
  */
 
 import TypewriterInvite, { wakeInvite } from "./TypewriterInvite";
