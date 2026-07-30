@@ -871,11 +871,6 @@ export default function LumenDashboard() {
                   {infoFetching ? " …" : ""}
                 </span>
               )}
-              {nodeMode === "my" && (
-                <span className="text-[10px] text-[#A0A0B0]/70 tracking-widest">
-                  via /api/bridge/node
-                </span>
-              )}
             </>
           }
           footer={
