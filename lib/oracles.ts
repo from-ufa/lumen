@@ -23,6 +23,11 @@ export interface OracleFeedConfig {
   metricsPort?: number;
   accent: string;
   accentSoft: string;
+  /** Pool reward emission token (DORT / GORT) */
+  rewardTokenId: string;
+  rewardTokenTicker: string;
+  rewardTokenName: string;
+  rewardTokenDecimals: number;
 }
 
 export const ORACLE_FEEDS: OracleFeedConfig[] = [
@@ -37,6 +42,12 @@ export const ORACLE_FEEDS: OracleFeedConfig[] = [
     metricsPort: 9021,
     accent: "#10B981",
     accentSoft: "rgba(16, 185, 129, 0.14)",
+    // USD Oracle Reward Token — emitted by ERG/USD pool box
+    rewardTokenId:
+      "ae399fcb751e8e247d0da8179a2bcca2aa5119fff9c85721ffab9cdc9a3cb2dd",
+    rewardTokenTicker: "DORT",
+    rewardTokenName: "USD Oracle Reward Token",
+    rewardTokenDecimals: 0,
   },
   {
     id: "erg-xau",
@@ -50,6 +61,12 @@ export const ORACLE_FEEDS: OracleFeedConfig[] = [
     // Champagne / aerospace gold — not neon yellow
     accent: "#C9A84C",
     accentSoft: "rgba(201, 168, 76, 0.14)",
+    // Gold Oracle Reward Token — emitted by ERG/XAU pool box
+    rewardTokenId:
+      "7ba2a85fdb302a181578b1f64cb4a533d89b3f8de4159efece75da41041537f9",
+    rewardTokenTicker: "GORT",
+    rewardTokenName: "Gold Oracle Reward Token",
+    rewardTokenDecimals: 0,
   },
 ];
 
@@ -103,8 +120,25 @@ export interface OracleFeedSnapshot {
   poolHealthy?: boolean | null;
   /** Required datapoints for refresh (metrics) */
   requiredOracles?: number | null;
-  /** Reward token amount in pool box (metrics) */
+  /** Reward token amount in pool box (metrics / explorer assets) */
   poolRewardTokens?: number | null;
+  /** Reward token identity for this pool */
+  rewardToken?: {
+    id: string;
+    ticker: string;
+    name: string;
+    decimals: number;
+  } | null;
+  /** Spot price of 1 reward token in ERG (Spectrum AMM) */
+  rewardTokenPriceErg?: number | null;
+  /** Spot price of 1 reward token in USD (via ERG/USD pool) */
+  rewardTokenPriceUsd?: number | null;
+  /** Sum of claimable reward tokens across all known operators */
+  operatorsClaimable?: number | null;
+  /** operatorsClaimable × rewardTokenPriceErg */
+  operatorsClaimableErg?: number | null;
+  /** operatorsClaimable × rewardTokenPriceUsd */
+  operatorsClaimableUsd?: number | null;
   /** Connected operator (My Oracle / host agent) */
   myOperator?: MyOracleOperator | null;
   /**
@@ -397,11 +431,16 @@ async function fetchTipHeight(): Promise<number | null> {
   return null;
 }
 
-async function fetchPoolBox(poolNft: string): Promise<{
+async function fetchPoolBox(
+  poolNft: string,
+  rewardTokenId?: string
+): Promise<{
   rateNano: number;
   epoch: number | null;
   settlementHeight: number;
   boxId: string;
+  /** Remaining reward tokens in the pool box (explorer assets) */
+  rewardTokenAmount: number | null;
 } | null> {
   const data = await fetchJson(
     `${EXPLORER}/api/v1/boxes/unspent/byTokenId/${poolNft}`,
@@ -417,12 +456,92 @@ async function fetchPoolBox(poolNft: string): Promise<{
   const settlementHeight = Number(
     box.settlementHeight ?? box.creationHeight ?? 0
   );
+  let rewardTokenAmount: number | null = null;
+  if (rewardTokenId && Array.isArray(box.assets)) {
+    const asset = box.assets.find(
+      (a: { tokenId?: string; amount?: number | string }) =>
+        a?.tokenId === rewardTokenId
+    );
+    if (asset != null) {
+      const n = Number(asset.amount);
+      if (Number.isFinite(n)) rewardTokenAmount = n;
+    }
+  }
   return {
     rateNano,
     epoch: Number.isFinite(epoch as number) ? (epoch as number) : null,
     settlementHeight,
     boxId: String(box.boxId || ""),
+    rewardTokenAmount,
   };
+}
+
+const SPECTRUM_MARKETS_URL = "https://api.spectrum.fi/v1/price-tracking/markets";
+const ERG_TOKEN_ID =
+  "0000000000000000000000000000000000000000000000000000000000000000";
+
+/** Cached Spectrum lastPrice for reward tokens (ERG base → token quote). */
+let spectrumPriceCache: {
+  at: number;
+  byTokenId: Map<string, number>;
+} | null = null;
+
+/**
+ * Spectrum ERG/token markets: base=ERG, quote=token, lastPrice = token per 1 ERG.
+ * → erg per 1 token = 1 / lastPrice.
+ */
+async function fetchRewardTokenPricesErg(
+  tokenIds: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (tokenIds.length === 0) return out;
+  const now = Date.now();
+  if (spectrumPriceCache && now - spectrumPriceCache.at < 60_000) {
+    for (const id of tokenIds) {
+      const p = spectrumPriceCache.byTokenId.get(id);
+      if (p != null) out.set(id, p);
+    }
+    if (out.size === tokenIds.length) return out;
+  }
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 8_000);
+    const res = await fetch(SPECTRUM_MARKETS_URL, {
+      signal: ctrl.signal,
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+    clearTimeout(t);
+    if (!res.ok) return out;
+    const markets = (await res.json()) as Array<{
+      baseId?: string;
+      quoteId?: string;
+      lastPrice?: number | string;
+    }>;
+    if (!Array.isArray(markets)) return out;
+    const want = new Set(tokenIds);
+    const byTokenId = new Map<string, number>();
+    for (const m of markets) {
+      if (m.baseId !== ERG_TOKEN_ID || !m.quoteId || !want.has(m.quoteId)) {
+        continue;
+      }
+      const last = Number(m.lastPrice);
+      if (!Number.isFinite(last) || last <= 0) continue;
+      // lastPrice = quote tokens per 1 ERG → ERG per token
+      const ergPerToken = 1 / last;
+      if (Number.isFinite(ergPerToken) && ergPerToken > 0) {
+        byTokenId.set(m.quoteId, ergPerToken);
+      }
+    }
+    spectrumPriceCache = { at: now, byTokenId };
+    for (const id of tokenIds) {
+      const p = byTokenId.get(id);
+      if (p != null) out.set(id, p);
+    }
+  } catch {
+    /* non-fatal — UI shows — for price */
+  }
+  return out;
 }
 
 type MetricsHealth = {
@@ -948,8 +1067,19 @@ export async function loadOraclesSnapshot(
     ? ORACLE_FEEDS.filter((c) => opts.onlyFeeds!.includes(c.id))
     : ORACLE_FEEDS;
 
+  // Spectrum reward-token spot (ERG) — one request for all pools
+  const rewardPricePromise = fetchRewardTokenPricesErg(
+    feedCfgs.map((c) => c.rewardTokenId)
+  );
+
   const feeds: OracleFeedSnapshot[] = await Promise.all(
     feedCfgs.map(async (cfg) => {
+      const rewardTokenMeta = {
+        id: cfg.rewardTokenId,
+        ticker: cfg.rewardTokenTicker,
+        name: cfg.rewardTokenName,
+        decimals: cfg.rewardTokenDecimals,
+      };
       const base: OracleFeedSnapshot = {
         id: cfg.id,
         pair: cfg.pair,
@@ -977,13 +1107,14 @@ export async function loadOraclesSnapshot(
         nodes: [],
         history: historyFile[cfg.id] ?? [],
         source: "none",
+        rewardToken: rewardTokenMeta,
       };
 
       try {
         // Box + tip in parallel; metrics after box (needs settlement height)
         const [tipHeight, box] = await Promise.all([
           tipPromise,
-          fetchPoolBox(cfg.poolNft),
+          fetchPoolBox(cfg.poolNft, cfg.rewardTokenId),
         ]);
         base.tipHeight = tipHeight;
 
@@ -1101,7 +1232,9 @@ export async function loadOraclesSnapshot(
           liveEvents,
           poolHealthy: health?.poolHealthy ?? null,
           requiredOracles: health?.requiredOracles ?? null,
-          poolRewardTokens: health?.poolRewardTokens ?? null,
+          poolRewardTokens:
+            health?.poolRewardTokens ?? box.rewardTokenAmount ?? null,
+          rewardToken: rewardTokenMeta,
           myOperator:
             scope === "network" ? null : health?.myOperator ?? null,
           scope,
@@ -1117,6 +1250,42 @@ export async function loadOraclesSnapshot(
       }
     })
   );
+
+  // Enrich reward-token market + operators claimable (after both feeds ready for ERG/USD)
+  const rewardPricesErg = await rewardPricePromise;
+  const ergUsdSpot =
+    feeds.find((f) => f.id === "erg-usd")?.price ?? null;
+
+  for (const feed of feeds) {
+    const cfg = feedCfgs.find((c) => c.id === feed.id);
+    if (!cfg) continue;
+    const priceErg = rewardPricesErg.get(cfg.rewardTokenId) ?? null;
+    const priceUsd =
+      priceErg != null && ergUsdSpot != null && ergUsdSpot > 0
+        ? priceErg * ergUsdSpot
+        : null;
+
+    let claimable: number | null = null;
+    if (feed.nodes?.length) {
+      let sum = 0;
+      let any = false;
+      for (const n of feed.nodes) {
+        if (n.rewardTokens != null && Number.isFinite(n.rewardTokens)) {
+          sum += n.rewardTokens;
+          any = true;
+        }
+      }
+      if (any) claimable = sum;
+    }
+
+    feed.rewardTokenPriceErg = priceErg;
+    feed.rewardTokenPriceUsd = priceUsd;
+    feed.operatorsClaimable = claimable;
+    feed.operatorsClaimableErg =
+      claimable != null && priceErg != null ? claimable * priceErg : null;
+    feed.operatorsClaimableUsd =
+      claimable != null && priceUsd != null ? claimable * priceUsd : null;
+  }
 
   if (historyDirty) writeHistory(historyFile);
 
