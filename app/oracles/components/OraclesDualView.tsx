@@ -115,17 +115,6 @@ function themeFor(feed: OracleFeedData): Theme {
   };
 }
 
-/** Compact count: 144714 → 144.7K, 249235512 → 249.2M */
-function formatTokenAmt(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
-  const abs = Math.abs(n);
-  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (abs >= 1e4) return `${(n / 1e3).toFixed(1)}K`;
-  if (abs >= 1e3) return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-  return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
-}
-
 function formatErgSpot(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n <= 0) return "—";
   if (n >= 1) return `${n.toFixed(3)} Σ`;
@@ -142,9 +131,16 @@ function formatUsdSpot(n: number | null | undefined): string {
   return `$${n.toFixed(4)}`;
 }
 
+function formatDailyTokens(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (n >= 100) return n.toFixed(0);
+  if (n >= 10) return n.toFixed(1);
+  return n.toFixed(2);
+}
+
 /**
- * Per-pool reward token card: ticker, spot price, operators' claimable income.
- * Sits beside On-chain price so dual panes stay row-aligned.
+ * Per-pool reward card: token, spot, and est. operator earnings per day.
+ * Daily = (tokens per oracle per epoch) × (epochs/day), if collected every epoch.
  */
 function RewardTokenPanel({
   feed,
@@ -158,15 +154,19 @@ function RewardTokenPanel({
   const name = rt?.name || "Reward token";
   const priceErg = feed.rewardTokenPriceErg;
   const priceUsd = feed.rewardTokenPriceUsd;
-  const claimable = feed.operatorsClaimable;
-  const claimErg = feed.operatorsClaimableErg;
-  const claimUsd = feed.operatorsClaimableUsd;
-  const poolLeft = feed.poolRewardTokens;
-  const mineClaim =
-    feed.myOperator?.claimableRewards ??
-    feed.nodes?.find((n) => n.isMine)?.rewardTokens ??
-    null;
-  const mineScope = feed.scope === "mine";
+  const dailyTok = feed.operatorDailyTokens;
+  const dailyErg = feed.operatorDailyErg;
+  const dailyUsd = feed.operatorDailyUsd;
+  const perEpoch = feed.rewardTokensPerOraclePerEpoch;
+  const epochsDay = feed.epochsPerDay;
+  const epochBlocks = feed.epochLength;
+
+  const epochHint =
+    perEpoch != null && epochsDay != null
+      ? `${perEpoch}/epoch · ~${epochsDay >= 10 ? Math.round(epochsDay) : epochsDay.toFixed(1)} epochs/day`
+      : epochBlocks
+        ? `epoch ${epochBlocks} blk`
+        : null;
 
   return (
     <div
@@ -176,22 +176,22 @@ function RewardTokenPanel({
         background: `linear-gradient(155deg, ${theme.accent}12 0%, rgba(0,0,0,0.52) 48%, rgba(0,0,0,0.62) 100%)`,
         boxShadow: `inset 0 1px 0 ${theme.accent}18, 0 0 28px ${theme.accent}0a`,
       }}
+      title="Estimate for one operator if their datapoint is collected every pool epoch. Missed epochs reduce earnings."
     >
       <div className="flex items-start justify-between gap-1.5 shrink-0">
         <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase leading-none">
           Reward token
         </div>
-        {poolLeft != null && (
+        {epochHint && (
           <div
-            className="text-[8px] font-mono tracking-wider uppercase tabular-nums px-1.5 py-0.5 rounded-md border shrink-0"
+            className="text-[8px] font-mono tracking-wider tabular-nums px-1.5 py-0.5 rounded-md border shrink-0 max-w-[55%] truncate"
             style={{
               color: `${theme.accent}cc`,
               borderColor: `${theme.accent}30`,
               background: `${theme.accent}10`,
             }}
-            title="Reward tokens still in the pool box (future emissions)"
           >
-            pool {formatTokenAmt(poolLeft)}
+            {epochHint}
           </div>
         )}
       </div>
@@ -212,7 +212,7 @@ function RewardTokenPanel({
         </span>
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
         <span className="font-mono text-[11px] sm:text-[12px] tabular-nums text-[#E8E8F0]">
           {formatErgSpot(priceErg ?? null)}
         </span>
@@ -228,17 +228,17 @@ function RewardTokenPanel({
         </span>
       </div>
 
-      <div className="mt-auto pt-2 border-t border-white/[0.06] grid grid-cols-1 gap-1 min-w-0">
+      <div className="mt-auto pt-2 border-t border-white/[0.06] min-w-0">
         <div className="flex items-end justify-between gap-2 min-w-0">
           <div className="min-w-0">
             <div className="text-[8px] font-mono tracking-[0.14em] text-[#6B6B78] uppercase leading-none">
-              Operators income
+              Operator / day
             </div>
-            <div className="mt-0.5 font-mono text-[12px] sm:text-[13px] tabular-nums text-[#E8E8F0] leading-none truncate">
-              {claimable != null ? (
+            <div className="mt-0.5 font-mono text-[13px] sm:text-[14px] tabular-nums text-[#E8E8F0] leading-none truncate font-semibold">
+              {dailyTok != null ? (
                 <>
-                  {formatTokenAmt(claimable)}
-                  <span className="text-[9px] text-[#7A7A88] ml-1">
+                  {formatDailyTokens(dailyTok)}
+                  <span className="text-[9px] font-normal text-[#7A7A88] ml-1">
                     {ticker}
                   </span>
                 </>
@@ -246,29 +246,25 @@ function RewardTokenPanel({
                 "—"
               )}
             </div>
+            <div className="mt-0.5 text-[8px] font-mono text-[#5C5C6A] tracking-wide truncate">
+              if collected every epoch
+            </div>
           </div>
-          <div className="text-right shrink-0">
+          <div className="text-right shrink-0 pb-0.5">
             <div
-              className="font-mono text-[11px] sm:text-[12px] tabular-nums leading-none"
+              className="font-mono text-[13px] sm:text-[14px] tabular-nums leading-none font-semibold"
               style={{ color: theme.accent }}
             >
-              {formatUsdSpot(claimUsd ?? null)}
+              {formatUsdSpot(dailyUsd ?? null)}
+              <span className="text-[8px] font-normal opacity-70 ml-0.5">
+                /d
+              </span>
             </div>
             <div className="mt-0.5 text-[9px] font-mono text-[#6B6B78] tabular-nums leading-none">
-              {claimErg != null ? formatErgSpot(claimErg) : "\u00a0"}
+              {dailyErg != null ? `${formatErgSpot(dailyErg)}/d` : "\u00a0"}
             </div>
           </div>
         </div>
-        {mineScope && mineClaim != null && (
-          <div className="flex items-center justify-between gap-2 text-[9px] font-mono">
-            <span className="text-[#FF7A3D]/90 uppercase tracking-wider">
-              Your claimable
-            </span>
-            <span className="tabular-nums text-[#FFD4BE]">
-              {formatTokenAmt(mineClaim)} {ticker}
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1029,8 +1025,15 @@ function OracleBlock({
                 </div>
               </div>
               <div>
-                <div className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider">
-                  {isMineScope ? "Rewards" : "Active"}
+                <div
+                  className="text-[8px] font-mono text-[#7A7A88] uppercase tracking-wider"
+                  title={
+                    isMineScope
+                      ? "Unclaimed reward tokens waiting to be claimed (not daily earnings)"
+                      : undefined
+                  }
+                >
+                  {isMineScope ? "Claimable" : "Active"}
                 </div>
                 <div
                   className="mt-0.5 font-mono text-[13px] tabular-nums leading-none"

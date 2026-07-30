@@ -85,10 +85,14 @@ export interface OracleFeedData {
   } | null;
   rewardTokenPriceErg?: number | null;
   rewardTokenPriceUsd?: number | null;
-  /** Sum of claimable reward tokens across known operators */
-  operatorsClaimable?: number | null;
-  operatorsClaimableErg?: number | null;
-  operatorsClaimableUsd?: number | null;
+  /** Tokens paid to one collected oracle per epoch */
+  rewardTokensPerOraclePerEpoch?: number | null;
+  /** Expected pool refreshes per day */
+  epochsPerDay?: number | null;
+  /** Est. tokens / day for one operator if collected every epoch */
+  operatorDailyTokens?: number | null;
+  operatorDailyErg?: number | null;
+  operatorDailyUsd?: number | null;
   myOperator?: MyOracleOperator | null;
   /** mine = your bridge agent; network = lumen host public pool */
   scope?: "mine" | "network" | null;
