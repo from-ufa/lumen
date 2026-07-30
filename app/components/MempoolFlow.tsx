@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { ExternalLink, Activity } from "lucide-react";
 import { UnconfirmedTx } from "../types/ergo";
 import { openTxOnSigmaSpace } from "../lib/explorer";
@@ -47,6 +47,7 @@ function shortTxId(id: string): { head: string; tail: string; full: string } {
 }
 
 export default function MempoolFlow({ txs, size }: MempoolFlowProps) {
+  const reduceMotion = useReducedMotion();
   const displayTxs = txs.slice(0, 12);
   const [pendingTx, setPendingTx] = useState<string | null>(null);
 
@@ -126,12 +127,13 @@ export default function MempoolFlow({ txs, size }: MempoolFlowProps) {
                 <motion.button
                   key={tx.id}
                   type="button"
-                  layout
-                  initial={{ opacity: 0, y: 6 }}
+                  layout={!reduceMotion}
+                  initial={reduceMotion ? false : { opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.98 }}
+                  exit={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
                   transition={{
-                    delay: Math.min(index * 0.015, 0.12),
+                    duration: reduceMotion ? 0.08 : 0.2,
+                    delay: reduceMotion ? 0 : Math.min(index * 0.015, 0.12),
                     ease: [0.23, 1, 0.32, 1],
                   }}
                   onClick={() => requestOpen(tx.id)}

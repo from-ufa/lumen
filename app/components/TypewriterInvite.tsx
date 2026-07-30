@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 const TYPE_MS = 38;
 const CURSOR_ONLY_MS = 700;
@@ -53,6 +53,7 @@ export default function TypewriterInvite({
   loop?: boolean;
   holdClosedSlot?: boolean;
 }) {
+  const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [cycle, setCycle] = useState(0);
@@ -209,21 +210,25 @@ export default function TypewriterInvite({
           <motion.div
             key="typewriter-invite"
             ref={panelRef}
-            initial={{ opacity: 0, scale: 0.96, y: -4 }}
+            initial={
+              reduceMotion
+                ? { opacity: 0 }
+                : { opacity: 0, scale: 0.96, y: -4 }
+            }
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={
-              holdClosedSlot
+              holdClosedSlot || reduceMotion
                 ? { opacity: 0 }
                 : { opacity: 0, scale: 0.97, y: -2 }
             }
             transition={{
-              duration: holdClosedSlot ? 0.2 : 0.28,
+              duration: reduceMotion ? 0.12 : holdClosedSlot ? 0.2 : 0.28,
               ease: [0.23, 1, 0.32, 1],
             }}
             style={{ originX: 1, originY: 0, transformOrigin: "right top" }}
             className="relative w-full max-w-[min(100%,22rem)] md:max-w-[22rem]"
           >
-            {inView && (
+            {inView && !reduceMotion && (
               <motion.div
                 aria-hidden
                 className="pointer-events-none absolute -inset-2 rounded-2xl"

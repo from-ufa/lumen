@@ -8,7 +8,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   Share2,
   X,
@@ -179,6 +179,7 @@ export default function ShareCard({
   triggerLabel,
 }: ShareCardProps) {
   const isOracle = variant === "oracle";
+  const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -697,15 +698,27 @@ export default function ShareCard({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0.1 : 0.18 }}
               className="absolute inset-0 bg-black/88 backdrop-blur-sm"
               onClick={() => setModalOpen(false)}
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 14 }}
+              initial={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, scale: 0.96, y: 14 }
+              }
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.98, y: 8 }}
-              transition={{ ease: [0.23, 1, 0.32, 1] }}
+              exit={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, scale: 0.98, y: 8 }
+              }
+              transition={{
+                duration: reduceMotion ? 0.12 : 0.22,
+                ease: [0.23, 1, 0.32, 1],
+              }}
               className="relative z-10 w-full max-w-xl max-h-[min(94dvh,900px)] overflow-y-auto rounded-t-[24px] sm:rounded-[28px] border border-white/10 p-4 sm:p-6 shadow-2xl pb-[max(1rem,env(safe-area-inset-bottom))]"
               style={{
                 background:

@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import LumenWordmark from "../components/LumenWordmark";
 import ConnectionSettings from "../components/ConnectionSettings";
 import ConnectOracleInvite, {
@@ -77,6 +77,7 @@ function nodeModeToView(m: NodeMode): OracleViewMode {
 export default function OraclesPage() {
   const softNav = useSoftNavigate();
   const router = useRouter();
+  const reduceMotion = useReducedMotion();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
@@ -276,10 +277,21 @@ export default function OraclesPage() {
                   {mobileMenuOpen && (
                     <motion.div
                       role="menu"
-                      initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                      initial={
+                        reduceMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: -6, scale: 0.96 }
+                      }
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      exit={
+                        reduceMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: -4, scale: 0.98 }
+                      }
+                      transition={{
+                        duration: reduceMotion ? 0.1 : 0.18,
+                        ease: [0.22, 1, 0.36, 1],
+                      }}
                       className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[12rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
                     >
                       <button

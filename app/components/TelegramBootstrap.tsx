@@ -142,7 +142,6 @@ export default function TelegramBootstrap() {
               border border-[#FF7A3D]/35
               bg-[#FF7A3D]/22 backdrop-blur-md
               shadow-[0_8px_28px_rgba(0,0,0,0.35),0_0_20px_rgba(255,122,61,0.12)]
-              hover:bg-[#FF7A3D]/32 hover:border-[#FF7A3D]/50
               active:scale-[0.97] lumen-ui-transition
               select-none"
             style={{
