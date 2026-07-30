@@ -3,9 +3,17 @@ import {
   getBotToken,
   getWebAppUrl,
   replyHtml,
-  tgApi,
   webAppKeyboard,
 } from "@/app/lib/tg-bot";
+import {
+  getChatIdForUser,
+  listSubsForUser,
+  publicSubView,
+  recordChatId,
+  setSubEnabled,
+  deleteSubsForUser,
+} from "@/app/lib/tg-alerts-store";
+import { sendTestAlert } from "@/app/lib/tg-alerts-engine";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -43,11 +51,33 @@ function esc(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
-async function handleCommand(chatId: number, text: string) {
-  const cmd = text.trim().split(/\s+/)[0].toLowerCase().replace(/@\w+$/, "");
+async function handleCommand(
+  chatId: number,
+  text: string,
+  fromId?: number
+) {
+  // Bind private chat for alerts (userId ≈ chatId in DMs)
+  if (fromId != null) {
+    recordChatId(fromId, chatId);
+  } else {
+    recordChatId(chatId, chatId);
+  }
+
+  const parts = text.trim().split(/\s+/);
+  const cmd = parts[0].toLowerCase().replace(/@\w+$/, "");
+  const arg = (parts[1] || "").toLowerCase();
+  const userId = fromId ?? chatId;
 
   if (cmd === "/start" || cmd === "/app") {
-    await replyHtml(chatId, "Please run a node");
+    await replyHtml(
+      chatId,
+      [
+        "Please run a node",
+        "",
+        "Private alerts: open Mini App → Settings → <b>Telegram alerts</b>",
+        "or /alerts after you connect a bridge token.",
+      ].join("\n")
+    );
     return;
   }
 
@@ -60,7 +90,94 @@ async function handleCommand(chatId: number, text: string) {
         "/app — Mini App button",
         "/status — node snapshot (public metrics)",
         "/oracles — ERG/USD + ERG/XAU",
+        "/alerts — alert status",
+        "/alerts on|off — enable / mute",
+        "/alerts test — send test message",
         "/help — this list",
+      ].join("\n")
+    );
+    return;
+  }
+
+  if (cmd === "/alerts") {
+    const subs = listSubsForUser(userId);
+    if (arg === "on") {
+      const n = setSubEnabled(userId, true);
+      await replyHtml(
+        chatId,
+        n
+          ? `✅ Alerts <b>enabled</b> (${n} subscription${n > 1 ? "s" : ""}).`
+          : "No subscription yet. Open Mini App → Settings → enable <b>Telegram alerts</b> (bridge token required)."
+      );
+      return;
+    }
+    if (arg === "off") {
+      const n = setSubEnabled(userId, false);
+      await replyHtml(
+        chatId,
+        n
+          ? "🔇 Alerts <b>muted</b>. /alerts on to re-enable."
+          : "No subscription found."
+      );
+      return;
+    }
+    if (arg === "test") {
+      const ok = await sendTestAlert(chatId);
+      await replyHtml(
+        chatId,
+        ok ? "✅ Test sent." : "❌ Could not send test (bot token?).",
+        false
+      );
+      return;
+    }
+    if (arg === "delete" || arg === "remove") {
+      const n = deleteSubsForUser(userId);
+      await replyHtml(
+        chatId,
+        n ? `Removed ${n} subscription(s).` : "Nothing to remove."
+      );
+      return;
+    }
+
+    const chatKnown = getChatIdForUser(userId) != null;
+    if (!subs.length) {
+      await replyHtml(
+        chatId,
+        [
+          "<b>Telegram alerts</b> (TA-1)",
+          "",
+          chatKnown
+            ? "Chat linked ✓"
+            : "Chat will link on any message (done).",
+          "",
+          "No active subscription.",
+          "1. Open Mini App → Settings",
+          "2. Connect bridge token",
+          "3. Enable <b>Telegram alerts</b>",
+          "",
+          "Then: /alerts test",
+        ].join("\n")
+      );
+      return;
+    }
+
+    const lines = subs.map((s) => {
+      const p = publicSubView(s);
+      const scopes = [
+        p.scopes.node ? "node" : null,
+        p.scopes.oracle ? "oracle" : null,
+      ]
+        .filter(Boolean)
+        .join("+");
+      return `• <code>${p.tokenFp}…</code> ${p.prefs.enabled ? "ON" : "OFF"} · ${scopes}${p.lastTickAt ? ` · tick ${p.lastTickAt.slice(11, 19)}Z` : ""}`;
+    });
+    await replyHtml(
+      chatId,
+      [
+        "<b>Your alert subscriptions</b>",
+        ...lines,
+        "",
+        "/alerts on · /alerts off · /alerts test",
       ].join("\n")
     );
     return;
@@ -161,7 +278,7 @@ export async function POST(req: NextRequest) {
   const msg = update.message;
   if (msg?.text && msg.chat?.id != null) {
     try {
-      await handleCommand(msg.chat.id, msg.text);
+      await handleCommand(msg.chat.id, msg.text, msg.from?.id);
     } catch (e) {
       console.warn(
         "[tg/webhook] handler error",

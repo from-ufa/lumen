@@ -138,13 +138,41 @@ git branch -D feat/telegram-miniapp
 
 Single commit: `git revert <sha>`
 
+## Phase TA-1 — Private alerts (implemented)
+
+Personal bot notifications for operators who opt in.
+
+| Piece | Path |
+|-------|------|
+| Architecture | [tg-alerts-architecture.md](./tg-alerts-architecture.md) |
+| Store | `data/tg-alert-subs.json` (encrypted bridge token) |
+| Subscribe | `POST /api/tg/alerts/subscribe` (TG session cookie + token) |
+| Me / test / mute | `/api/tg/alerts/me` · `test` · `unsubscribe` |
+| Watchdog | `POST /api/tg/alerts/tick` + systemd `lumen-tg-alerts.timer` |
+| Bot | `/alerts` · `on` · `off` · `test` · `delete` |
+| UI | Settings → **TELEGRAM ALERTS** toggle |
+
+**Alerts (TA-1):** `bridge.offline` / recovery, `oracle.agent_down`, `oracle.post_lag`.
+
+```bash
+# Enable watchdog (after deploy)
+systemctl enable --now lumen-tg-alerts.timer
+systemctl list-timers | grep lumen-tg
+# Manual tick
+curl -sS -X POST -H "X-Lumen-Internal: $TELEGRAM_WEBHOOK_SECRET" \
+  http://127.0.0.1:3000/api/tg/alerts/tick
+```
+
+**User flow:** `/start` bot → Mini App → Settings → bridge token → enable Telegram alerts → optional TEST ALERT.
+
 ## Phase TG-2 (later)
 
-- Real bot alerts (tip / oracle lag) with subscriptions + rate limit  
+- TA-2: node peers/sync, daily claim reminder, quiet hours  
 - Attach menu / home screen shortcut polish  
 - Payments / stars (if ever)  
 - Stronger low-end (optional Map-only mode permanent)  
 - Desktop TG client quirks matrix  
+
 
 ## Related
 

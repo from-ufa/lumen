@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, type MouseEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
@@ -24,8 +24,11 @@ import {
   Container,
   ChevronDown,
   ChevronUp,
+  Bell,
+  BellOff,
 } from "lucide-react";
 import { toast } from "sonner";
+import { isTelegramMiniApp } from "../lib/telegram";
 import type {
   NodeMode,
   BridgeStatus,
@@ -243,6 +246,13 @@ export default function ConnectionSettings({
   const [oracleUsd, setOracleUsd] = useState(true);
   const [oracleXau, setOracleXau] = useState(false);
 
+  /** TA-1 Telegram private alerts */
+  const [tgAlertsOn, setTgAlertsOn] = useState(false);
+  const [tgAlertsBusy, setTgAlertsBusy] = useState(false);
+  const [tgAlertsHint, setTgAlertsHint] = useState<string | null>(null);
+  const [tgHasChat, setTgHasChat] = useState<boolean | null>(null);
+  const [inTg, setInTg] = useState(false);
+
   const bridgeOnline = !!bridgeStatus?.connected;
   const bridgeKnown = bridgeStatus?.known !== false;
   const agentOracles = bridgeStatus?.oracles || [];
@@ -267,7 +277,132 @@ export default function ConnectionSettings({
 
   useEffect(() => {
     setMounted(true);
+    setInTg(isTelegramMiniApp());
   }, []);
+
+  const refreshTgAlerts = useCallback(async () => {
+    if (!bridgeToken) {
+      setTgAlertsOn(false);
+      setTgHasChat(null);
+      setTgAlertsHint(null);
+      return;
+    }
+    try {
+      const res = await fetch("/api/tg/alerts/me", {
+        credentials: "include",
+        cache: "no-store",
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        hasChat?: boolean;
+        subscriptions?: Array<{
+          prefs?: { enabled?: boolean };
+          tokenFp?: string;
+        }>;
+        error?: string;
+        disabled?: boolean;
+      };
+      if (data.disabled) {
+        setTgAlertsHint("Bot not configured on server");
+        return;
+      }
+      if (!res.ok) {
+        setTgHasChat(false);
+        setTgAlertsOn(false);
+        if (data.error === "auth_required") {
+          setTgAlertsHint(
+            inTg
+              ? "Open Mini App from the bot so we can verify you"
+              : "Available inside Telegram Mini App"
+          );
+        }
+        return;
+      }
+      setTgHasChat(!!data.hasChat);
+      const enabled = (data.subscriptions || []).some(
+        (s) => s.prefs?.enabled
+      );
+      setTgAlertsOn(enabled);
+      if (!data.hasChat) {
+        setTgAlertsHint("Send /start to @ergolumen_bot first");
+      } else if (enabled) {
+        setTgAlertsHint("Watchdog armed · bridge offline / oracle down / lag");
+      } else {
+        setTgAlertsHint("Opt-in to get private problem alerts");
+      }
+    } catch {
+      setTgAlertsHint("Could not load alert status");
+    }
+  }, [bridgeToken, inTg]);
+
+  useEffect(() => {
+    if (!open || !bridgeToken) return;
+    void refreshTgAlerts();
+  }, [open, bridgeToken, refreshTgAlerts]);
+
+  const toggleTgAlerts = async (next: boolean) => {
+    if (!bridgeToken || tgAlertsBusy) return;
+    setTgAlertsBusy(true);
+    try {
+      if (next) {
+        const res = await fetch("/api/tg/alerts/subscribe", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bridgeToken,
+            scopes: { node: !isOracle ? true : true, oracle: true },
+            prefs: { enabled: true },
+            sendTest: true,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          hint?: string;
+          testSent?: boolean;
+        };
+        if (!res.ok || !data.ok) {
+          toast.error(
+            data.hint ||
+              data.error ||
+              "Could not enable alerts"
+          );
+          if (data.error === "chat_required") {
+            setTgAlertsHint("Send /start to @ergolumen_bot, then retry");
+          }
+          return;
+        }
+        setTgAlertsOn(true);
+        setTgHasChat(true);
+        setTgAlertsHint(
+          data.testSent
+            ? "Enabled · test message sent to Telegram"
+            : data.hint || "Alerts enabled"
+        );
+        toast.success("Telegram alerts on");
+      } else {
+        const res = await fetch("/api/tg/alerts/unsubscribe", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mute: true }),
+        });
+        if (!res.ok) {
+          toast.error("Could not mute alerts");
+          return;
+        }
+        setTgAlertsOn(false);
+        setTgAlertsHint("Muted · /alerts on in bot to re-enable");
+        toast.message("Telegram alerts muted");
+      }
+    } catch {
+      toast.error("Network error");
+    } finally {
+      setTgAlertsBusy(false);
+      void refreshTgAlerts();
+    }
+  };
 
   useEffect(() => {
     if (!openKey || openKey === lastOpenKey.current) return;
@@ -911,6 +1046,104 @@ export default function ConnectionSettings({
                     </div>
                   )}
                 </div>
+
+                {/* === TELEGRAM ALERTS (TA-1) === */}
+                {bridgeToken && (
+                  <div className="rounded-2xl border border-[#FF7A3D]/25 bg-gradient-to-br from-[#FF7A3D]/[0.08] to-transparent p-4 sm:p-5 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {tgAlertsOn ? (
+                          <Bell className="w-4 h-4 text-[#FF7A3D] shrink-0" />
+                        ) : (
+                          <BellOff className="w-4 h-4 text-[#A0A0B0] shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <div className="text-xs font-mono tracking-widest text-[#E8E8F0]">
+                            TELEGRAM ALERTS
+                          </div>
+                          <div className="text-[10px] text-[#A0A0B0] mt-0.5 leading-snug">
+                            Private push when bridge / oracle has problems
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={tgAlertsBusy || !bridgeToken}
+                        onClick={() => void toggleTgAlerts(!tgAlertsOn)}
+                        className={`shrink-0 relative h-8 w-14 rounded-full border lumen-ui-transition ${
+                          tgAlertsOn
+                            ? "bg-[#FF7A3D]/25 border-[#FF7A3D]/50"
+                            : "bg-white/[0.04] border-white/15"
+                        } disabled:opacity-40`}
+                        aria-pressed={tgAlertsOn}
+                        aria-label={
+                          tgAlertsOn
+                            ? "Disable Telegram alerts"
+                            : "Enable Telegram alerts"
+                        }
+                      >
+                        {tgAlertsBusy ? (
+                          <Loader2
+                            size={14}
+                            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 animate-spin text-[#E8E8F0]"
+                          />
+                        ) : (
+                          <span
+                            className={`absolute top-0.5 h-6 w-6 rounded-full shadow transition-transform ${
+                              tgAlertsOn
+                                ? "left-7 bg-[#FF7A3D]"
+                                : "left-0.5 bg-[#6B6B78]"
+                            }`}
+                          />
+                        )}
+                      </button>
+                    </div>
+                    {tgAlertsHint && (
+                      <p className="text-[10px] font-mono text-[#A0A0B0] leading-relaxed">
+                        {tgAlertsHint}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={tgAlertsBusy}
+                        onClick={async () => {
+                          setTgAlertsBusy(true);
+                          try {
+                            const res = await fetch("/api/tg/alerts/test", {
+                              method: "POST",
+                              credentials: "include",
+                            });
+                            const data = (await res.json().catch(() => ({}))) as {
+                              ok?: boolean;
+                              hint?: string;
+                              error?: string;
+                            };
+                            if (res.ok && data.ok) {
+                              toast.success("Test sent to Telegram");
+                            } else {
+                              toast.error(
+                                data.hint || data.error || "Test failed"
+                              );
+                            }
+                          } catch {
+                            toast.error("Test failed");
+                          } finally {
+                            setTgAlertsBusy(false);
+                          }
+                        }}
+                        className="px-3 py-2 rounded-xl border border-white/10 text-[10px] font-mono tracking-widest text-[#A0A0B0] hover:text-white hover:bg-white/5 disabled:opacity-40"
+                      >
+                        TEST ALERT
+                      </button>
+                      {tgHasChat === false && (
+                        <span className="text-[10px] font-mono text-[#D4A574] self-center">
+                          /start in bot first
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex flex-col sm:flex-row gap-3 pt-1">
                   <button
