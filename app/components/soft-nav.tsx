@@ -18,14 +18,8 @@ import {
   type ReactNode,
 } from "react";
 
-function prefersReducedMotion() {
-  if (typeof window === "undefined") return true;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
 /**
- * Phones / coarse pointers: View Transitions + full-page snapshots are expensive
- * (WebGL + long pages). Desktop keeps soft VT; mobile uses instant router.push.
+ * Phones / coarse pointers (used by VizCrossfade / page body etc.).
  */
 export function isMobileUi(): boolean {
   if (typeof window === "undefined") return false;
@@ -51,44 +45,16 @@ function normalizePath(href: string): string {
   return path.replace(/\/$/, "") || "/";
 }
 
-/** Navigate ASAP; optional View Transition snapshot without blocking */
+/**
+ * Navigate ASAP — same path desktop + Mini App / mobile.
+ * View Transitions on full pages (map/WebGL → oracles) left content blank or jerked;
+ * calm opacity enter is handled by LumenPageBody instead.
+ */
 export function softNavigate(
   router: { push: (href: string) => void },
   href: string
 ) {
-  const go = () => {
-    router.push(href);
-  };
-
-  // Mobile: skip View Transitions (snapshot of canvas/map freezes taps)
-  if (
-    typeof document === "undefined" ||
-    prefersReducedMotion() ||
-    isMobileUi()
-  ) {
-    go();
-    return;
-  }
-
-  const doc = document as Document & {
-    startViewTransition?: (cb: () => void) => unknown;
-  };
-
-  if (typeof doc.startViewTransition !== "function") {
-    go();
-    return;
-  }
-
-  try {
-    // Do NOT return a long Promise here — freezes the UI until it resolves.
-    // Next router is async; morph is best-effort, enter animation is guaranteed
-    // via LumenPageBody. Desktop only.
-    doc.startViewTransition(() => {
-      go();
-    });
-  } catch {
-    go();
-  }
+  router.push(href);
 }
 
 export function useSoftNavigate() {
