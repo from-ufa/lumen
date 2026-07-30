@@ -795,7 +795,7 @@ export default function ShareCard({
                   type="button"
                   onClick={() => void postToX()}
                   disabled={postingX}
-                  className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl text-black font-semibold text-[12px] sm:text-sm tracking-wider active:scale-[0.985] transition-all hover:brightness-110 disabled:opacity-60"
+                  className="w-full flex items-center justify-center gap-2.5 py-4 rounded-2xl text-black font-semibold text-[12px] sm:text-sm tracking-wider active:scale-[0.985] lumen-ui-transition hover:brightness-110 disabled:opacity-60"
                   style={{
                     background: isOracle
                       ? "linear-gradient(90deg, #C9A84C 0%, #E8C547 50%, #00E5FF 100%)"
@@ -823,7 +823,7 @@ export default function ShareCard({
                   <button
                     type="button"
                     onClick={() => void copyLink()}
-                    className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-[#FF7A3D] text-black font-semibold text-[11px] sm:text-xs tracking-wider active:scale-[0.985] transition-all hover:brightness-110"
+                    className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-[#FF7A3D] text-black font-semibold text-[11px] sm:text-xs tracking-wider active:scale-[0.985] lumen-ui-transition hover:brightness-110"
                   >
                     {copiedLink ? <Check size={15} /> : <Copy size={15} />}
                     {copiedLink ? "COPIED" : "COPY LINK"}
@@ -831,7 +831,7 @@ export default function ShareCard({
                   <button
                     type="button"
                     onClick={() => void copyAsText()}
-                    className="flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-[#00E5FF]/35 bg-[#00E5FF]/10 text-[#00E5FF] text-[11px] sm:text-xs font-mono tracking-widest active:scale-[0.985] hover:bg-[#00E5FF]/15 transition-all"
+                    className="flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-[#00E5FF]/35 bg-[#00E5FF]/10 text-[#00E5FF] text-[11px] sm:text-xs font-mono tracking-widest active:scale-[0.985] hover:bg-[#00E5FF]/15 lumen-ui-transition"
                   >
                     {copiedText ? <Check size={15} /> : <FileText size={15} />}
                     {copiedText ? "COPIED" : "COPY TEXT"}
@@ -840,7 +840,7 @@ export default function ShareCard({
                     type="button"
                     onClick={() => void downloadCard()}
                     disabled={downloading}
-                    className="flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-white/20 hover:bg-white/5 text-[11px] sm:text-xs font-mono tracking-widest active:scale-[0.985] disabled:opacity-60 transition-all"
+                    className="flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-white/20 hover:bg-white/5 text-[11px] sm:text-xs font-mono tracking-widest active:scale-[0.985] disabled:opacity-60 lumen-ui-transition"
                   >
                     <Download size={15} />
                     {downloading ? "EXPORTING…" : "PNG"}
@@ -872,7 +872,7 @@ export default function ShareCard({
         <button
           type="button"
           onClick={() => setModalOpen(true)}
-          className="lumen-header-pill inline-flex items-center justify-center gap-2 h-10 px-4 rounded-full border border-[#FF7A3D]/40 bg-[#FF7A3D]/[0.12] text-[#FF7A3D] text-[10px] font-mono font-medium tracking-[0.16em] uppercase hover:bg-[#FF7A3D]/[0.18] hover:border-[#FF7A3D]/55 transition-all duration-200 active:scale-[0.98] box-border"
+          className="lumen-header-pill inline-flex items-center justify-center gap-2 h-10 px-4 rounded-full border border-[#FF7A3D]/40 bg-[#FF7A3D]/[0.12] text-[#FF7A3D] text-[10px] font-mono font-medium tracking-[0.16em] uppercase hover:bg-[#FF7A3D]/[0.18] hover:border-[#FF7A3D]/55 lumen-ui-transition active:scale-[0.98] box-border"
         >
           <Share2 className="w-3.5 h-3.5 shrink-0" />
           <span className="sm:hidden truncate">SHARE</span>

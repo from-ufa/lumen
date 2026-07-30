@@ -371,15 +371,17 @@ export default function OracleOperatorsLive({
                         </div>
                         <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                           <motion.div
-                            className="h-full rounded-full"
+                            className="h-full w-full rounded-full origin-left"
                             style={{
                               background: th.bar,
                               boxShadow: `0 0 12px ${th.glow}`,
                             }}
                             initial={false}
-                            animate={{ width: `${pct}%` }}
+                            animate={{
+                              scaleX: Math.min(1, Math.max(0, pct / 100)),
+                            }}
                             transition={{
-                              duration: reduceMotion ? 0 : 0.55,
+                              duration: reduceMotion ? 0 : 0.22,
                               ease: [0.22, 1, 0.36, 1],
                             }}
                           />

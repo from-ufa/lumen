@@ -660,7 +660,7 @@ export default function LumenDashboard() {
                   aria-expanded={mobileMenuOpen}
                   aria-haspopup="menu"
                   aria-label="Open menu"
-                  className={`h-9 w-9 flex items-center justify-center rounded-xl border transition-all active:scale-[0.97] ${
+                  className={`h-9 w-9 flex items-center justify-center rounded-xl border lumen-ui-transition active:scale-[0.97] ${
                     mobileMenuOpen
                       ? "border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF]"
                       : "border-white/12 bg-white/[0.04] text-[#E8E8F0]"
@@ -1061,7 +1061,7 @@ export default function LumenDashboard() {
                       : `height ${selectedBlock.height.toLocaleString()}`,
                   })
                 }
-                className="w-full h-12 rounded-xl border border-[#FF7A3D]/40 bg-[#FF7A3D]/[0.14] text-[11px] font-mono tracking-[0.16em] uppercase text-[#FFD4BE] hover:bg-[#FF7A3D]/[0.22] transition-all active:scale-[0.99] flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(255,122,61,0.18)]"
+                className="w-full h-12 rounded-xl border border-[#FF7A3D]/40 bg-[#FF7A3D]/[0.14] text-[11px] font-mono tracking-[0.16em] uppercase text-[#FFD4BE] hover:bg-[#FF7A3D]/[0.22] lumen-ui-transition active:scale-[0.99] flex items-center justify-center gap-2 shadow-[0_0_24px_rgba(255,122,61,0.18)]"
               >
                 Open on SigmaSpace <ExternalLink size={14} />
               </button>
@@ -1075,7 +1075,7 @@ export default function LumenDashboard() {
                       url: officialExplorerBlockUrl(selectedBlock.id!),
                     })
                   }
-                  className="w-full h-11 rounded-xl border border-white/[0.1] bg-white/[0.03] text-[11px] font-mono tracking-[0.14em] uppercase text-[#A0A0B0] hover:text-white hover:border-white/20 transition-all active:scale-[0.99] flex items-center justify-center gap-2"
+                  className="w-full h-11 rounded-xl border border-white/[0.1] bg-white/[0.03] text-[11px] font-mono tracking-[0.14em] uppercase text-[#A0A0B0] hover:text-white hover:border-white/20 lumen-ui-transition active:scale-[0.99] flex items-center justify-center gap-2"
                 >
                   Official explorer <ExternalLink size={14} />
                 </button>
@@ -1086,7 +1086,7 @@ export default function LumenDashboard() {
                   setBlockExt(null);
                   setSelectedBlock(null);
                 }}
-                className="w-full h-11 rounded-xl border border-white/[0.08] text-[11px] font-mono tracking-[0.14em] uppercase text-[#6B6B78] hover:text-white hover:bg-white/[0.04] transition-all"
+                className="w-full h-11 rounded-xl border border-white/[0.08] text-[11px] font-mono tracking-[0.14em] uppercase text-[#6B6B78] hover:text-white hover:bg-white/[0.04] lumen-ui-transition"
               >
                 Stay
               </button>
