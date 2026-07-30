@@ -77,6 +77,18 @@ export interface OracleFeedData {
   requiredOracles?: number | null;
   poolHealthy?: boolean | null;
   poolRewardTokens?: number | null;
+  rewardToken?: {
+    id: string;
+    ticker: string;
+    name: string;
+    decimals: number;
+  } | null;
+  rewardTokenPriceErg?: number | null;
+  rewardTokenPriceUsd?: number | null;
+  /** Sum of claimable reward tokens across known operators */
+  operatorsClaimable?: number | null;
+  operatorsClaimableErg?: number | null;
+  operatorsClaimableUsd?: number | null;
   myOperator?: MyOracleOperator | null;
   /** mine = your bridge agent; network = lumen host public pool */
   scope?: "mine" | "network" | null;

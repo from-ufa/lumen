@@ -115,6 +115,165 @@ function themeFor(feed: OracleFeedData): Theme {
   };
 }
 
+/** Compact count: 144714 → 144.7K, 249235512 → 249.2M */
+function formatTokenAmt(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${(n / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (abs >= 1e4) return `${(n / 1e3).toFixed(1)}K`;
+  if (abs >= 1e3) return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function formatErgSpot(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return "—";
+  if (n >= 1) return `${n.toFixed(3)} Σ`;
+  if (n >= 0.01) return `${n.toFixed(4)} Σ`;
+  return `${n.toFixed(5)} Σ`;
+}
+
+function formatUsdSpot(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n) || n <= 0) return "—";
+  if (n >= 1000)
+    return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  if (n >= 0.01) return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(4)}`;
+}
+
+/**
+ * Per-pool reward token card: ticker, spot price, operators' claimable income.
+ * Sits beside On-chain price so dual panes stay row-aligned.
+ */
+function RewardTokenPanel({
+  feed,
+  theme,
+}: {
+  feed: OracleFeedData;
+  theme: Theme;
+}) {
+  const rt = feed.rewardToken;
+  const ticker = rt?.ticker || "—";
+  const name = rt?.name || "Reward token";
+  const priceErg = feed.rewardTokenPriceErg;
+  const priceUsd = feed.rewardTokenPriceUsd;
+  const claimable = feed.operatorsClaimable;
+  const claimErg = feed.operatorsClaimableErg;
+  const claimUsd = feed.operatorsClaimableUsd;
+  const poolLeft = feed.poolRewardTokens;
+  const mineClaim =
+    feed.myOperator?.claimableRewards ??
+    feed.nodes?.find((n) => n.isMine)?.rewardTokens ??
+    null;
+  const mineScope = feed.scope === "mine";
+
+  return (
+    <div
+      className="lumen-oracle-tile h-[9.25rem] sm:h-[9.5rem] rounded-xl border px-3 sm:px-3.5 py-2.5 sm:py-3 flex flex-col overflow-hidden relative"
+      style={{
+        borderColor: `${theme.accent}28`,
+        background: `linear-gradient(155deg, ${theme.accent}12 0%, rgba(0,0,0,0.52) 48%, rgba(0,0,0,0.62) 100%)`,
+        boxShadow: `inset 0 1px 0 ${theme.accent}18, 0 0 28px ${theme.accent}0a`,
+      }}
+    >
+      <div className="flex items-start justify-between gap-1.5 shrink-0">
+        <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase leading-none">
+          Reward token
+        </div>
+        {poolLeft != null && (
+          <div
+            className="text-[8px] font-mono tracking-wider uppercase tabular-nums px-1.5 py-0.5 rounded-md border shrink-0"
+            style={{
+              color: `${theme.accent}cc`,
+              borderColor: `${theme.accent}30`,
+              background: `${theme.accent}10`,
+            }}
+            title="Reward tokens still in the pool box (future emissions)"
+          >
+            pool {formatTokenAmt(poolLeft)}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-1.5 flex items-baseline gap-2 min-w-0">
+        <span
+          className="font-mono text-[1.15rem] sm:text-[1.35rem] font-semibold tracking-tight leading-none tabular-nums"
+          style={{ color: theme.label }}
+        >
+          {ticker}
+        </span>
+        <span
+          className="text-[9px] sm:text-[10px] font-mono truncate opacity-70"
+          style={{ color: theme.accent }}
+          title={name}
+        >
+          {name.replace(/\s*Token\s*$/i, "")}
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
+        <span className="font-mono text-[11px] sm:text-[12px] tabular-nums text-[#E8E8F0]">
+          {formatErgSpot(priceErg ?? null)}
+        </span>
+        <span className="text-[9px] font-mono text-[#6B6B78]">/</span>
+        <span
+          className="font-mono text-[11px] sm:text-[12px] tabular-nums"
+          style={{ color: `${theme.accent}ee` }}
+        >
+          {formatUsdSpot(priceUsd ?? null)}
+        </span>
+        <span className="text-[8px] font-mono text-[#5C5C6A] uppercase tracking-wider">
+          spot
+        </span>
+      </div>
+
+      <div className="mt-auto pt-2 border-t border-white/[0.06] grid grid-cols-1 gap-1 min-w-0">
+        <div className="flex items-end justify-between gap-2 min-w-0">
+          <div className="min-w-0">
+            <div className="text-[8px] font-mono tracking-[0.14em] text-[#6B6B78] uppercase leading-none">
+              Operators income
+            </div>
+            <div className="mt-0.5 font-mono text-[12px] sm:text-[13px] tabular-nums text-[#E8E8F0] leading-none truncate">
+              {claimable != null ? (
+                <>
+                  {formatTokenAmt(claimable)}
+                  <span className="text-[9px] text-[#7A7A88] ml-1">
+                    {ticker}
+                  </span>
+                </>
+              ) : (
+                "—"
+              )}
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div
+              className="font-mono text-[11px] sm:text-[12px] tabular-nums leading-none"
+              style={{ color: theme.accent }}
+            >
+              {formatUsdSpot(claimUsd ?? null)}
+            </div>
+            <div className="mt-0.5 text-[9px] font-mono text-[#6B6B78] tabular-nums leading-none">
+              {claimErg != null ? formatErgSpot(claimErg) : "\u00a0"}
+            </div>
+          </div>
+        </div>
+        {mineScope && mineClaim != null && (
+          <div className="flex items-center justify-between gap-2 text-[9px] font-mono">
+            <span className="text-[#FF7A3D]/90 uppercase tracking-wider">
+              Your claimable
+            </span>
+            <span className="tabular-nums text-[#FFD4BE]">
+              {formatTokenAmt(mineClaim)} {ticker}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Price-age status only (LIVE / STALE / OFFLINE).
  * DOWN is a separate signal (local agent pool health) — never mixed into this blurb.
@@ -997,28 +1156,32 @@ function OracleBlock({
           </div>
         )}
 
-        {/* Row 2: price — fixed */}
-        <div className="lumen-oracle-tile h-[6.5rem] rounded-xl border border-white/[0.07] bg-black/40 px-3.5 py-3 flex flex-col justify-center overflow-hidden">
-          <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-1.5">
-            On-chain price
+        {/* Row 2: on-chain price + reward token (two equal panels) */}
+        <div className="grid grid-cols-2 gap-2.5 sm:gap-3 min-h-0">
+          <div className="lumen-oracle-tile h-[9.25rem] sm:h-[9.5rem] rounded-xl border border-white/[0.07] bg-black/40 px-3 sm:px-3.5 py-2.5 sm:py-3 flex flex-col overflow-hidden">
+            <div className="text-[9px] font-mono tracking-[0.18em] text-[#7A7A88] uppercase mb-1.5 shrink-0">
+              On-chain price
+            </div>
+            <div
+              className="font-mono text-[1.2rem] sm:text-[1.45rem] font-semibold tabular-nums tracking-tight leading-none truncate"
+              style={{ color: theme.label }}
+            >
+              {feed.priceLabel || "—"}
+            </div>
+            <div className="mt-1.5 text-[10px] text-[#8B8B9A] font-mono truncate">
+              {feed.unitLabel || "\u00a0"}
+            </div>
+            <div
+              className="mt-auto pt-2 text-[10px] sm:text-[11px] font-mono truncate border-t border-white/[0.05]"
+              style={{
+                color: feed.priceAlt ? `${theme.accent}dd` : "transparent",
+              }}
+            >
+              {feed.priceAlt || "\u00a0"}
+            </div>
           </div>
-          <div
-            className="font-mono text-[1.35rem] sm:text-[1.5rem] font-semibold tabular-nums tracking-tight leading-none truncate"
-            style={{ color: theme.label }}
-          >
-            {feed.priceLabel || "—"}
-          </div>
-          <div className="mt-1 text-[10px] text-[#8B8B9A] font-mono truncate h-[1rem]">
-            {feed.unitLabel || "\u00a0"}
-          </div>
-          <div
-            className="mt-1.5 text-[11px] font-mono truncate h-[1rem]"
-            style={{
-              color: feed.priceAlt ? `${theme.accent}dd` : "transparent",
-            }}
-          >
-            {feed.priceAlt || "\u00a0"}
-          </div>
+
+          <RewardTokenPanel feed={feed} theme={theme} />
         </div>
 
         {/* Row 3: publish activity — full session history + smooth live scroll */}
