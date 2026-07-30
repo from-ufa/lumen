@@ -24,12 +24,21 @@ export function getWebApp(): TelegramWebApp | null {
   }
 }
 
-/** True when running inside Telegram Mini App WebView with a real WebApp object. */
+/**
+ * True when running inside a real Telegram Mini App WebView.
+ * telegram-web-app.js also injects WebApp on plain browsers with platform "unknown"
+ * — that must NOT count as Mini App (otherwise desktop UI hides "Link Telegram" code).
+ */
 export function isTelegramMiniApp(): boolean {
   const wa = getWebApp();
   if (!wa) return false;
-  // initData empty in some desktop TG debug cases — still treat as TG if platform set
-  return Boolean(wa.initData || wa.platform);
+  // Strong signal: signed initData from Telegram
+  if (wa.initData && String(wa.initData).length > 0) return true;
+  // Desktop TG client sometimes has empty initData briefly — platform is set
+  const p = (wa.platform || "").toLowerCase();
+  if (!p || p === "unknown") return false;
+  // ios / android / tdesktop / macos / weba / webk etc.
+  return true;
 }
 
 export function isTelegramPlatform(): boolean {

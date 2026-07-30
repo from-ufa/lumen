@@ -1069,7 +1069,8 @@ export default function ConnectionSettings({
                         </div>
                       </div>
                     </div>
-                    {!inTg && (
+                    {/* Always show generate on non-TG; also show if inTg false-positive fixed */}
+                    {!inTg ? (
                       <>
                         <button
                           type="button"
@@ -1166,8 +1167,7 @@ export default function ConnectionSettings({
                           </p>
                         )}
                       </>
-                    )}
-                    {inTg && (
+                    ) : (
                       <p className="text-[10px] font-mono text-[#A0A0B0] leading-relaxed">
                         If Settings empty: open browser on desktop → Link
                         Telegram → in bot send{" "}
