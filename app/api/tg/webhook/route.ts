@@ -87,10 +87,23 @@ async function handleCommand(
     await replyHtml(
       chatId,
       [
-        "Please run a node",
+        "<b>lumen</b> — live Ergo node + oracles",
+        "Dashboard · map · dual oracle pools",
         "",
-        "Private alerts: open Mini App → Settings → <b>Telegram alerts</b>",
-        "or /alerts after you connect a bridge token.",
+        "<b>New here</b>",
+        "1. <b>Open Lumen</b> (button below)",
+        "2. Settings → connect Bridge (Docker one-liner)",
+        "3. My Node / My Oracle — your machine, no open ports",
+        "",
+        "<b>Already set up in browser</b>",
+        "1. Browser Settings → <b>LINK TELEGRAM</b> → code",
+        "2. Here: <code>/link CODE</code>",
+        "3. Open Mini App again — same token, no reinstall",
+        "",
+        "<b>Alerts</b> (after Bridge is linked)",
+        "Mini App Settings → Telegram alerts · or <code>/alertstest</code>",
+        "",
+        "<b>Commands</b> · /help · /status · /oracles · /link · /alerts",
       ].join("\n")
     );
     return;
