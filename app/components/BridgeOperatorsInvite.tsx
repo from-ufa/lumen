@@ -1,12 +1,14 @@
 "use client";
 
 /**
- * Typewriter panel — live bridge hub counts + join CTA.
+ * Typewriter panel — live bridge hub counts.
  * variant "oracle" → operators; "node" → node agents.
- * Same chrome as Connect*Invite; stacks under the first invite.
  *
- * Parent must pass enabled=false when bridge token is configured
- * (see lib/bridge-invite-policy). Connected users must not see join CTAs.
+ * mode:
+ *  - recruit — no token yet: counts + join CTA (Settings → …)
+ *  - status  — token configured: counts only, no connect nag
+ *
+ * Same chrome as Connect*Invite (browser / mobile / Mini App).
  */
 
 import { useMemo } from "react";
@@ -24,6 +26,7 @@ type BridgePublicStats = {
 };
 
 export type BridgeInviteVariant = "oracle" | "node";
+export type BridgeInviteMode = "recruit" | "status";
 
 const WAKE_EVENT: Record<BridgeInviteVariant, string> = {
   oracle: "lumen-bridge-ops-invite-wake",
@@ -39,15 +42,26 @@ async function fetchBridgeStats(): Promise<BridgePublicStats> {
   return body;
 }
 
+function agentsLine(n: number): string {
+  if (n === 0) return "Bridge hub · no agents online.";
+  if (n === 1) return "Bridge hub · 1 agent online.";
+  return `Bridge hub · ${n} agents online.`;
+}
+
 function buildOracleText(
   stats: BridgePublicStats | undefined,
-  loading: boolean
+  loading: boolean,
+  mode: BridgeInviteMode
 ): string {
   if (loading && !stats) {
-    return "Bridge hub · counting agents…\nOracle operators on lumen…";
+    return mode === "status"
+      ? "Bridge hub · counting…\nLive operators on lumen…"
+      : "Bridge hub · counting agents…\nOracle operators on lumen…";
   }
   if (!stats || stats.error) {
-    return "Bridge hub · offline right now.\nOpen Settings → join as operator.";
+    return mode === "status"
+      ? "Bridge hub · stats offline right now.\nYour agent stays linked via Settings."
+      : "Bridge hub · offline right now.\nOpen Settings → join as operator.";
   }
 
   const n = stats.connections;
@@ -55,62 +69,63 @@ function buildOracleText(
   const usd = stats.oracles?.["erg-usd"] ?? 0;
   const xau = stats.oracles?.["erg-xau"] ?? 0;
 
-  const agents =
-    n === 0
-      ? "Bridge hub · no agents online."
-      : n === 1
-        ? "Bridge hub · 1 agent online."
-        : `Bridge hub · ${n} agents online.`;
-
   const ops =
     m === 0
-      ? "0 oracle operators via lumen."
+      ? "0 oracle operators online."
       : m === 1
-        ? "1 oracle operator via lumen."
-        : `${m} oracle operators via lumen.`;
+        ? "1 oracle operator online."
+        : `${m} oracle operators online.`;
+
+  if (mode === "status") {
+    const pools =
+      m > 0 ? `\nUSD ${usd} · XAU ${xau} · live on the mesh.` : "";
+    return `${agentsLine(n)}\n${ops}${pools}`;
+  }
 
   const pools =
     m > 0
       ? `\nUSD ${usd} · XAU ${xau} · Settings → My Oracle.`
       : "\nBe the first · Settings → My Oracle.";
 
-  return `${agents}\n${ops}${pools}`;
+  return `${agentsLine(n)}\n${ops}${pools}`;
 }
 
 function buildNodeText(
   stats: BridgePublicStats | undefined,
-  loading: boolean
+  loading: boolean,
+  mode: BridgeInviteMode
 ): string {
   if (loading && !stats) {
-    return "Bridge hub · counting agents…\nNodes connected via lumen…";
+    return mode === "status"
+      ? "Bridge hub · counting…\nNodes on the mesh…"
+      : "Bridge hub · counting agents…\nNodes connected via lumen…";
   }
   if (!stats || stats.error) {
-    return "Bridge hub · offline right now.\nOpen Settings → connect My Node.";
+    return mode === "status"
+      ? "Bridge hub · stats offline right now.\nYour agent stays linked via Settings."
+      : "Bridge hub · offline right now.\nOpen Settings → connect My Node.";
   }
 
   const n = stats.connections;
   const nodes = stats.withNode;
 
-  const agents =
-    n === 0
-      ? "Bridge hub · no agents online."
-      : n === 1
-        ? "Bridge hub · 1 agent online."
-        : `Bridge hub · ${n} agents online.`;
-
   const nodeLine =
     nodes === 0
-      ? "0 nodes connected via lumen."
+      ? "0 nodes online via lumen."
       : nodes === 1
-        ? "1 node connected via lumen."
-        : `${nodes} nodes connected via lumen.`;
+        ? "1 node online via lumen."
+        : `${nodes} nodes online via lumen.`;
+
+  if (mode === "status") {
+    return `${agentsLine(n)}\n${nodeLine}`;
+  }
 
   const cta =
     nodes > 0
       ? "\nJoin the mesh · Settings → My Node."
       : "\nBe the first · Settings → My Node.";
 
-  return `${agents}\n${nodeLine}${cta}`;
+  return `${agentsLine(n)}\n${nodeLine}${cta}`;
 }
 
 export default function BridgeOperatorsInvite({
@@ -118,11 +133,14 @@ export default function BridgeOperatorsInvite({
   onOpenSettings,
   delayMs = 0,
   variant = "oracle",
+  mode = "recruit",
 }: {
   enabled: boolean;
   onOpenSettings: () => void;
   delayMs?: number;
   variant?: BridgeInviteVariant;
+  /** recruit = join CTAs; status = live counts only (token configured) */
+  mode?: BridgeInviteMode;
 }) {
   const { data, isLoading } = useQuery({
     queryKey: ["bridge-public-stats"],
@@ -137,10 +155,19 @@ export default function BridgeOperatorsInvite({
   const fullText = useMemo(
     () =>
       variant === "node"
-        ? buildNodeText(data, isLoading)
-        : buildOracleText(data, isLoading),
-    [data, isLoading, variant]
+        ? buildNodeText(data, isLoading, mode)
+        : buildOracleText(data, isLoading, mode),
+    [data, isLoading, variant, mode]
   );
+
+  const ariaLabel =
+    mode === "status"
+      ? variant === "node"
+        ? "Live bridge mesh — nodes currently online"
+        : "Live bridge mesh — oracle operators currently online"
+      : variant === "node"
+        ? "Open settings to connect your Ergo node via bridge"
+        : "Open settings to connect as a bridge oracle operator";
 
   return (
     <TypewriterInvite
@@ -150,11 +177,7 @@ export default function BridgeOperatorsInvite({
       wakeEvent={WAKE_EVENT[variant]}
       delayMs={delayMs}
       loop={false}
-      ariaLabel={
-        variant === "node"
-          ? "Open settings to connect your Ergo node via bridge"
-          : "Open settings to connect as a bridge oracle operator"
-      }
+      ariaLabel={ariaLabel}
     />
   );
 }

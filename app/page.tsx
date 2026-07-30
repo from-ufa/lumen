@@ -67,7 +67,10 @@ import {
   saveBridgeToken,
   saveNodeMode,
 } from './lib/node-api';
-import { shouldShowBridgeConnectInvites } from './lib/bridge-invite-policy';
+import {
+  shouldShowBridgeConnectInvites,
+  shouldShowBridgeHubStatus,
+} from './lib/bridge-invite-policy';
 
 /** Headers window for AVG BLOCK TIME (matches MetricsCards sublabel). */
 const AVG_BLOCK_WINDOW = 100;
@@ -114,14 +117,15 @@ export default function LumenDashboard() {
   const [settingsOpenKey, setSettingsOpenKey] = useState(0);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   /**
-   * Connect recruitment (ConnectNode + hub join CTAs).
-   * Token configured ⇒ never nag — browser / mobile / Mini App share this.
+   * recruit = no token (Connect + hub join CTAs)
+   * status  = token set → hub live counts only
    */
   const showBridgeConnectInvites = shouldShowBridgeConnectInvites(bridgeToken);
+  const showBridgeHubStatus = shouldShowBridgeHubStatus(bridgeToken);
   /** Primary "Connect your Ergo node" — only on public lumen source, no token */
   const nodeInviteEnabled =
     showBridgeConnectInvites && nodeMode === "lumen";
-  /** Second typewriter — bridge hub counts, only while recruiting */
+  /** Second typewriter — bridge hub (recruit path only) */
   const [bridgeNodeInviteReady, setBridgeNodeInviteReady] = useState(false);
 
   useEffect(() => {
@@ -827,8 +831,18 @@ export default function LumenDashboard() {
               {showBridgeConnectInvites ? (
                 <BridgeOperatorsInvite
                   variant="node"
+                  mode="recruit"
                   enabled={bridgeNodeInviteReady}
                   delayMs={0}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+                />
+              ) : null}
+              {showBridgeHubStatus ? (
+                <BridgeOperatorsInvite
+                  variant="node"
+                  mode="status"
+                  enabled
+                  delayMs={1800}
                   onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
                 />
               ) : null}

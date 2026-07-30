@@ -1,16 +1,12 @@
 /**
- * Bridge connect-invite policy (browser · mobile · Mini App — one React tree).
+ * Bridge invite policy (browser · mobile · Mini App — one React tree).
  *
- * Product rule: once a bridge token is configured, never show recruitment
- * typewriters ("Connect your node/oracle", hub join CTAs). Offline agent
- * is status (LIVE badge / Settings), not a re-prompt to connect.
+ * Two layers:
+ * 1) recruit — no token: Connect* typewriters + hub join CTAs
+ * 2) status  — token configured: hub live counts only (how many online now)
  *
- * Token is the durable signal:
- * - localStorage (browser / Capacitor)
- * - Telegram vault hydrate → same localStorage (TS-1)
- *
- * Do not gate only on bridgeStatus.connected: reconnect flaps would flash
- * connect cards. Live status remains for badges / data, not for invites.
+ * Token is the durable signal (localStorage / TG vault hydrate).
+ * Do not gate on bridgeStatus.connected alone — reconnect flaps would flash.
  */
 
 export function hasBridgeConfigured(
@@ -19,12 +15,19 @@ export function hasBridgeConfigured(
   return !!String(token ?? "").trim();
 }
 
-/**
- * Primary Connect*Invite + BridgeOperatorsInvite (join CTAs).
- * Shared by Node and Oracles pages.
- */
+/** Primary Connect*Invite + BridgeOperatorsInvite mode="recruit" */
 export function shouldShowBridgeConnectInvites(
   token: string | null | undefined
 ): boolean {
   return !hasBridgeConfigured(token);
+}
+
+/**
+ * Hub status typewriter (counts only, no join CTA).
+ * Shown once the user already has a bridge token.
+ */
+export function shouldShowBridgeHubStatus(
+  token: string | null | undefined
+): boolean {
+  return hasBridgeConfigured(token);
 }

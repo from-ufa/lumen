@@ -31,7 +31,10 @@ import {
   saveBridgeToken,
   saveOracleViewMode,
 } from "../lib/node-api";
-import { shouldShowBridgeConnectInvites } from "../lib/bridge-invite-policy";
+import {
+  shouldShowBridgeConnectInvites,
+  shouldShowBridgeHubStatus,
+} from "../lib/bridge-invite-policy";
 
 /** Heavy dual canvas — load after shell paints (cuts first-switch jank) */
 const OraclesDualView = dynamic(() => import("./components/OraclesDualView"), {
@@ -228,10 +231,11 @@ export default function OraclesPage() {
   const nodeMode = viewToNodeMode(viewMode);
   const bridgeOnline = !!bridgeStatus?.connected;
   /**
-   * Connect recruitment — hide when bridge token is configured
-   * (browser / mobile / Mini App). Live status stays on badges.
+   * recruit = no token; status = token → live counts only
+   * (browser / mobile / Mini App).
    */
   const showBridgeConnectInvites = shouldShowBridgeConnectInvites(bridgeToken);
+  const showBridgeHubStatus = shouldShowBridgeHubStatus(bridgeToken);
   /** Primary "Connect your oracle" — only while recruiting on network view */
   const oracleInviteEnabled =
     showBridgeConnectInvites && viewMode === "network";
@@ -433,8 +437,17 @@ export default function OraclesPage() {
               ) : null}
               {showBridgeConnectInvites ? (
                 <BridgeOperatorsInvite
+                  mode="recruit"
                   enabled={bridgeInviteReady}
                   delayMs={0}
+                  onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
+                />
+              ) : null}
+              {showBridgeHubStatus ? (
+                <BridgeOperatorsInvite
+                  mode="status"
+                  enabled
+                  delayMs={1800}
                   onOpenSettings={() => setSettingsOpenKey((k) => k + 1)}
                 />
               ) : null}
