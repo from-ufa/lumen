@@ -64,8 +64,22 @@ async function handleCommand(
   }
 
   const parts = text.trim().split(/\s+/);
-  const cmd = parts[0].toLowerCase().replace(/@\w+$/, "");
-  const arg = (parts[1] || "").toLowerCase();
+  // Telegram: /alerts@bot, /ALERTS, optional arg; also one-word /alerttest
+  let cmd = parts[0].toLowerCase().replace(/@\w+$/, "");
+  let arg = (parts[1] || "").toLowerCase();
+  // /alertstest · /alert_test · /alerts_test → treat as /alerts + test
+  const oneWord = cmd.match(
+    /^\/(alerts?)[_-]?(test|on|off|delete|remove|status)?$/
+  );
+  if (oneWord) {
+    cmd = oneWord[1].startsWith("alert") ? "/alerts" : cmd;
+    if (oneWord[1] === "alert" || oneWord[1] === "alerts") {
+      cmd = "/alerts";
+    }
+    if (oneWord[2]) arg = oneWord[2];
+  }
+  // /alert → /alerts (common typo / menu cut)
+  if (cmd === "/alert") cmd = "/alerts";
   const userId = fromId ?? chatId;
 
   if (cmd === "/start" || cmd === "/app") {
@@ -91,8 +105,9 @@ async function handleCommand(
         "/status — node snapshot (public metrics)",
         "/oracles — ERG/USD + ERG/XAU",
         "/alerts — alert status",
-        "/alerts on|off — enable / mute",
-        "/alerts test — send test message",
+        "/alerts_on · /alerts_off — enable / mute",
+        "/alertstest — send test message (no space)",
+        "Also works: /alerts test · /alert test",
         "/help — this list",
       ].join("\n")
     );
