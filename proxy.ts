@@ -42,6 +42,46 @@ function setSessionCookie(
 }
 
 /**
+ * S4: paths a Telegram Mini App session may access when Public Mode is ON.
+ * TG cookie is NOT a full operator password — no public-password admin, etc.
+ * My Node still works via /api/bridge/node/* + client token.
+ */
+function tgSessionPathAllowed(pathname: string, method: string): boolean {
+  // Pages / static app shell
+  if (!pathname.startsWith("/api/")) return true;
+
+  // Telegram own APIs
+  if (pathname.startsWith("/api/tg/")) return true;
+
+  // Product read APIs (dashboard + oracles)
+  if (pathname.startsWith("/api/oracles")) return true;
+  if (pathname.startsWith("/api/chain/")) return true;
+  if (pathname.startsWith("/api/peers/")) return true;
+  if (pathname === "/api/public-status") return true;
+  if (pathname.startsWith("/api/push/")) return true;
+
+  // Host node proxy (Lumen network mode in Mini App)
+  if (pathname.startsWith("/api/node")) return true;
+
+  // Bridge: user agent with their own token (not token registry admin)
+  if (pathname.startsWith("/api/bridge/status")) return true;
+  if (pathname.startsWith("/api/bridge/node")) return true;
+  if (pathname.startsWith("/api/bridge/stats")) return true;
+  // Mint + redacted list (POST still rate-limited in route)
+  if (pathname === "/api/bridge/tokens") return true;
+
+  // Explicit deny: public password admin (set/clear)
+  if (pathname === "/api/public-password") return false;
+
+  // Bridge install assets are handled earlier as public
+  if (pathname.startsWith("/bridge/")) return true;
+
+  // Unknown API under Public Mode + TG-only → deny
+  void method;
+  return false;
+}
+
+/**
  * Next.js 16 Node proxy.
  * Public password is read from the password file on every request
  * (not process.env) so UI password changes apply without rebuild.
@@ -117,13 +157,18 @@ export function proxy(req: NextRequest) {
   }
 
   // Telegram Mini App session (HMAC-validated initData → short-lived cookie)
+  // S4: scoped allowlist — not a full Public Mode password substitute
   const tgCookie = req.cookies.get(TG_SESSION_COOKIE)?.value;
   if (tgCookie) {
     const tg = verifyTgSessionToken(tgCookie);
     if (tg.ok) {
-      const res = NextResponse.next();
-      res.headers.set("X-Lumen-Auth", "tg-session-ok");
-      return res;
+      if (tgSessionPathAllowed(pathname, req.method)) {
+        const res = NextResponse.next();
+        res.headers.set("X-Lumen-Auth", "tg-session-ok");
+        return res;
+      }
+      // Valid TG session but path not allowed → fall through (need Basic/password)
+      // e.g. /api/public-password
     }
   }
 

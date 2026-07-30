@@ -38,18 +38,20 @@
 
 ---
 
-## Not done yet (evening)
+## S4 — TG session scope (done 2026-07-30 evening)
 
-### S4 — TG session scope (careful)
-- TG Mini App cookie must **not** unlock admin APIs (`/api/bridge/tokens` already redacted; still need scope for `/api/node`, password, etc.)
-- Must not break Mini App UI / My Node with user token
+When **Public Mode ON**, `lumen_tg_auth` only unlocks an allowlist:
+- UI pages, `/api/tg/*`, oracles/chain/peers, `/api/node`, bridge status/node/stats/tokens (mint + redacted list)
+- **Denied:** `/api/public-password` (must use Basic/password cookie or localhost)
 
-### S5 — backlog
-- Allowlist `/api/node`
+When site is **open** (no password), behavior unchanged (everyone has access).
+
+## S5 — backlog (later)
+- Allowlist `/api/node` paths
 - Remove `?password=`
-- Rate limits broader
+- Broader rate limits
 - Hash tokens at rest + revoke
-- CSP, `TELEGRAM_SESSION_SECRET` required
+- CSP, force `TELEGRAM_SESSION_SECRET`
 
 ---
 
@@ -58,13 +60,9 @@
 
 ## Rollback
 ```bash
-# code
-cd /home/lumen && git log --oneline -10
-# files
+cd /home/lumen && git log --oneline -15
 ls /root/lumen-security-backup-20260730-144948
-# Caddy from backup if needed
-# cp /root/lumen-security-backup-.../Caddyfile /etc/caddy/ && systemctl reload caddy
 ```
 
-## Evening start command
-`ДЕЛАЙ S4` (or continue S5 items one by one)
+## Next
+`ДЕЛАЙ S5` items one by one when ready
