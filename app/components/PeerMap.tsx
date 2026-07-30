@@ -15,6 +15,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Clock3, Globe2, MapPin, RefreshCw, Zap } from "lucide-react";
 import { fetchBlockMinerByHeight } from "../lib/miner";
+import { isTelegramMiniApp } from "../lib/telegram";
 import NodeMapSearch, { shortVersion } from "./NodeMapSearch";
 
 /** Ergo target block time ~2 min — soft reference for progress ring */
@@ -1554,8 +1555,13 @@ export default function PeerMap({
   const [focusToken, setFocusToken] = useState(0);
   /** Node highlighted with premium FOUND rings (search only) */
   const [searchFocus, setSearchFocus] = useState<PeerMapMarker | null>(null);
-  /** Search focused / open — soft-hide Boom & Refresh */
+  /** Search focused / open — soft-hide Boom & Refresh (desktop only) */
   const [searchActive, setSearchActive] = useState(false);
+  /**
+   * World map search: desktop browser only.
+   * Hidden on mobile HUD and in Telegram Mini App (any width).
+   */
+  const [showMapSearch, setShowMapSearch] = useState(false);
   /**
    * Map display filter:
    * - live (default Lumen): Connected + Live
@@ -1568,6 +1574,23 @@ export default function PeerMap({
   const lastHeightRef = useRef<number>(0);
   const bootstrapped = useRef(false);
 
+  useEffect(() => {
+    const sync = () => {
+      try {
+        const desktop =
+          window.matchMedia("(min-width: 768px)").matches;
+        // Mini App: never show map search (phone + desktop TG clients)
+        setShowMapSearch(desktop && !isTelegramMiniApp());
+      } catch {
+        setShowMapSearch(false);
+      }
+    };
+    sync();
+    const mq = window.matchMedia("(min-width: 768px)");
+    mq.addEventListener?.("change", sync);
+    return () => mq.removeEventListener?.("change", sync);
+  }, []);
+
   // Reset sensible default when switching Lumen / My Node
   useEffect(() => {
     setMapFilter(nodeMode === "my" ? "connected" : "live");
@@ -1575,6 +1598,11 @@ export default function PeerMap({
     setSearchFocus(null);
     setFocusToken(0);
   }, [nodeMode]);
+
+  // No search UI → never keep searchActive (BOOM/REFRESH stay visible)
+  useEffect(() => {
+    if (!showMapSearch) setSearchActive(false);
+  }, [showMapSearch]);
 
   /** Refresh peer geo + reset camera to default framed view */
   const handleRefresh = useCallback(async () => {
@@ -2196,22 +2224,8 @@ export default function PeerMap({
         )}
       </div>
 
-      {/* ── Mobile map HUD: search top · BOOM left / REFRESH right bottom ── */}
-      <div
-        className={`md:hidden absolute top-0 inset-x-0 pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] space-y-2 ${
-          searchActive ? "z-[12000]" : "z-[40]"
-        }`}
-      >
-        <NodeMapSearch
-          nodes={searchNodes}
-          selectedId={selected?.id}
-          compact
-          onSelect={(n) => {
-            handleSelectPeer(n as PeerMapMarker, { fly: true });
-          }}
-          onActiveChange={setSearchActive}
-          className="w-full"
-        />
+      {/* ── Mobile map HUD: block timer top · BOOM / REFRESH bottom (no search) ── */}
+      <div className="md:hidden absolute top-0 inset-x-0 z-[40] pointer-events-none p-2.5 pt-[max(0.625rem,env(safe-area-inset-top))]">
         <div className="flex justify-center">
           <BlockTimeIndicator
             blockHeight={blockHeight}
@@ -2221,39 +2235,23 @@ export default function PeerMap({
       </div>
       {!hideControls && (
         <div className="md:hidden absolute bottom-0 inset-x-0 z-[40] pointer-events-none flex items-end justify-between gap-3 p-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]">
-          <AnimatePresence>
-            {!searchActive && (
-              <motion.div
-                key="map-mobile-actions"
-                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
-                transition={{
-                  duration: reduceMotion ? 0.1 : 0.22,
-                  ease: [0.22, 1, 0.36, 1],
-                }}
-                className="contents"
-              >
-                <button
-                  type="button"
-                  onClick={simulateBoom}
-                  className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-[#FF7A3D]/50 bg-[#0A0A0F]/92 text-[#FF7A3D] shadow-lg backdrop-blur-md active:scale-[0.97]"
-                >
-                  <Zap className="w-3.5 h-3.5 shrink-0" /> BOOM
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleRefresh()}
-                  className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/92 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
-                >
-                  <RefreshCw
-                    className={`w-3.5 h-3.5 shrink-0 ${isFetching ? "animate-spin" : ""}`}
-                  />
-                  REFRESH
-                </button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          <button
+            type="button"
+            onClick={simulateBoom}
+            className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-[#FF7A3D]/50 bg-[#0A0A0F]/92 text-[#FF7A3D] shadow-lg backdrop-blur-md active:scale-[0.97]"
+          >
+            <Zap className="w-3.5 h-3.5 shrink-0" /> BOOM
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRefresh()}
+            className="pointer-events-auto flex items-center justify-center gap-1.5 min-h-11 px-4 rounded-2xl text-[10px] font-mono tracking-wider border border-white/20 bg-[#0A0A0F]/92 text-[#E8E8F0] shadow-lg backdrop-blur-md active:scale-[0.97]"
+          >
+            <RefreshCw
+              className={`w-3.5 h-3.5 shrink-0 ${isFetching ? "animate-spin" : ""}`}
+            />
+            REFRESH
+          </button>
         </div>
       )}
 
@@ -2266,22 +2264,24 @@ export default function PeerMap({
                                          │ Stats panel ─────┘
       */}
 
-      {/* Top-left: node search */}
-      <div
-        className={`hidden md:flex absolute top-4 left-4 w-[min(300px,32vw)] flex-col gap-2 pointer-events-none ${
-          searchActive ? "z-[12000]" : "z-[40]"
-        }`}
-      >
-        <NodeMapSearch
-          nodes={searchNodes}
-          selectedId={selected?.id}
-          onSelect={(n) => {
-            handleSelectPeer(n as PeerMapMarker, { fly: true });
-          }}
-          onActiveChange={setSearchActive}
-          className="w-full"
-        />
-      </div>
+      {/* Top-left: node search — desktop browser only (not Mini App) */}
+      {showMapSearch ? (
+        <div
+          className={`hidden md:flex absolute top-4 left-4 w-[min(300px,32vw)] flex-col gap-2 pointer-events-none ${
+            searchActive ? "z-[12000]" : "z-[40]"
+          }`}
+        >
+          <NodeMapSearch
+            nodes={searchNodes}
+            selectedId={selected?.id}
+            onSelect={(n) => {
+              handleSelectPeer(n as PeerMapMarker, { fly: true });
+            }}
+            onActiveChange={setSearchActive}
+            className="w-full"
+          />
+        </div>
+      ) : null}
 
       {/* Top-center: live block timer */}
       <div className="hidden md:flex absolute top-4 left-1/2 -translate-x-1/2 z-[40] pointer-events-none">
