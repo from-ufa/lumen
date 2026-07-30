@@ -195,6 +195,16 @@ export interface MyOracleOperator {
   walletNanoErg: number | null;
   /** Wallet in ERG (nano / 1e9) */
   walletErg: number | null;
+  /**
+   * Reward tokens (DORT/GORT) already in the operator address wallet
+   * (claimed / held). From Explorer balance API.
+   */
+  walletRewardTokens?: number | null;
+  /**
+   * Est. lifetime tokens accrued ≈ wallet held + still claimable.
+   * Under-counts if tokens were sold/transferred out.
+   */
+  totalEarnedTokens?: number | null;
   postHeight: number | null;
   collectedHeight: number | null;
   postAgeBlocks: number | null;
@@ -502,6 +512,46 @@ let spectrumPriceCache: {
  * Spectrum ERG/token markets: base=ERG, quote=token, lastPrice = token per 1 ERG.
  * → erg per 1 token = 1 / lastPrice.
  */
+/** Short cache: operator address → reward-token balance */
+const rewardBalanceCache = new Map<
+  string,
+  { at: number; amount: number | null }
+>();
+
+/**
+ * Confirmed reward-token balance at an Ergo address (Explorer).
+ * Returns 0 when the token is absent, null on fetch failure.
+ */
+async function fetchAddressRewardBalance(
+  address: string,
+  rewardTokenId: string
+): Promise<number | null> {
+  if (!address || !rewardTokenId) return null;
+  const key = `${address}:${rewardTokenId}`;
+  const hit = rewardBalanceCache.get(key);
+  if (hit && Date.now() - hit.at < 30_000) return hit.amount;
+  try {
+    const data = await fetchJson(
+      `${EXPLORER}/api/v1/addresses/${encodeURIComponent(address)}/balance/confirmed`,
+      8_000
+    );
+    const tokens = Array.isArray(data?.tokens) ? data.tokens : [];
+    const t = tokens.find(
+      (x: { tokenId?: string }) => x?.tokenId === rewardTokenId
+    );
+    let amount: number | null = 0;
+    if (t != null) {
+      const n = Number(t.amount);
+      amount = Number.isFinite(n) ? n : null;
+    }
+    rewardBalanceCache.set(key, { at: Date.now(), amount });
+    return amount;
+  } catch {
+    rewardBalanceCache.set(key, { at: Date.now(), amount: null });
+    return null;
+  }
+}
+
 async function fetchRewardTokenPricesErg(
   tokenIds: string[]
 ): Promise<Map<string, number>> {
@@ -1300,6 +1350,24 @@ export async function loadOraclesSnapshot(
     feed.operatorDailyUsd =
       dailyTokens != null && priceUsd != null ? dailyTokens * priceUsd : null;
   }
+
+  // Enrich My Oracle: wallet reward-token balance + est. total earned
+  await Promise.all(
+    feeds.map(async (feed) => {
+      const cfg = feedCfgs.find((c) => c.id === feed.id);
+      const op = feed.myOperator;
+      if (!cfg || !op?.address) return;
+      const held = await fetchAddressRewardBalance(
+        op.address,
+        cfg.rewardTokenId
+      );
+      op.walletRewardTokens = held;
+      const claim = op.claimableRewards;
+      if (held != null || claim != null) {
+        op.totalEarnedTokens = (held ?? 0) + (claim ?? 0);
+      }
+    })
+  );
 
   if (historyDirty) writeHistory(historyFile);
 
