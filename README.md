@@ -14,7 +14,8 @@ It turns node and oracle data into something you can *see and feel* — not anot
 | **Ops / handoff** | [LUMEN.md](./LUMEN.md) |
 | **Roadmap** | [docs/ROADMAP.md](./docs/ROADMAP.md) — iOS · Telegram Mini App · next |
 | **iOS (Capacitor)** | [docs/ios.md](./docs/ios.md) — Phase 1 shell + rollback notes |
-| **Telegram Mini App** | [docs/telegram.md](./docs/telegram.md) — WebApp SDK, bot, auth, rollback |
+| **Telegram** | [docs/telegram.md](./docs/telegram.md) — Mini App, **@ergolumen_bot**, alerts, settings link |
+| **Bot** | [@ergolumen_bot](https://t.me/ergolumen_bot) — Mini App + private ops alerts |
 
 ---
 
@@ -41,6 +42,21 @@ It turns node and oracle data into something you can *see and feel* — not anot
 |------|----------------|------------------|
 | **Lumen node** | Host public node + broad network map | Server → local Ergo (`/api/node`) |
 | **My Node / My Oracle** | *Your* node or oracle as the center | Your PC → Bridge → UI (no open ports) |
+
+---
+
+## Telegram bot & Mini App
+
+Open **[@ergolumen_bot](https://t.me/ergolumen_bot)** → **Open Lumen** (same app as the site).
+
+| Feature | How |
+|---------|-----|
+| **Mini App** | Full dashboard + oracles inside Telegram |
+| **Private alerts** | Settings → **Telegram alerts** (bridge offline / oracle down / lag) |
+| **Browser → TG settings** | Browser Settings → **Link Telegram** → code → bot `/link CODE` (no reinstall Bridge) |
+| **Commands** | `/start` `/help` `/status` `/oracles` `/link` `/alerts` `/alertstest` |
+
+Ops docs: [docs/telegram.md](./docs/telegram.md) · Alerts design: [docs/tg-alerts-architecture.md](./docs/tg-alerts-architecture.md)
 
 ---
 

@@ -159,6 +159,17 @@ export default function OraclesPage() {
     saveBridgeToken(t);
   }, []);
 
+  // TS-1: vault hydrate from TelegramBootstrap
+  useEffect(() => {
+    const onHydrate = () => {
+      persistToken(loadBridgeToken());
+      setViewMode(loadOracleViewMode());
+    };
+    window.addEventListener("lumen:settings-hydrated", onHydrate);
+    return () =>
+      window.removeEventListener("lumen:settings-hydrated", onHydrate);
+  }, [persistToken]);
+
   const setNodeMode = useCallback((mode: NodeMode) => {
     const v = nodeModeToView(mode);
     setViewMode(v);

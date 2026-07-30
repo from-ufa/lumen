@@ -138,6 +138,23 @@ git branch -D feat/telegram-miniapp
 
 Single commit: `git revert <sha>`
 
+## TS-1 — Browser ↔ Telegram settings link (implemented)
+
+Bridge token lives in **localStorage per client**. Browser setup does not appear in Telegram WebView until linked.
+
+| Step | Where |
+|------|--------|
+| 1. Generate code | Browser → Settings → **LINK TELEGRAM** (token already present) |
+| 2. Claim | Bot: `/link ABC123` (15 min TTL) |
+| 3. Hydrate | Mini App open → vault → localStorage **only if empty** |
+
+**Existing users:** local token never wiped. Opt-in only.
+
+API: `POST /api/tg/settings/link-code` · `GET/PUT/DELETE /api/tg/settings` · `POST /api/tg/settings/claim`  
+Store: `data/tg-settings-vault.json` (encrypted token)
+
+---
+
 ## Phase TA-1 — Private alerts (implemented)
 
 Personal bot notifications for operators who opt in.

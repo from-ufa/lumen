@@ -208,6 +208,76 @@ export function saveBridgeToken(token: string): void {
   }
 }
 
+/**
+ * TS-1: pull vault settings into localStorage for Telegram Mini App.
+ * Never overwrites a non-empty local bridge token (safe for existing users).
+ */
+export async function hydrateSettingsFromTelegramVault(): Promise<{
+  ok: boolean;
+  applied: boolean;
+  reason?: string;
+  tokenFp?: string;
+}> {
+  if (typeof window === "undefined") {
+    return { ok: false, applied: false, reason: "ssr" };
+  }
+  try {
+    const res = await fetch("/api/tg/settings", {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (res.status === 401) {
+      return { ok: false, applied: false, reason: "auth_required" };
+    }
+    if (res.status === 503) {
+      return { ok: false, applied: false, reason: "disabled" };
+    }
+    if (!res.ok) {
+      return { ok: false, applied: false, reason: "http_error" };
+    }
+    const data = (await res.json()) as {
+      ok?: boolean;
+      hasVault?: boolean;
+      settings?: {
+        bridgeToken?: string;
+        nodeMode?: string | null;
+        oracleView?: string | null;
+        tokenFp?: string;
+      } | null;
+    };
+    if (!data.ok || !data.hasVault || !data.settings?.bridgeToken) {
+      return { ok: true, applied: false, reason: "no_vault" };
+    }
+    const local = loadBridgeToken();
+    if (local) {
+      // Keep local; do not clobber
+      return {
+        ok: true,
+        applied: false,
+        reason: "local_token_present",
+        tokenFp: data.settings.tokenFp,
+      };
+    }
+    saveBridgeToken(data.settings.bridgeToken);
+    if (data.settings.nodeMode === "my" || data.settings.nodeMode === "lumen") {
+      saveNodeMode(data.settings.nodeMode);
+    }
+    if (
+      data.settings.oracleView === "my" ||
+      data.settings.oracleView === "network"
+    ) {
+      saveOracleViewMode(data.settings.oracleView);
+    }
+    return {
+      ok: true,
+      applied: true,
+      tokenFp: data.settings.tokenFp,
+    };
+  } catch {
+    return { ok: false, applied: false, reason: "network" };
+  }
+}
+
 /** Base path used for Ergo REST proxies from the browser. */
 export function resolveNodeBase(
   mode: NodeMode,

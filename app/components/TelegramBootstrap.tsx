@@ -20,6 +20,7 @@ import {
   parseStartView,
   setTelegramVerticalSwipes,
 } from "../lib/telegram";
+import { hydrateSettingsFromTelegramVault } from "../lib/node-api";
 
 export default function TelegramBootstrap() {
   const router = useRouter();
@@ -38,7 +39,22 @@ export default function TelegramBootstrap() {
       return;
     }
     setInTg(true);
-    void authenticateTelegramSession();
+    void (async () => {
+      await authenticateTelegramSession();
+      // TS-1: restore bridge token from server vault if localStorage empty
+      const h = await hydrateSettingsFromTelegramVault();
+      if (h.applied) {
+        try {
+          window.dispatchEvent(
+            new CustomEvent("lumen:settings-hydrated", {
+              detail: { tokenFp: h.tokenFp },
+            })
+          );
+        } catch {
+          /* */
+        }
+      }
+    })();
     try {
       getWebApp()?.MainButton?.hide();
     } catch {

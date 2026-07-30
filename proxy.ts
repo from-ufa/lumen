@@ -76,7 +76,10 @@ export function proxy(req: NextRequest) {
   if (
     pathname === "/api/tg/auth" ||
     pathname === "/api/tg/webhook" ||
-    pathname === "/api/tg/status"
+    pathname === "/api/tg/status" ||
+    pathname === "/api/tg/settings/link-code" ||
+    pathname.startsWith("/api/tg/settings") ||
+    pathname.startsWith("/api/tg/alerts")
   ) {
     const res = NextResponse.next();
     res.headers.set("X-Lumen-Auth", "tg-public-endpoint");

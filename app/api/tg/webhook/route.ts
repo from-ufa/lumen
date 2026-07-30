@@ -14,6 +14,7 @@ import {
   deleteSubsForUser,
 } from "@/app/lib/tg-alerts-store";
 import { sendTestAlert } from "@/app/lib/tg-alerts-engine";
+import { claimLinkCode, tokenFingerprint } from "@/app/lib/tg-settings-vault";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -104,12 +105,62 @@ async function handleCommand(
         "/app — Mini App button",
         "/status — node snapshot (public metrics)",
         "/oracles — ERG/USD + ERG/XAU",
+        "/link CODE — import browser bridge settings",
         "/alerts — alert status",
-        "/alerts_on · /alerts_off — enable / mute",
-        "/alertstest — send test message (no space)",
-        "Also works: /alerts test · /alert test",
+        "/alertstest — test alert (no space)",
+        "/alerts on|off — enable / mute",
         "/help — this list",
       ].join("\n")
+    );
+    return;
+  }
+
+  if (cmd === "/link") {
+    const code = (parts[1] || arg || "").trim();
+    if (!code) {
+      await replyHtml(
+        chatId,
+        [
+          "<b>Link browser settings</b>",
+          "",
+          "1. On desktop browser: Settings → <b>Link Telegram</b>",
+          "2. Copy the 6-char code",
+          "3. Here: <code>/link ABC123</code>",
+          "4. Open Mini App — My Node / My Oracle restore",
+          "",
+          "Bridge agent is <b>not</b> reinstalled — same token.",
+        ].join("\n")
+      );
+      return;
+    }
+    const result = claimLinkCode(userId, code);
+    if (!result.ok) {
+      await replyHtml(
+        chatId,
+        result.error === "code_invalid_or_expired"
+          ? "❌ Code invalid or expired. Generate a new one in browser Settings."
+          : `❌ Link failed: ${result.error}`
+      );
+      return;
+    }
+    const fp = tokenFingerprint(result.settings.bridgeToken);
+    await replyHtml(
+      chatId,
+      [
+        "✅ <b>Settings linked</b>",
+        `Token · <code>${fp}…</code>`,
+        result.settings.nodeMode
+          ? `Node mode · ${result.settings.nodeMode}`
+          : "",
+        result.settings.oracleView
+          ? `Oracle view · ${result.settings.oracleView}`
+          : "",
+        "",
+        "Open <b>Mini App</b> — token hydrates automatically.",
+        "Docker / bridge on your machine stays as-is.",
+      ]
+        .filter(Boolean)
+        .join("\n")
     );
     return;
   }

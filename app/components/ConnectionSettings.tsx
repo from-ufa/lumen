@@ -253,6 +253,12 @@ export default function ConnectionSettings({
   const [tgHasChat, setTgHasChat] = useState<boolean | null>(null);
   const [inTg, setInTg] = useState(false);
 
+  /** TS-1 browser → Telegram link code */
+  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [linkHint, setLinkHint] = useState<string | null>(null);
+  const [linkExpiresIn, setLinkExpiresIn] = useState<number | null>(null);
+
   const bridgeOnline = !!bridgeStatus?.connected;
   const bridgeKnown = bridgeStatus?.known !== false;
   const agentOracles = bridgeStatus?.oracles || [];
@@ -1046,6 +1052,131 @@ export default function ConnectionSettings({
                     </div>
                   )}
                 </div>
+
+                {/* === LINK TO TELEGRAM (TS-1) — browser → bot, no reinstall === */}
+                {bridgeToken && (
+                  <div className="rounded-2xl border border-[#00E5FF]/25 bg-gradient-to-br from-[#00E5FF]/[0.07] to-transparent p-4 sm:p-5 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Radio className="w-4 h-4 text-[#00E5FF] shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-mono tracking-widest text-[#E8E8F0]">
+                          LINK TELEGRAM
+                        </div>
+                        <div className="text-[10px] text-[#A0A0B0] mt-0.5 leading-snug">
+                          {inTg
+                            ? "In Mini App: settings restore from vault after /link"
+                            : "Browser already set up? One code → Telegram Mini App (no new Docker)"}
+                        </div>
+                      </div>
+                    </div>
+                    {!inTg && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={linkBusy || !bridgeToken}
+                          onClick={async () => {
+                            setLinkBusy(true);
+                            setLinkHint(null);
+                            try {
+                              const res = await fetch(
+                                "/api/tg/settings/link-code",
+                                {
+                                  method: "POST",
+                                  headers: {
+                                    "Content-Type": "application/json",
+                                  },
+                                  body: JSON.stringify({
+                                    bridgeToken,
+                                    nodeMode: isOracle
+                                      ? nodeMode
+                                      : nodeMode,
+                                    oracleView: isOracle
+                                      ? nodeMode === "my"
+                                        ? "my"
+                                        : "network"
+                                      : undefined,
+                                  }),
+                                }
+                              );
+                              const data = (await res.json().catch(() => ({}))) as {
+                                ok?: boolean;
+                                code?: string;
+                                expiresInSec?: number;
+                                error?: string;
+                                botHint?: string;
+                              };
+                              if (!res.ok || !data.ok || !data.code) {
+                                toast.error(data.error || "Could not create code");
+                                return;
+                              }
+                              setLinkCode(data.code);
+                              setLinkExpiresIn(data.expiresInSec ?? 900);
+                              setLinkHint(
+                                `Open @ergolumen_bot → send: /link ${data.code}`
+                              );
+                              toast.success(`Code ${data.code}`);
+                            } catch {
+                              toast.error("Network error");
+                            } finally {
+                              setLinkBusy(false);
+                            }
+                          }}
+                          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/10 text-[#00E5FF] text-[11px] font-mono tracking-widest hover:bg-[#00E5FF]/15 disabled:opacity-40 active:scale-[0.99] lumen-ui-transition"
+                        >
+                          {linkBusy ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : null}
+                          {linkCode
+                            ? "GENERATE NEW CODE"
+                            : "GENERATE LINK CODE"}
+                        </button>
+                        {linkCode && (
+                          <div className="rounded-xl border border-white/10 bg-black/40 px-3 py-3 text-center">
+                            <div className="text-[10px] font-mono text-[#6B6B78] tracking-widest uppercase">
+                              Code · 15 min
+                            </div>
+                            <div className="mt-1 font-mono text-2xl sm:text-3xl tracking-[0.35em] text-[#00E5FF] font-semibold tabular-nums">
+                              {linkCode}
+                            </div>
+                            <button
+                              type="button"
+                              className="mt-2 text-[10px] font-mono text-[#A0A0B0] hover:text-white underline-offset-2 hover:underline"
+                              onClick={async () => {
+                                const line = `/link ${linkCode}`;
+                                try {
+                                  await navigator.clipboard.writeText(line);
+                                  toast.success("Copied /link command");
+                                } catch {
+                                  toast.message(line);
+                                }
+                              }}
+                            >
+                              Copy /link {linkCode}
+                            </button>
+                            {linkExpiresIn != null && (
+                              <div className="mt-1 text-[9px] font-mono text-[#5C5C6A]">
+                                ~{Math.ceil(linkExpiresIn / 60)} min validity
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {linkHint && (
+                          <p className="text-[10px] font-mono text-[#A0A0B0] leading-relaxed">
+                            {linkHint}
+                          </p>
+                        )}
+                      </>
+                    )}
+                    {inTg && (
+                      <p className="text-[10px] font-mono text-[#A0A0B0] leading-relaxed">
+                        If Settings empty: open browser on desktop → Link
+                        Telegram → in bot send{" "}
+                        <span className="text-[#00E5FF]">/link CODE</span> →
+                        reopen Mini App.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* === TELEGRAM ALERTS (TA-1) === */}
                 {bridgeToken && (

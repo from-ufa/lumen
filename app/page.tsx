@@ -281,6 +281,17 @@ export default function LumenDashboard() {
     setBridgeTokenState(loadBridgeToken());
   }, []);
 
+  // TS-1: Mini App hydrated vault after auth — re-read localStorage
+  useEffect(() => {
+    const onHydrate = () => {
+      setNodeModeState(loadNodeMode());
+      setBridgeTokenState(loadBridgeToken());
+    };
+    window.addEventListener("lumen:settings-hydrated", onHydrate);
+    return () =>
+      window.removeEventListener("lumen:settings-hydrated", onHydrate);
+  }, []);
+
   // Bridge connection status (poll when we have a token)
   const {
     data: bridgeStatus = null,
