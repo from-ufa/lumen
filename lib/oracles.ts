@@ -28,6 +28,11 @@ export interface OracleFeedConfig {
   rewardTokenTicker: string;
   rewardTokenName: string;
   rewardTokenDecimals: number;
+  /**
+   * Reward tokens paid to each collected oracle per epoch.
+   * Verified on-chain: pool-box Δ / collected oracles = 2 for both DORT & GORT.
+   */
+  rewardTokensPerOraclePerEpoch: number;
 }
 
 export const ORACLE_FEEDS: OracleFeedConfig[] = [
@@ -48,6 +53,7 @@ export const ORACLE_FEEDS: OracleFeedConfig[] = [
     rewardTokenTicker: "DORT",
     rewardTokenName: "USD Oracle Reward Token",
     rewardTokenDecimals: 0,
+    rewardTokensPerOraclePerEpoch: 2,
   },
   {
     id: "erg-xau",
@@ -67,6 +73,7 @@ export const ORACLE_FEEDS: OracleFeedConfig[] = [
     rewardTokenTicker: "GORT",
     rewardTokenName: "Gold Oracle Reward Token",
     rewardTokenDecimals: 0,
+    rewardTokensPerOraclePerEpoch: 2,
   },
 ];
 
@@ -133,12 +140,17 @@ export interface OracleFeedSnapshot {
   rewardTokenPriceErg?: number | null;
   /** Spot price of 1 reward token in USD (via ERG/USD pool) */
   rewardTokenPriceUsd?: number | null;
-  /** Sum of claimable reward tokens across all known operators */
-  operatorsClaimable?: number | null;
-  /** operatorsClaimable × rewardTokenPriceErg */
-  operatorsClaimableErg?: number | null;
-  /** operatorsClaimable × rewardTokenPriceUsd */
-  operatorsClaimableUsd?: number | null;
+  /** Tokens paid to one collected oracle per epoch (on-chain constant) */
+  rewardTokensPerOraclePerEpoch?: number | null;
+  /** Expected pool refreshes per calendar day (epochLength × avg block time) */
+  epochsPerDay?: number | null;
+  /**
+   * Est. tokens one operator earns per day if collected every epoch.
+   * = rewardTokensPerOraclePerEpoch × epochsPerDay
+   */
+  operatorDailyTokens?: number | null;
+  operatorDailyErg?: number | null;
+  operatorDailyUsd?: number | null;
   /** Connected operator (My Oracle / host agent) */
   myOperator?: MyOracleOperator | null;
   /**
@@ -1251,10 +1263,12 @@ export async function loadOraclesSnapshot(
     })
   );
 
-  // Enrich reward-token market + operators claimable (after both feeds ready for ERG/USD)
+  // Enrich reward-token market + est. operator daily earnings
   const rewardPricesErg = await rewardPricePromise;
   const ergUsdSpot =
     feeds.find((f) => f.id === "erg-usd")?.price ?? null;
+  const avgBlockMs = DEFAULT_BLOCK_MS;
+  const dayMs = 24 * 60 * 60 * 1000;
 
   for (const feed of feeds) {
     const cfg = feedCfgs.find((c) => c.id === feed.id);
@@ -1265,26 +1279,26 @@ export async function loadOraclesSnapshot(
         ? priceErg * ergUsdSpot
         : null;
 
-    let claimable: number | null = null;
-    if (feed.nodes?.length) {
-      let sum = 0;
-      let any = false;
-      for (const n of feed.nodes) {
-        if (n.rewardTokens != null && Number.isFinite(n.rewardTokens)) {
-          sum += n.rewardTokens;
-          any = true;
-        }
-      }
-      if (any) claimable = sum;
-    }
+    const perEpoch = cfg.rewardTokensPerOraclePerEpoch;
+    const epochBlocks = cfg.epochLength;
+    const epochsPerDay =
+      epochBlocks > 0 && avgBlockMs > 0
+        ? dayMs / (epochBlocks * avgBlockMs)
+        : null;
+    const dailyTokens =
+      epochsPerDay != null && perEpoch > 0
+        ? perEpoch * epochsPerDay
+        : null;
 
     feed.rewardTokenPriceErg = priceErg;
     feed.rewardTokenPriceUsd = priceUsd;
-    feed.operatorsClaimable = claimable;
-    feed.operatorsClaimableErg =
-      claimable != null && priceErg != null ? claimable * priceErg : null;
-    feed.operatorsClaimableUsd =
-      claimable != null && priceUsd != null ? claimable * priceUsd : null;
+    feed.rewardTokensPerOraclePerEpoch = perEpoch;
+    feed.epochsPerDay = epochsPerDay;
+    feed.operatorDailyTokens = dailyTokens;
+    feed.operatorDailyErg =
+      dailyTokens != null && priceErg != null ? dailyTokens * priceErg : null;
+    feed.operatorDailyUsd =
+      dailyTokens != null && priceUsd != null ? dailyTokens * priceUsd : null;
   }
 
   if (historyDirty) writeHistory(historyFile);
