@@ -12,7 +12,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.markercluster";
 import "leaflet.markercluster/dist/MarkerCluster.css";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Clock3, Globe2, MapPin, RefreshCw, Zap } from "lucide-react";
 import { fetchBlockMinerByHeight } from "../lib/miner";
 import NodeMapSearch, { shortVersion } from "./NodeMapSearch";
@@ -1545,6 +1545,7 @@ export default function PeerMap({
     refetchInterval: 12000,
   });
 
+  const reduceMotion = useReducedMotion();
   const [selected, setSelected] = useState<PeerMapMarker | null>(null);
   const [booms, setBooms] = useState<BoomEvent[]>([]);
   /** Increment on Refresh to re-apply default setView */
@@ -2224,10 +2225,13 @@ export default function PeerMap({
             {!searchActive && (
               <motion.div
                 key="map-mobile-actions"
-                initial={{ opacity: 0, y: 10 }}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 12 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+                transition={{
+                  duration: reduceMotion ? 0.1 : 0.22,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
                 className="contents"
               >
                 <button
@@ -2294,10 +2298,13 @@ export default function PeerMap({
             {!searchActive && (
               <motion.div
                 key="map-desktop-actions"
-                initial={{ opacity: 0, y: -6 }}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                transition={{
+                  duration: reduceMotion ? 0.1 : 0.22,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
                 className="flex gap-2 pointer-events-none"
               >
                 <button
@@ -2359,10 +2366,21 @@ export default function PeerMap({
         <AnimatePresence>
           {selected && (
             <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              initial={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, y: 10, scale: 0.98 }
+              }
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.98 }}
-              transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+              exit={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, y: 8, scale: 0.98 }
+              }
+              transition={{
+                duration: reduceMotion ? 0.1 : 0.2,
+                ease: [0.22, 1, 0.36, 1],
+              }}
               className="pointer-events-auto glass rounded-2xl px-4 py-3.5 border border-white/10 shadow-[0_12px_40px_rgba(0,0,0,0.4)]"
             >
               <div className="flex items-start justify-between gap-3">

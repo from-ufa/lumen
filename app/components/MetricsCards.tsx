@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { NodeInfo } from "../types/ergo";
 import { Clock, Users, Zap, TrendingUp } from "lucide-react";
 
@@ -83,6 +83,7 @@ export default function MetricsCards({
   avgBlockSamples = 0,
   avgBlockWindow = 100,
 }: MetricsProps) {
+  const reduceMotion = useReducedMotion();
   const syncProgress = info
     ? Math.min(
         100,
@@ -162,9 +163,12 @@ export default function MetricsCards({
                 boxShadow:
                   "0 0 14px rgba(0,229,255,0.45), 0 0 10px rgba(255,122,61,0.35)",
               }}
-              initial={{ scaleX: 0 }}
+              initial={reduceMotion ? false : { scaleX: 0 }}
               animate={{ scaleX: Math.min(1, Math.max(0, syncProgress / 100)) }}
-              transition={{ duration: 0.22, ease: [0.23, 1, 0.32, 1] }}
+              transition={{
+                duration: reduceMotion ? 0 : 0.22,
+                ease: [0.23, 1, 0.32, 1],
+              }}
             />
           </div>
         </div>

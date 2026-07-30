@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   Zap,
   ExternalLink,
@@ -82,6 +82,7 @@ const PeerMap = dynamic(() => import('./components/PeerMap'), {
 });
 
 export default function LumenDashboard() {
+  const reduceMotion = useReducedMotion();
   const queryClient = useQueryClient();
   const router = useRouter();
   const softNav = useSoftNavigate();
@@ -673,10 +674,21 @@ export default function LumenDashboard() {
                   {mobileMenuOpen && (
                     <motion.div
                       role="menu"
-                      initial={{ opacity: 0, y: -6, scale: 0.96 }}
+                      initial={
+                        reduceMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: -6, scale: 0.96 }
+                      }
                       animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                      transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                      exit={
+                        reduceMotion
+                          ? { opacity: 0 }
+                          : { opacity: 0, y: -4, scale: 0.98 }
+                      }
+                      transition={{
+                        duration: reduceMotion ? 0.1 : 0.18,
+                        ease: [0.22, 1, 0.36, 1],
+                      }}
                       className="absolute right-0 top-[calc(100%+0.45rem)] z-50 w-[11.5rem] overflow-hidden rounded-2xl border border-white/10 bg-[#0A0A0F]/96 backdrop-blur-xl shadow-[0_16px_48px_rgba(0,0,0,0.55)]"
                     >
                       <button
@@ -952,9 +964,16 @@ export default function LumenDashboard() {
           }}
         >
           <motion.div
-            initial={{ scale: 0.97, opacity: 0, y: 8 }}
+            initial={
+              reduceMotion
+                ? { opacity: 0 }
+                : { scale: 0.97, opacity: 0, y: 8 }
+            }
             animate={{ scale: 1, opacity: 1, y: 0 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            transition={{
+              duration: reduceMotion ? 0.12 : 0.22,
+              ease: [0.22, 1, 0.36, 1],
+            }}
             className="lumen-glow-panel lumen-glow-panel--orange max-w-md w-full rounded-t-3xl sm:rounded-3xl p-6 sm:p-8 border border-white/[0.1] max-h-[90dvh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >

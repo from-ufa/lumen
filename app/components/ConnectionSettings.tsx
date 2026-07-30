@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   Settings,
   X,
@@ -226,6 +226,7 @@ export default function ConnectionSettings({
   variant = "node",
 }: ConnectionSettingsProps) {
   const isOracle = variant === "oracle";
+  const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const lastOpenKey = useRef(0);
 
@@ -453,15 +454,27 @@ export default function ConnectionSettings({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: reduceMotion ? 0.1 : 0.18 }}
               className="absolute inset-0 bg-black/80"
               onClick={() => setModalOpen(false)}
             />
 
             <motion.div
-              initial={{ opacity: 0, scale: 0.96, y: 12 }}
+              initial={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, scale: 0.96, y: 12 }
+              }
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.98, y: 8 }}
-              transition={{ ease: [0.23, 1, 0.32, 1] }}
+              exit={
+                reduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, scale: 0.98, y: 8 }
+              }
+              transition={{
+                duration: reduceMotion ? 0.12 : 0.22,
+                ease: [0.23, 1, 0.32, 1],
+              }}
               className="glass relative z-10 w-full max-w-lg max-h-[min(92dvh,900px)] overflow-y-auto no-scrollbar rounded-t-3xl sm:rounded-3xl p-5 sm:p-8 border border-white/10 shadow-2xl pb-[max(1.25rem,env(safe-area-inset-bottom))]"
               onClick={(e) => e.stopPropagation()}
             >

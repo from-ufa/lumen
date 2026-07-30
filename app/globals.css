@@ -174,15 +174,20 @@ body {
     box-shadow 0.28s cubic-bezier(0.23, 1, 0.32, 1),
     transform 0.28s cubic-bezier(0.23, 1, 0.32, 1);
 }
+/* Color-only hover always; lift only on fine pointer (no sticky-hover on touch) */
 .lumen-glow-panel:hover {
   border-color: color-mix(in srgb, var(--lumen-accent) 28%, rgba(255, 255, 255, 0.08));
-  transform: translateY(-2px);
-  box-shadow:
-    0 18px 52px rgba(0, 0, 0, 0.55),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 64px color-mix(in srgb, var(--lumen-glow) 38%, transparent),
-    0 0 110px color-mix(in srgb, var(--lumen-glow-2) 22%, transparent);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lumen-glow-panel:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 18px 52px rgba(0, 0, 0, 0.55),
+      0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+      0 1px 0 rgba(255, 255, 255, 0.08) inset,
+      0 0 64px color-mix(in srgb, var(--lumen-glow) 38%, transparent),
+      0 0 110px color-mix(in srgb, var(--lumen-glow-2) 22%, transparent);
+  }
 }
 /* Soft ambient orbs — children of panel */
 .lumen-glow-orb {
@@ -426,7 +431,11 @@ body {
   box-shadow:
     0 0 16px color-mix(in srgb, var(--op-accent, #2dd4bf) 22%, transparent),
     0 0 0 1px rgba(255, 255, 255, 0.04) inset;
-  transform: translateY(-1px);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lumen-ops-addr-cell:hover {
+    transform: translateY(-1px);
+  }
 }
 .lumen-ops-addr-cell:active {
   transform: translateY(0) scale(0.98);
@@ -522,13 +531,21 @@ body {
     var(--oracle-accent, #ff7a3d) 42%,
     transparent
   ) !important;
-  transform: translateY(-2px);
-  box-shadow:
-    0 22px 56px rgba(0, 0, 0, 0.52),
-    0 0 0 1px
-      color-mix(in srgb, var(--oracle-accent, #ff7a3d) 18%, transparent),
-    0 0 72px
-      color-mix(in srgb, var(--oracle-accent, #2dd4bf) 22%, transparent) !important;
+}
+@media (hover: hover) and (pointer: fine) {
+  .lumen-oracle-block:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 22px 56px rgba(0, 0, 0, 0.52),
+      0 0 0 1px
+        color-mix(in srgb, var(--oracle-accent, #ff7a3d) 18%, transparent),
+      0 0 72px
+        color-mix(in srgb, var(--oracle-accent, #2dd4bf) 22%, transparent) !important;
+  }
+  .lumen-oracle-block:hover .lumen-oracle-chip {
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+  }
 }
 .lumen-oracle-tile {
   background:
@@ -552,11 +569,6 @@ body {
     var(--oracle-accent, #ff7a3d) 28%,
     rgba(255, 255, 255, 0.1)
   ) !important;
-  transform: translateY(-1.5px);
-  box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.4),
-    0 0 28px
-      color-mix(in srgb, var(--oracle-accent, #2dd4bf) 12%, transparent);
   background:
     linear-gradient(
       160deg,
@@ -564,9 +576,14 @@ body {
       rgba(0, 0, 0, 0.38) 100%
     ) !important;
 }
-.lumen-oracle-block:hover .lumen-oracle-chip {
-  border-color: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+@media (hover: hover) and (pointer: fine) {
+  .lumen-oracle-tile:hover {
+    transform: translateY(-1.5px);
+    box-shadow:
+      0 14px 36px rgba(0, 0, 0, 0.4),
+      0 0 28px
+        color-mix(in srgb, var(--oracle-accent, #2dd4bf) 12%, transparent);
+  }
 }
 .lumen-oracle-chip {
   transition:
@@ -1450,6 +1467,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .status-dot,
   .float-particle,
+  .mempool-particle,
   [class*="lumen-glow-pulse"],
   [class*="lumen-focus-wave"],
   [class*="lumen-focus-core"],
@@ -1460,8 +1478,36 @@ body {
   .lumen-ui-transition-fast,
   .card,
   .block-card,
-  .btn-cinematic {
+  .btn-cinematic,
+  .lumen-glow-panel,
+  .lumen-glow-row,
+  .lumen-oracle-block,
+  .lumen-oracle-tile,
+  .lumen-ops-addr-cell {
     transition-duration: 0.01ms !important;
+  }
+  .lumen-glow-panel:hover,
+  .lumen-oracle-block:hover,
+  .lumen-oracle-tile:hover,
+  .card:hover,
+  .block-card:hover {
+    transform: none !important;
+  }
+  .lumen-hover-nudge {
+    transition: none !important;
+  }
+}
+
+/**
+ * External-link / "open" arrow nudge — only on real hover (fine pointer).
+ * Use on icons inside a `.group` parent.
+ */
+.lumen-hover-nudge {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .group:hover .lumen-hover-nudge {
+    transform: translate(2px, -2px);
   }
 }
 
@@ -1474,13 +1520,58 @@ html.tg-miniapp body {
   /* Extra bottom room for TG MainButton */
   padding-bottom: max(var(--safe-bottom), 12px);
 }
-html.tg-miniapp.tg-low-end .lumen-viz {
-  /* Hint GPU: still touch-none for Orbit */
-  touch-action: none;
-}
 html.tg-miniapp .lumen-viz {
   /* Reinforce: vertical swipe must not steal Orbit */
   overscroll-behavior: none;
   touch-action: none;
+}
+
+/**
+ * TG low-end (Android / weak WebView) — cut paint cost, keep press feedback.
+ * Class set by initTelegramApp() when isTelegramLowEnd().
+ */
+html.tg-miniapp.tg-low-end .lumen-viz {
+  touch-action: none;
+}
+html.tg-miniapp.tg-low-end .lumen-glow-orb {
+  display: none !important;
+}
+html.tg-miniapp.tg-low-end .lumen-glow-panel,
+html.tg-miniapp.tg-low-end .lumen-oracle-block,
+html.tg-miniapp.tg-low-end .glass,
+html.tg-miniapp.tg-low-end .lumen-boom-notice,
+html.tg-miniapp.tg-low-end .lumen-tg-connect-pill {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+html.tg-miniapp.tg-low-end .lumen-glow-pulse,
+html.tg-miniapp.tg-low-end .status-dot,
+html.tg-miniapp.tg-low-end .mempool-particle,
+html.tg-miniapp.tg-low-end .float-particle {
+  animation: none !important;
+}
+html.tg-miniapp.tg-low-end .lumen-ui-transition,
+html.tg-miniapp.tg-low-end .lumen-ui-transition-fast {
+  transition-duration: 80ms;
+}
+html.tg-miniapp.tg-low-end .lumen-glow-panel:hover,
+html.tg-miniapp.tg-low-end .lumen-oracle-block:hover,
+html.tg-miniapp.tg-low-end .lumen-oracle-tile:hover,
+html.tg-miniapp.tg-low-end .card:hover {
+  transform: none !important;
+}
+html.tg-miniapp.tg-low-end .lumen-glow-panel,
+html.tg-miniapp.tg-low-end .lumen-oracle-block {
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset !important;
+}
+
+/* TG connect pill — fine-pointer hover only (touch uses :active) */
+@media (hover: hover) and (pointer: fine) {
+  .lumen-tg-connect-pill:hover {
+    background-color: rgba(255, 122, 61, 0.32);
+    border-color: rgba(255, 122, 61, 0.5);
+  }
 }
 
