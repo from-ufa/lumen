@@ -1063,24 +1063,16 @@ function OracleBlock({
                       key={row.id}
                       layout={!reduceMotion}
                       initial={
-                        reduceMotion
-                          ? false
-                          : { opacity: 0, y: -10, filter: "blur(4px)" }
+                        reduceMotion ? false : { opacity: 0, y: -6 }
                       }
-                      animate={{
-                        opacity: 1,
-                        y: 0,
-                        filter: "blur(0px)",
-                      }}
+                      animate={{ opacity: 1, y: 0 }}
                       exit={
-                        reduceMotion
-                          ? undefined
-                          : { opacity: 0, height: 0, marginBottom: 0 }
+                        reduceMotion ? undefined : { opacity: 0, y: -4 }
                       }
                       transition={{
-                        duration: 0.32,
-                        ease: [0.22, 1, 0.36, 1],
-                        layout: { duration: 0.28, ease: [0.22, 1, 0.36, 1] },
+                        duration: 0.2,
+                        ease: [0.23, 1, 0.32, 1],
+                        layout: { duration: 0.2, ease: [0.23, 1, 0.32, 1] },
                       }}
                       className="text-[10px] sm:text-[11px] font-mono truncate leading-snug h-[1.15rem]"
                       style={{

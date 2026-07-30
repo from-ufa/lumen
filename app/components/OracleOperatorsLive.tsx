@@ -263,7 +263,10 @@ export default function OracleOperatorsLive({
                 key={stats.uniqueLive}
                 initial={reduceMotion ? false : { opacity: 0.4, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                transition={{
+                  duration: reduceMotion ? 0 : 0.22,
+                  ease: [0.23, 1, 0.32, 1],
+                }}
                 className="lumen-glow-value metric-value text-4xl sm:text-5xl font-semibold tracking-tighter"
               >
                 {isLoading && feeds.length === 0 ? "—" : stats.uniqueLive}
