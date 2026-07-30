@@ -484,11 +484,13 @@ body {
   letter-spacing: 0.16em;
   -webkit-font-smoothing: antialiased;
 }
-.lumen-header-pill:hover {
-  transform: translateY(-0.5px);
-}
-.lumen-header-icon:hover {
-  transform: translateY(-0.5px);
+@media (hover: hover) and (pointer: fine) {
+  .lumen-header-pill:hover {
+    transform: translateY(-0.5px);
+  }
+  .lumen-header-icon:hover {
+    transform: translateY(-0.5px);
+  }
 }
 
 /* Oracle panels/tiles — glow language aligned with dashboard */
