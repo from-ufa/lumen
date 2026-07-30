@@ -14,18 +14,31 @@ import {
  *   { "password": "newpassword" }  — set/change (min 10 chars)
  *   { "clear": true }              — remove password → site fully open
  *
- * Allowed from:
- *  - localhost / SSH tunnel (always)
- *  - remote with valid Basic / cookie / X-Lumen-Password against CURRENT password
- *  - remote when no password is set (open site)
+ * S3 security (does not affect SSH):
+ *  - Site OPEN (no password): set password **only from localhost** (blocks remote takeover C2)
+ *  - Site PROTECTED: change password with valid current Basic/cookie/header OR localhost
+ *  - clear: **localhost only** (blocks opening site after stolen session H8)
  *
  * Writes `/home/lumen/.lumen-public-password` (chmod 600).
  */
 export async function POST(req: NextRequest) {
   const current = readPublicPassword();
   const local = isLocalRequest(req);
-  // When open (no password), anyone who can reach the app may set a password.
-  // When protected, need local or valid current auth.
+
+  // C2 fix: when open, remote must NOT set a password
+  if (!local && current.length === 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          "Remote password set disabled while site is open. Set password via SSH/localhost only.",
+        hint: 'On server: curl -X POST http://127.0.0.1:3000/api/public-password -H "Content-Type: application/json" -d \'{"password":"your-long-password"}\'',
+      },
+      { status: 403, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+
+  // When already protected: need localhost or valid current public auth
   if (!local && current.length > 0 && !hasValidPublicAuth(req, current)) {
     return NextResponse.json(
       {
@@ -54,6 +67,17 @@ export async function POST(req: NextRequest) {
     (body as { clear: unknown }).clear === true;
 
   if (clear) {
+    // H8 fix: clear only from localhost (never open the site via stolen remote session)
+    if (!local) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Clearing the public password is only allowed from the server (localhost/SSH).",
+        },
+        { status: 403, headers: { "Cache-Control": "no-store" } }
+      );
+    }
     try {
       clearPublicPassword();
     } catch (e) {
@@ -94,10 +118,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Reject control characters / newlines (file is single-line)
   if (/[\r\n\0]/.test(trimmed)) {
     return NextResponse.json(
-      { success: false, error: "Password must be a single line without control characters" },
+      {
+        success: false,
+        error: "Password must be a single line without control characters",
+      },
       { status: 400 }
     );
   }
@@ -117,7 +143,8 @@ export async function POST(req: NextRequest) {
       success: true,
       publicMode: true,
       access: "protected",
-      message: "Password updated. Existing public sessions need to re-authenticate.",
+      message:
+        "Password updated. Existing public sessions need to re-authenticate.",
     },
     { headers: { "Cache-Control": "no-store" } }
   );
