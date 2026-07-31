@@ -1,0 +1,6 @@
+start - Open Lumen
+app - Mini App
+status - Node snapshot
+oracles - Oracle prices
+alerts - Alerts status on off test
+help - Help

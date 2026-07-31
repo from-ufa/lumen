@@ -2,7 +2,7 @@
 
 **Live:** [https://ergolumen.net](https://ergolumen.net)  
 **Repo:** [github.com/from-ufa/lumen](https://github.com/from-ufa/lumen)  
-**Updated:** 2026-07-29  
+**Updated:** 2026-07-31  
 
 Status legend: ✅ done · 🔄 in progress · 📋 planned · ⏸ later
 
@@ -17,8 +17,9 @@ Status legend: ✅ done · 🔄 in progress · 📋 planned · ⏸ later
 | Bridge hub (My Node / My Oracle) | ✅ | WSS + public stats |
 | Mobile web UX | ✅ | Safe-area, touch Orbit, perf |
 | **iOS Phase 1** (Capacitor shell) | ✅ | Live WebView → ergolumen.net; push stub |
+| **Telegram Mini App MVP** | ✅ | `https://m.ergolumen.net` — 4 tabs, Net MAP-first full-bleed |
 
-Details: [ios.md](./ios.md) · [ios-phase1-report.md](./ios-phase1-report.md)
+Details: [ios.md](./ios.md) · [miniapp-roadmap-now.md](./miniapp-roadmap-now.md)
 
 ---
 
@@ -35,16 +36,19 @@ Details: [ios.md](./ios.md) · [ios-phase1-report.md](./ios-phase1-report.md)
 
 Full notes / rollback: [docs/ios.md](./ios.md)
 
-### 2. Telegram Mini App
+### 2. Telegram Mini App (`m.ergolumen.net`)
 
 | Phase | Status | Scope |
 |-------|--------|--------|
-| **Phase 0 — design** | ✅ | Audit + roadmap; full Lumen in TG WebView (parity) |
-| **Phase 1 — shell** | 🔄 | On branch `feat/telegram-miniapp`: WebApp SDK, auth HMAC, bot webhook, deep links, haptics, low-end Orbit — see [telegram.md](./telegram.md). **Not merged to main until explicit command.** |
-| **Phase 2 — product** | 📋 | Alerts subscriptions · share polish · Attach menu |
-| **Phase 3 — notify** | ⏸ | Bot push / TG notifications (separate from APNs); rate limits; privacy |
+| **Phase 0 — design** | ✅ | Tabs design [miniapp-mvp-tabs.md](./miniapp-mvp-tabs.md) |
+| **MVP product shell** | ✅ | 4 tabs Home·Net·Ora·Me; Bridge/Alerts sheets; TG chrome pad; no web My Node pill |
+| **Network** | ✅ | **MAP default** full-bleed; LIST optional; LIVE/ALL; peer sheet |
+| **Oracles / Home live** | ✅ | prices `price`; node stats; pull-to-refresh |
+| **Post-MVP polish** | 📋 | Avg block time · peer search · install copy · RU · empty states |
+| **Notify / share** | ⏸ | Share PNG · offline PWA · push beyond TG alerts sheet |
 
-**Constraints:** no force of full 3D Orbit if TG WebView is weak — graceful lite mode. Same public APIs; don’t break main site.
+**Honest next queue:** [miniapp-roadmap-now.md](./miniapp-roadmap-now.md)  
+**Constraints:** no 3D Orbit / Boom / dual WebGL in mini. Web `ergolumen.net` stays separate.
 
 ---
 
@@ -82,4 +86,5 @@ Full notes / rollback: [docs/ios.md](./ios.md)
 
 | Date | Change |
 |------|--------|
+| 2026-07-31 | Mini App MVP ✅ on `m.ergolumen.net`; Net MAP-first full-bleed; next = avg block / search / install copy / RU |
 | 2026-07-29 | Created roadmap: iOS Phase 1 ✅ / Phase 2 📋 · Telegram Mini App 📋 |

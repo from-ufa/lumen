@@ -311,10 +311,10 @@ Web pages never import mini shell.
 
 ### Network tab (MVP with map)
 
-- Default: **List**
-- Toggle: **List | Map**
-- Map: lazy Leaflet + `/api/peers/map` (same as web)
-- Low-end Android TG: prefer List; Map available but not auto-opened
+- Default: **MAP** (full-bleed toolbar → tab bar)
+- Toggle: **MAP | LIST** (list optional)
+- Map: lazy Leaflet + `/api/peers/map` (same as web); `fillParent` kills desktop 52dvh height
+- Low-end Android TG: Map still default; LIST available if map is heavy
 
 ---
 
