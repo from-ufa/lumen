@@ -7,6 +7,7 @@ import { bridgeServerFetch } from "./bridge-server";
 import { replyHtml, tgApi } from "./tg-bot";
 import {
   decryptToken,
+  isAlertMuted,
   listEnabledSubs,
   touchSubTick,
   type TgAlertState,
@@ -733,6 +734,9 @@ export async function evaluateSubscription(
     sub.state[d.key] = edge.next;
 
     if (!edge.notify) continue;
+
+    // Per-type mute (user toggles in Mini App Alerts hub)
+    if (isAlertMuted(sub.prefs, d.key)) continue;
 
     const isRecovery =
       d.status === "ok" &&

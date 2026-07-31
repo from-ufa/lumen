@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
       claimReminder?: unknown;
       postLagBlocks?: unknown;
       minPeers?: unknown;
+      muted?: unknown;
     };
     sendTest?: unknown;
     label?: unknown;
@@ -149,6 +150,9 @@ export async function POST(req: NextRequest) {
         typeof body.prefs?.minPeers === "number"
           ? Math.max(0, Math.min(50, Math.floor(body.prefs.minPeers)))
           : undefined,
+      muted: Array.isArray(body.prefs?.muted)
+        ? (body.prefs.muted as string[])
+        : undefined,
     },
     label: typeof body.label === "string" ? body.label : null,
   });

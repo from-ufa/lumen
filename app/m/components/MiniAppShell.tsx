@@ -19,6 +19,7 @@ import {
   Link2,
   Radio,
   LineChart,
+  Bell,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -745,20 +746,34 @@ function Shell() {
               </div>
             </div>
           </div>
-          <span
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono tracking-wider ${
-              isOnline
-                ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/10"
-                : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/10"
-            }`}
-          >
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Alerts hub — one place for all notifications */}
+            <button
+              type="button"
+              onClick={() => {
+                setAlertsOpen(true);
+                void hapticImpact("light");
+              }}
+              className="h-9 w-9 inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[#FF7A3D] active:scale-[0.96]"
+              aria-label={t("alerts_sheet_title")}
+            >
+              <Bell className="w-4 h-4" />
+            </button>
             <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono tracking-wider ${
+                isOnline
+                  ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/10"
+                  : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/10"
               }`}
-            />
-            {isOnline ? t("status_live") : t("status_off")}
-          </span>
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+                }`}
+              />
+              {isOnline ? t("status_live") : t("status_off")}
+            </span>
+          </div>
         </div>
       </header>
 

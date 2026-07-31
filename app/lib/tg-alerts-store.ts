@@ -12,6 +12,16 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "crypto";
+import {
+  normalizeMuted,
+  isAlertMuted as isAlertMutedList,
+} from "./tg-alerts-catalog";
+
+export {
+  ALERT_CATALOG,
+  type AlertCatalogId,
+  normalizeMuted,
+} from "./tg-alerts-catalog";
 
 export const TG_ALERTS_STORE = path.join(
   process.cwd(),
@@ -49,6 +59,11 @@ export type TgAlertSubscription = {
     claimMinTokens: number;
     minPeers: number;
     postLagBlocks: number;
+    /**
+     * Individual alert types turned OFF by user (base keys, e.g. node.peers_low).
+     * Missing / empty = all on (within scopes).
+     */
+    muted?: string[];
   };
   state: Record<string, TgAlertState>;
   createdAt: string;
@@ -71,7 +86,15 @@ const DEFAULT_PREFS: TgAlertSubscription["prefs"] = {
   claimMinTokens: 100,
   minPeers: 3,
   postLagBlocks: 24,
+  muted: [],
 };
+
+export function isAlertMuted(
+  prefs: TgAlertSubscription["prefs"] | undefined,
+  key: string
+): boolean {
+  return isAlertMutedList(prefs?.muted, key);
+}
 
 function secretKey(): Buffer {
   const raw =
@@ -216,10 +239,15 @@ export function upsertSubscription(opts: {
       node: opts.scopes?.node ?? sub.scopes.node,
       oracle: opts.scopes?.oracle ?? sub.scopes.oracle,
     };
+    const nextMuted =
+      opts.prefs && "muted" in opts.prefs
+        ? normalizeMuted(opts.prefs.muted)
+        : sub.prefs.muted ?? [];
     sub.prefs = {
       ...sub.prefs,
       ...opts.prefs,
       enabled: opts.prefs?.enabled ?? sub.prefs.enabled,
+      muted: nextMuted,
     };
     if (opts.label != null) sub.label = opts.label;
     sub.updatedAt = now;
@@ -235,7 +263,11 @@ export function upsertSubscription(opts: {
         node: opts.scopes?.node ?? true,
         oracle: opts.scopes?.oracle ?? true,
       },
-      prefs: { ...DEFAULT_PREFS, ...opts.prefs },
+      prefs: {
+        ...DEFAULT_PREFS,
+        ...opts.prefs,
+        muted: normalizeMuted(opts.prefs?.muted ?? DEFAULT_PREFS.muted),
+      },
       state: {},
       createdAt: now,
       updatedAt: now,
@@ -322,6 +354,7 @@ export function publicSubView(s: TgAlertSubscription) {
       claimMinTokens: s.prefs.claimMinTokens,
       minPeers: s.prefs.minPeers,
       postLagBlocks: s.prefs.postLagBlocks,
+      muted: normalizeMuted(s.prefs.muted),
     },
     label: s.label ?? null,
     tokenFp: s.bridgeTokenHash.slice(0, 12),
