@@ -27,7 +27,11 @@ export default function MiniAppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mini-app-root min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] antialiased">
+    <div
+      className="mini-app-root min-h-dvh bg-[#0A0A0F] text-[#E8E8F0] antialiased"
+      /* Hide legacy web TG pill if it still mounts */
+      data-mini-shell="1"
+    >
       {children}
     </div>
   );

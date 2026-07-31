@@ -151,11 +151,20 @@ export default function TelegramBootstrap() {
     return () => window.clearInterval(id);
   }, [inTg, pathname]);
 
-  // Soft oval CTA: dashboard = My Node, oracles = My Oracle → connection modal
+  // Soft oval CTA only on *web* dashboard in TG (not Mini App tab shell).
+  // Mini App (m.ergolumen.net / /m) has its own Me/Bridge UI — no floating pill.
+  const isMiniShell =
+    pathname === "/m" ||
+    pathname?.startsWith("/m/") ||
+    (typeof window !== "undefined" &&
+      window.location.hostname.toLowerCase() === "m.ergolumen.net");
+
   const pill =
-    inTg && pathname === "/"
+    inTg && !isMiniShell && pathname === "/"
       ? { label: "My Node", aria: "My Node — open connection settings" }
-      : inTg && (pathname === "/oracles" || pathname?.startsWith("/oracles"))
+      : inTg &&
+          !isMiniShell &&
+          (pathname === "/oracles" || pathname?.startsWith("/oracles"))
         ? { label: "My Oracle", aria: "My Oracle — open connection settings" }
         : null;
 

@@ -1431,6 +1431,14 @@ html.tg-miniapp.tg-low-end .lumen-glow-panel,
 html.tg-miniapp.tg-low-end .lumen-oracle-block,
 html.tg-miniapp.tg-low-end .glass,
 html.tg-miniapp.tg-low-end .lumen-boom-notice,
+/* Mini App tab shell — never show web floating My Node / My Oracle pill */
+html:has([data-mini-shell]) .lumen-tg-connect-pill,
+body:has([data-mini-shell]) .lumen-tg-connect-pill {
+  display: none !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
 html.tg-miniapp.tg-low-end .lumen-tg-connect-pill {
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;

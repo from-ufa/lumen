@@ -104,6 +104,37 @@ export default function MiniAppShell() {
   // Boot: TG chrome + local settings + deep link
   useEffect(() => {
     initTelegramApp();
+    // Extra top inset under TG close / ··· chrome (safe-area alone is not enough)
+    try {
+      const wa = (
+        window as unknown as {
+          Telegram?: {
+            WebApp?: {
+              contentSafeAreaInset?: { top?: number };
+              safeAreaInset?: { top?: number };
+              expand?: () => void;
+            };
+          };
+        }
+      ).Telegram?.WebApp;
+      wa?.expand?.();
+      const top = Math.max(
+        wa?.contentSafeAreaInset?.top ?? 0,
+        wa?.safeAreaInset?.top ?? 0,
+        0
+      );
+      // TG header controls ~48–56px; never less than 52px under the system bar
+      const pad = Math.max(top + 8, 56);
+      document.documentElement.style.setProperty(
+        "--mini-header-pad-top",
+        `${pad}px`
+      );
+    } catch {
+      document.documentElement.style.setProperty(
+        "--mini-header-pad-top",
+        "56px"
+      );
+    }
     setToken(loadBridgeToken());
     setMode(loadNodeMode());
     setLowEnd(isTelegramLowEnd());
@@ -246,10 +277,13 @@ export default function MiniAppShell() {
 
   return (
     <div className="flex flex-col h-dvh max-h-dvh overflow-hidden">
-      {/* Top safe + brand strip */}
+      {/* Top safe + brand strip — clear of TG close / collapse / ··· */}
       <header
         className="shrink-0 px-4 pb-2 border-b border-white/[0.06]"
-        style={{ paddingTop: "max(0.65rem, env(safe-area-inset-top))" }}
+        style={{
+          paddingTop:
+            "max(var(--mini-header-pad-top, 56px), calc(env(safe-area-inset-top, 0px) + 44px))",
+        }}
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
