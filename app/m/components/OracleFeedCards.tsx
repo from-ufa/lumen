@@ -194,11 +194,18 @@ export default function OracleFeedCard({
   feed,
   showOperator,
   variant,
+  /** true only when user has bridge token and is in personal MY context */
+  personal = false,
 }: {
   feed: OracleFeedRich;
-  /** Show myOperator / YOU panel when data present */
+  /** Show myOperator / host operator panel when data present */
   showOperator: boolean;
   variant: "network" | "my";
+  /**
+   * Without connection: never YOU — host metrics are LUMEN.
+   * With MY + token: YOU only for scope=mine (or personal mine node).
+   */
+  personal?: boolean;
 }) {
   const { t } = useMiniI18n();
   const accent = feed.accent || "#00E5FF";
@@ -218,7 +225,11 @@ export default function OracleFeedCard({
   const poolAge = blockAgeLabel(feed.ageBlocks);
   const mine = feed.myOperator;
   const mineNode = (feed.nodes || []).find((n) => n.isMine);
-  const isMineScope = feed.scope === "mine" || variant === "my";
+  // API marks lumen host as isMine on network view — that is NOT the TG user
+  const asYou =
+    personal &&
+    (feed.scope === "mine" ||
+      (variant === "my" && feed.scope !== "network" && (!!mine || !!mineNode)));
 
   const claim =
     mine?.claimableRewards ?? mineNode?.rewardTokens ?? null;
@@ -275,19 +286,15 @@ export default function OracleFeedCard({
           >
             {st.label}
           </span>
-          {feed.scope === "mine" ? (
+          {asYou ? (
             <span className="text-[8px] font-mono tracking-wider text-[#FF7A3D]">
               {t("ora_scope_you")}
             </span>
-          ) : feed.scope === "network" ? (
+          ) : (
             <span className="text-[8px] font-mono tracking-wider text-[#00E5FF]">
               {t("ora_scope_lumen")}
             </span>
-          ) : variant === "network" ? (
-            <span className="text-[8px] font-mono tracking-wider text-[#00E5FF]">
-              {t("ora_scope_lumen")}
-            </span>
-          ) : null}
+          )}
         </div>
       </div>
 
@@ -432,17 +439,25 @@ export default function OracleFeedCard({
         </div>
       </div>
 
-      {/* Operator panel — critical for MY and useful for LUMEN host */}
+      {/* Operator panel: YOU only if personal; else LUMEN host */}
       {showOperator && (mine || mineNode) ? (
         <div
-          className="mt-2.5 rounded-xl border border-[#FF7A3D]/25 px-2.5 py-2.5"
-          style={{ background: "rgba(255,122,61,0.06)" }}
+          className="mt-2.5 rounded-xl border px-2.5 py-2.5"
+          style={{
+            borderColor: asYou
+              ? "rgba(255,122,61,0.35)"
+              : "rgba(0,229,255,0.28)",
+            background: asYou
+              ? "rgba(255,122,61,0.06)"
+              : "rgba(0,229,255,0.06)",
+          }}
         >
           <div className="flex items-center justify-between gap-2">
-            <div className="text-[9px] font-mono tracking-[0.14em] uppercase text-[#FF7A3D]">
-              {isMineScope || mineNode?.isMine
-                ? t("ora_your_oracle")
-                : t("ora_host_operator")}
+            <div
+              className="text-[9px] font-mono tracking-[0.14em] uppercase"
+              style={{ color: asYou ? "#FF7A3D" : "#00E5FF" }}
+            >
+              {asYou ? t("ora_your_oracle") : t("ora_host_operator")}
             </div>
             <span
               className="px-2 py-0.5 rounded-full text-[8px] font-mono tracking-wider border"

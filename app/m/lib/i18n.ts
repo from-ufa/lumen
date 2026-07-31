@@ -128,6 +128,8 @@ const EN = {
   // Oracle feed cards
   ora_scope_you: "YOUR ORACLE",
   ora_scope_lumen: "LUMEN POOL",
+  ora_badge_you: "YOU",
+  ora_badge_lumen: "LUMEN",
   ora_pool_age: "Pool age",
   ora_quorum: "Quorum",
   ora_epoch: "Epoch",
@@ -380,6 +382,8 @@ const RU: Record<MiniMsgKey, string> = {
 
   ora_scope_you: "ТВОЙ ORACLE",
   ora_scope_lumen: "ПУЛ LUMEN",
+  ora_badge_you: "YOU",
+  ora_badge_lumen: "LUMEN",
   ora_pool_age: "Возраст пула",
   ora_quorum: "Кворум",
   ora_epoch: "Эпоха",

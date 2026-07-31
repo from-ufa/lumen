@@ -45,9 +45,12 @@ function statusTone(online: boolean, idleKey: boolean): {
 export default function OperatorsPanel({
   feeds,
   loading,
+  /** Personal MY session with bridge token — only then isMine → YOU */
+  personal = false,
 }: {
   feeds: OracleFeedRich[];
   loading?: boolean;
+  personal?: boolean;
 }) {
   const { t } = useMiniI18n();
   const [filter, setFilter] = useState<"all" | "live" | "off">("all");
@@ -267,8 +270,14 @@ export default function OperatorsPanel({
                         {r.pair}
                       </span>
                       {r.isMine ? (
-                        <span className="text-[8px] font-mono px-1.5 py-0.5 rounded-full border border-[#FF7A3D]/40 text-[#FF7A3D]">
-                          YOU
+                        <span
+                          className={`text-[8px] font-mono px-1.5 py-0.5 rounded-full border ${
+                            personal
+                              ? "border-[#FF7A3D]/40 text-[#FF7A3D]"
+                              : "border-[#00E5FF]/40 text-[#00E5FF]"
+                          }`}
+                        >
+                          {personal ? t("ora_badge_you") : t("ora_badge_lumen")}
                         </span>
                       ) : null}
                     </div>

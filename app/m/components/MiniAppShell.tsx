@@ -403,6 +403,14 @@ function Shell() {
   const [refreshing, setRefreshing] = useState(false);
   const [pullY, setPullY] = useState(0);
 
+  /**
+   * Personal data path only with token + MY mode.
+   * Without connection: always LUMEN node/oracles (never YOU / MY NODE).
+   */
+  const effectiveMode: NodeMode =
+    token && mode === "my" ? "my" : "lumen";
+  const isPersonal = effectiveMode === "my" && !!token;
+
   // Boot: TG chrome + local settings + deep link
   useEffect(() => {
     initTelegramApp();
@@ -437,8 +445,16 @@ function Shell() {
         "56px"
       );
     }
-    setToken(loadBridgeToken());
-    setMode(loadNodeMode());
+    const tok = loadBridgeToken();
+    const m = loadNodeMode();
+    setToken(tok);
+    // Without bridge token there is no personal node/oracle — force LUMEN labels
+    if (m === "my" && !tok) {
+      setMode("lumen");
+      saveNodeMode("lumen");
+    } else {
+      setMode(m);
+    }
     setLowEnd(isTelegramLowEnd());
 
     const param = getStartParam();
@@ -538,11 +554,11 @@ function Shell() {
     refetch: refetchInfo,
     isError: infoError,
   } = useQuery({
-    queryKey: ["mini-nodeInfo", mode, token],
+    queryKey: ["mini-nodeInfo", effectiveMode, token],
     queryFn: async (): Promise<NodeInfoLite> => {
-      if (mode === "my" && !token) throw new Error("no_token");
-      const res = await fetchNodeResource(mode, token, "info", {
-        timeoutMs: mode === "my" ? 14000 : 6500,
+      if (effectiveMode === "my" && !token) throw new Error("no_token");
+      const res = await fetchNodeResource(effectiveMode, token, "info", {
+        timeoutMs: effectiveMode === "my" ? 14000 : 6500,
       });
       if (!res.ok) throw new Error(`info ${res.status}`);
       return res.json();
@@ -573,8 +589,8 @@ function Shell() {
   });
 
   const { data: mapData, isLoading: mapLoading } = useQuery({
-    queryKey: ["mini-peers-map", mode, token],
-    queryFn: () => fetchPeersMap(mode, token),
+    queryKey: ["mini-peers-map", effectiveMode, token],
+    queryFn: () => fetchPeersMap(effectiveMode, token),
     enabled: tab === "network",
     refetchInterval: 12_000,
   });
@@ -583,8 +599,8 @@ function Shell() {
     data: mempool = { size: 0, txs: [], source: "—" },
     isLoading: mempoolLoading,
   } = useQuery({
-    queryKey: ["mini-mempool", mode, token],
-    queryFn: () => fetchMempool(mode, token),
+    queryKey: ["mini-mempool", effectiveMode, token],
+    queryFn: () => fetchMempool(effectiveMode, token),
     refetchInterval: 8_000,
     enabled: tab === "home",
   });
@@ -596,25 +612,26 @@ function Shell() {
     data: recentBlocks = { blocks: [], source: "—" },
     isLoading: blocksLoading,
   } = useQuery({
-    queryKey: ["mini-blocks", mode, token, heightForBlocks],
-    queryFn: () => fetchRecentBlocksMini(mode, token, heightForBlocks),
+    queryKey: ["mini-blocks", effectiveMode, token, heightForBlocks],
+    queryFn: () =>
+      fetchRecentBlocksMini(effectiveMode, token, heightForBlocks),
     refetchInterval: 12_000,
-    enabled: tab === "home" && (mode === "lumen" || !!token),
+    enabled: tab === "home",
     staleTime: 8_000,
   });
 
   /** Real avg block time from last N headers (one node request) */
   const { data: avgBlock } = useQuery({
-    queryKey: ["mini-avg-block", mode, token],
+    queryKey: ["mini-avg-block", effectiveMode, token],
     queryFn: async () => {
-      if (mode === "my" && !token) return null;
+      if (effectiveMode === "my" && !token) return null;
       return fetchAvgBlockTime(
-        resolveNodeBase(mode),
+        resolveNodeBase(effectiveMode),
         AVG_BLOCK_WINDOW,
-        nodeRequestHeaders(mode, token)
+        nodeRequestHeaders(effectiveMode, token)
       );
     },
-    enabled: tab === "home" && (mode === "lumen" || !!token),
+    enabled: tab === "home",
     refetchInterval: 60_000,
     staleTime: 30_000,
     retry: 1,
@@ -708,7 +725,7 @@ function Shell() {
                 lumen
               </div>
               <div className="text-[9px] font-mono text-[#A0A0B0] tracking-[0.14em] mt-0.5">
-                {mode === "my" ? t("source_my") : t("source_lumen")}
+                {isPersonal ? t("source_my") : t("source_lumen")}
               </div>
             </div>
           </div>
@@ -763,7 +780,7 @@ function Shell() {
           <NetworkMapFull
             netView={netView}
             setNetView={setNetView}
-            mode={mode}
+            mode={effectiveMode}
             token={token}
             height={height}
           />
@@ -796,7 +813,7 @@ function Shell() {
                   avgBlockSamples={avgBlock?.samples ?? 0}
                   avgBlockWindow={AVG_BLOCK_WINDOW}
                   nodeName={nodeInfo?.name}
-                  mode={mode}
+                  mode={effectiveMode}
                   token={token}
                   bridgeOnline={bridgeOnline}
                   infoLoading={!nodeInfo && infoFetching}
@@ -807,7 +824,7 @@ function Shell() {
                   onOracles={() => onTab("oracles")}
                   onAlerts={() => setAlertsOpen(true)}
                   onToggleMode={() => {
-                    const next: NodeMode = mode === "my" ? "lumen" : "my";
+                    const next: NodeMode = isPersonal ? "lumen" : "my";
                     if (next === "my" && !token) {
                       setBridgeOpen(true);
                       return;
@@ -827,7 +844,7 @@ function Shell() {
                   lowEnd={lowEnd}
                   peerRows={peerRows}
                   mapLoading={mapLoading}
-                  mode={mode}
+                  mode={effectiveMode}
                   token={token}
                   height={height}
                   onPeer={setPeerDetail}
@@ -852,7 +869,7 @@ function Shell() {
               )}
               {tab === "me" && (
                 <MeBody
-                  mode={mode}
+                  mode={effectiveMode}
                   token={token}
                   bridgeOnline={bridgeOnline}
                   onOpenBridge={() => setBridgeOpen(true)}
@@ -1278,7 +1295,7 @@ function NetworkMapFull({
             blockHeight={height ?? undefined}
             hideControls={false}
             nodeMode={mode}
-            bridgeToken={token}
+            bridgeToken={mode === "my" ? token : ""}
             fillParent
           />
         </div>
@@ -1515,7 +1532,9 @@ function OraclesBody({
 }) {
   const { t } = useMiniI18n();
   const [view, setView] = useState<"pools" | "ops">("pools");
-  const active = seg === "my" ? myFeeds : feeds;
+  /** YOU labels only on MY segment with a real bridge token */
+  const personal = hasToken && seg === "my";
+  const active = seg === "my" && hasToken ? myFeeds : feeds;
   // Prefer canonical order USD → XAU
   const ordered = [...active].sort((a, b) => {
     const rank = (id?: string) =>
@@ -1598,7 +1617,11 @@ function OraclesBody({
           actionLabel={t("action_bridge")}
         />
       ) : view === "ops" ? (
-        <OperatorsPanel feeds={ordered} loading={loading} />
+        <OperatorsPanel
+          feeds={ordered}
+          loading={loading}
+          personal={personal}
+        />
       ) : loading ? (
         <>
           <Skeleton className="h-40" />
@@ -1648,9 +1671,9 @@ function OraclesBody({
                 <OracleFeedCard
                   key={f.id}
                   feed={f}
-                  variant={seg}
+                  variant={seg === "my" && hasToken ? "my" : "network"}
+                  personal={personal}
                   showOperator={
-                    seg === "my" ||
                     !!f.myOperator ||
                     !!f.nodes?.some((n) => n.isMine)
                   }

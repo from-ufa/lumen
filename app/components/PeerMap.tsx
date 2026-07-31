@@ -2236,7 +2236,11 @@ export default function PeerMap({
               <MeMarkerLayer
                 me={data.me}
                 onSelect={(m) => handleSelectPeer(m, { fly: false })}
-                roleLabel={nodeMode === "my" ? "MY NODE" : "lumen node"}
+                roleLabel={
+                  nodeMode === "my" && bridgeToken
+                    ? "MY NODE"
+                    : "lumen node"
+                }
               />
             )}
 
@@ -2530,9 +2534,13 @@ export default function PeerMap({
                 {mapStats.connected.toLocaleString()}
               </div>
               <div className="text-[10px] font-mono tracking-wider text-[#A0A0B0] mt-1.5">
-                {mapStats.connected === 1
-                  ? "PEER CONNECTED TO YOUR NODE"
-                  : "PEERS CONNECTED TO YOUR NODE"}
+                {nodeMode === "my" && bridgeToken
+                  ? mapStats.connected === 1
+                    ? "PEER CONNECTED TO YOUR NODE"
+                    : "PEERS CONNECTED TO YOUR NODE"
+                  : mapStats.connected === 1
+                    ? "PEER CONNECTED TO LUMEN NODE"
+                    : "PEERS CONNECTED TO LUMEN NODE"}
               </div>
               {mapStats.withGeo > 0 && (
                 <div className="text-[10px] font-mono text-[#A0A0B0]/70 mt-1">
@@ -2611,7 +2619,9 @@ export default function PeerMap({
               {mapStats.connected.toLocaleString()}
             </div>
             <div className="text-[10px] font-mono tracking-wider text-[#A0A0B0] mt-1">
-              PEERS CONNECTED TO YOUR NODE
+              {nodeMode === "my" && bridgeToken
+                ? "PEERS CONNECTED TO YOUR NODE"
+                : "PEERS CONNECTED TO LUMEN NODE"}
             </div>
           </div>
         )}
