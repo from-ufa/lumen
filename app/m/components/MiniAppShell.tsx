@@ -22,6 +22,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  claimLinkCodeInMiniApp,
+  disconnectBridgeFully,
   fetchBridgeStatus,
   fetchNodeResource,
   hydrateSettingsFromTelegramVault,
@@ -36,9 +38,11 @@ import {
 } from "../../lib/node-api";
 import { fetchAvgBlockTime, fetchRecentBlocks } from "../../lib/blocks";
 import {
+  authenticateTelegramSession,
   getStartParam,
   getWebApp,
   hapticImpact,
+  hapticNotification,
   initTelegramApp,
   isTelegramLowEnd,
   isTelegramMiniApp,
@@ -486,9 +490,18 @@ function Shell() {
     };
     window.addEventListener("lumen:settings-hydrated", onHydrate);
 
-    // Force hydrate once on mini open (TG vault)
+    // Hydrate from TG vault only if user did not DISCONNECT (opt-out)
+    // and after TG session cookie exists (auth first).
     if (isTelegramMiniApp()) {
-      void hydrateSettingsFromTelegramVault().then((h) => {
+      void (async () => {
+        await authenticateTelegramSession();
+        const h = await hydrateSettingsFromTelegramVault();
+        if (h.reason === "opted_out") {
+          // Stay disconnected — vault must not come back
+          setToken("");
+          setMode("lumen");
+          return;
+        }
         if (h.applied) {
           setToken(loadBridgeToken());
           setMode(loadNodeMode());
@@ -496,8 +509,11 @@ function Shell() {
           toast.success(tStatic(detectMiniLocale(), "toast_bridge_restored"));
         } else if (h.reason === "already_synced") {
           setToken(loadBridgeToken());
+          const m = loadNodeMode();
+          if (m === "my" && !loadBridgeToken()) setMode("lumen");
+          else setMode(m);
         }
-      });
+      })();
     }
 
     return () => window.removeEventListener("lumen:settings-hydrated", onHydrate);
@@ -891,20 +907,51 @@ function Shell() {
                     void qc.invalidateQueries({ queryKey: ["mini-oracles"] });
                   }}
                   onDisconnect={() => {
-                    saveBridgeToken("");
-                    saveNodeMode("lumen");
-                    setToken("");
-                    setMode("lumen");
-                    setOracleSeg("network");
-                    toast.message(t("me_disconnected_toast"));
-                    void hapticImpact("medium");
+                    void (async () => {
+                      await authenticateTelegramSession();
+                      await disconnectBridgeFully();
+                      setToken("");
+                      setMode("lumen");
+                      setOracleSeg("network");
+                      toast.message(t("me_disconnected_toast"));
+                      void hapticImpact("medium");
+                      void qc.invalidateQueries({ queryKey: ["mini-nodeInfo"] });
+                      void qc.invalidateQueries({ queryKey: ["mini-bridge"] });
+                      void qc.invalidateQueries({
+                        queryKey: ["mini-peers-map"],
+                      });
+                      void qc.invalidateQueries({ queryKey: ["mini-oracles"] });
+                      void qc.invalidateQueries({ queryKey: ["mini-mempool"] });
+                      void qc.invalidateQueries({ queryKey: ["mini-blocks"] });
+                      void qc.invalidateQueries({
+                        queryKey: ["mini-avg-block"],
+                      });
+                    })();
+                  }}
+                  onLinkCode={async (code) => {
+                    await authenticateTelegramSession();
+                    const r = await claimLinkCodeInMiniApp(code);
+                    if (!r.ok || !r.settings) {
+                      return {
+                        ok: false as const,
+                        error: r.error || "claim_failed",
+                      };
+                    }
+                    setToken(r.settings.bridgeToken);
+                    setMode(
+                      r.settings.nodeMode === "lumen" ? "lumen" : "my"
+                    );
+                    setOracleSeg(
+                      r.settings.oracleView === "my" ? "my" : "network"
+                    );
+                    setTab("home");
+                    toast.success(t("me_link_ok"));
+                    void hapticNotification("success");
                     void qc.invalidateQueries({ queryKey: ["mini-nodeInfo"] });
                     void qc.invalidateQueries({ queryKey: ["mini-bridge"] });
-                    void qc.invalidateQueries({ queryKey: ["mini-peers-map"] });
                     void qc.invalidateQueries({ queryKey: ["mini-oracles"] });
-                    void qc.invalidateQueries({ queryKey: ["mini-mempool"] });
-                    void qc.invalidateQueries({ queryKey: ["mini-blocks"] });
-                    void qc.invalidateQueries({ queryKey: ["mini-avg-block"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-peers-map"] });
+                    return { ok: true as const };
                   }}
                 />
               )}
@@ -1721,6 +1768,7 @@ function MeBody({
   onOpenAlerts,
   onSetSource,
   onDisconnect,
+  onLinkCode,
 }: {
   mode: NodeMode;
   effectiveMode: NodeMode;
@@ -1732,8 +1780,13 @@ function MeBody({
   onOpenAlerts: () => void;
   onSetSource: (m: NodeMode) => void;
   onDisconnect: () => void;
+  onLinkCode: (
+    code: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const { t, locale, setLocale } = useMiniI18n();
+  const [linkCode, setLinkCode] = useState("");
+  const [linkBusy, setLinkBusy] = useState(false);
   const hasToken = !!token;
   const tail = hasToken ? `…${token.slice(-6)}` : "";
 
@@ -1956,6 +2009,66 @@ function MeBody({
           </button>
         </div>
       )}
+
+      {/* ═══ LINK from site (same codes as web LINK TELEGRAM) ═══ */}
+      <div
+        className="rounded-2xl border border-[#00E5FF]/25 px-3.5 py-3"
+        style={{ background: "rgba(0,229,255,0.05)" }}
+      >
+        <div className="text-[10px] font-mono tracking-[0.16em] text-[#00E5FF]">
+          {t("me_link_title")}
+        </div>
+        <p className="mt-1.5 text-[11px] text-[#A0A0B0] leading-relaxed">
+          {t("me_link_body")}
+        </p>
+        <div className="mt-3 flex gap-2">
+          <input
+            type="text"
+            inputMode="text"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            maxLength={12}
+            value={linkCode}
+            onChange={(e) =>
+              setLinkCode(
+                e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "")
+              )
+            }
+            placeholder={t("me_link_placeholder")}
+            className="flex-1 h-11 rounded-xl border border-white/10 bg-black/40 px-3 font-mono text-sm tracking-[0.2em] text-[#E8E8F0] outline-none focus:border-[#00E5FF]/40 placeholder:tracking-normal placeholder:text-[#6B6B78]"
+          />
+          <button
+            type="button"
+            disabled={linkBusy || linkCode.trim().length < 4}
+            onClick={() => {
+              void (async () => {
+                setLinkBusy(true);
+                try {
+                  const r = await onLinkCode(linkCode);
+                  if (!r.ok) {
+                    const msg =
+                      r.error === "code_invalid_or_expired"
+                        ? t("me_link_bad")
+                        : r.error === "auth_required"
+                          ? t("me_link_auth")
+                          : t("me_link_fail");
+                    toast.error(msg);
+                    void hapticNotification("error");
+                    return;
+                  }
+                  setLinkCode("");
+                } finally {
+                  setLinkBusy(false);
+                }
+              })();
+            }}
+            className="h-11 px-4 rounded-xl border border-[#00E5FF]/40 bg-[#00E5FF]/15 text-[#00E5FF] font-mono text-[11px] tracking-wider font-semibold disabled:opacity-40 active:scale-[0.98]"
+          >
+            {linkBusy ? "…" : t("me_link_apply")}
+          </button>
+        </div>
+      </div>
 
       <MiniCard onClick={onOpenAlerts}>
         <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">

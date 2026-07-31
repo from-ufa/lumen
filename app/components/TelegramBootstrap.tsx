@@ -41,8 +41,12 @@ export default function TelegramBootstrap() {
     setInTg(true);
     void (async () => {
       await authenticateTelegramSession();
-      // TS-1: vault hydrate (force after /link even if stale local token)
+      // Vault hydrate — respects Mini App DISCONNECT opt-out
       const h = await hydrateSettingsFromTelegramVault();
+      if (h.reason === "opted_out") {
+        // User disconnected — do not broadcast restore
+        return;
+      }
       if (h.applied || h.reason === "already_synced") {
         try {
           window.dispatchEvent(

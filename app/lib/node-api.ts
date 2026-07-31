@@ -199,19 +199,146 @@ export function loadBridgeToken(): string {
   }
 }
 
+/** User explicitly disconnected in Mini App — do not auto-restore vault. */
+export const LS_BRIDGE_OPTED_OUT = "lumen-bridge-opted-out";
+
+export function isBridgeOptedOut(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(LS_BRIDGE_OPTED_OUT) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setBridgeOptedOut(v: boolean): void {
+  try {
+    if (v) localStorage.setItem(LS_BRIDGE_OPTED_OUT, "1");
+    else localStorage.removeItem(LS_BRIDGE_OPTED_OUT);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function saveBridgeToken(token: string): void {
   try {
-    if (token) localStorage.setItem(LS_BRIDGE_TOKEN, token);
-    else localStorage.removeItem(LS_BRIDGE_TOKEN);
+    if (token) {
+      localStorage.setItem(LS_BRIDGE_TOKEN, token);
+      // Explicit connect/link cancels disconnect opt-out
+      setBridgeOptedOut(false);
+    } else {
+      localStorage.removeItem(LS_BRIDGE_TOKEN);
+    }
   } catch {
     /* ignore */
   }
 }
 
 /**
+ * Mini App DISCONNECT: wipe local token, mark opt-out, clear TG vault.
+ * Prevents hydrate from re-applying token on next open.
+ */
+export async function disconnectBridgeFully(): Promise<void> {
+  saveBridgeToken("");
+  saveNodeMode("lumen");
+  try {
+    saveOracleViewMode("network");
+  } catch {
+    /* */
+  }
+  setBridgeOptedOut(true);
+  try {
+    await fetch("/api/tg/settings", {
+      method: "DELETE",
+      credentials: "include",
+      cache: "no-store",
+    });
+  } catch {
+    /* vault clear best-effort (needs TG auth cookie) */
+  }
+}
+
+/**
+ * Claim browser link code inside Mini App (same as bot /link).
+ * Applies token locally and clears opt-out.
+ */
+export async function claimLinkCodeInMiniApp(code: string): Promise<{
+  ok: boolean;
+  error?: string;
+  settings?: {
+    bridgeToken: string;
+    nodeMode: string | null;
+    oracleView: string | null;
+    tokenFp?: string;
+  };
+}> {
+  const c = code.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (c.length < 4) return { ok: false, error: "bad_code" };
+  try {
+    const res = await fetch("/api/tg/settings/claim", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ code: c }),
+    });
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      settings?: {
+        bridgeToken?: string;
+        nodeMode?: string | null;
+        oracleView?: string | null;
+        tokenFp?: string;
+      };
+    };
+    if (!res.ok || !data.ok || !data.settings?.bridgeToken) {
+      return {
+        ok: false,
+        error:
+          data.error === "auth_required"
+            ? "auth_required"
+            : data.error || "claim_failed",
+      };
+    }
+    const tok = data.settings.bridgeToken;
+    setBridgeOptedOut(false);
+    saveBridgeToken(tok);
+    if (data.settings.nodeMode === "my" || data.settings.nodeMode === "lumen") {
+      saveNodeMode(data.settings.nodeMode);
+    } else {
+      saveNodeMode("my");
+    }
+    if (
+      data.settings.oracleView === "my" ||
+      data.settings.oracleView === "network"
+    ) {
+      saveOracleViewMode(data.settings.oracleView);
+    }
+    // Consume force flag after we applied
+    void fetch("/api/tg/settings?consumeForce=1", {
+      credentials: "include",
+      cache: "no-store",
+    });
+    return {
+      ok: true,
+      settings: {
+        bridgeToken: tok,
+        nodeMode: data.settings.nodeMode ?? "my",
+        oracleView: data.settings.oracleView ?? null,
+        tokenFp: data.settings.tokenFp,
+      },
+    };
+  } catch {
+    return { ok: false, error: "network" };
+  }
+}
+
+/**
  * TS-1: pull vault settings into localStorage for Telegram Mini App.
  * - Default: never overwrite non-empty local token (safe).
- * - After /link: forceHydrateOnce=true → overwrite once even if local differs.
+ * - After /link (forceHydrateOnce): overwrite once even if local differs.
+ * - After Mini DISCONNECT (opted out): never auto-restore unless force link.
  */
 export async function hydrateSettingsFromTelegramVault(opts?: {
   force?: boolean;
@@ -256,14 +383,22 @@ export async function hydrateSettingsFromTelegramVault(opts?: {
     }
     const vaultToken = data.settings.bridgeToken;
     const local = loadBridgeToken();
-    const force =
-      !!opts?.force ||
-      !!data.settings.forceHydrateOnce ||
-      // same user re-linked and tokens differ
-      (!!local && local !== vaultToken && !!data.settings.forceHydrateOnce);
+    const forceLink = !!data.settings.forceHydrateOnce;
+    const force = !!opts?.force || forceLink;
+
+    // User disconnected in Mini App — only re-apply after explicit /link force
+    if (isBridgeOptedOut() && !force) {
+      return {
+        ok: true,
+        applied: false,
+        reason: "opted_out",
+        tokenFp: data.settings.tokenFp,
+        tokenTail: data.settings.tokenTail,
+      };
+    }
 
     if (local && local === vaultToken) {
-      // Already correct — clear force if needed
+      setBridgeOptedOut(false);
       if (data.settings.forceHydrateOnce) {
         void fetch("/api/tg/settings?consumeForce=1", {
           credentials: "include",
@@ -289,6 +424,9 @@ export async function hydrateSettingsFromTelegramVault(opts?: {
       };
     }
 
+    // Empty local: only auto-fill from vault when force link OR not opted out
+    // (opted out already returned above)
+    setBridgeOptedOut(false);
     saveBridgeToken(vaultToken);
     if (data.settings.nodeMode === "my" || data.settings.nodeMode === "lumen") {
       saveNodeMode(data.settings.nodeMode);
@@ -299,7 +437,6 @@ export async function hydrateSettingsFromTelegramVault(opts?: {
     ) {
       saveOracleViewMode(data.settings.oracleView);
     }
-    // Consume force flag
     void fetch("/api/tg/settings?consumeForce=1", {
       credentials: "include",
       cache: "no-store",
