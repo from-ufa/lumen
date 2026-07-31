@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { X } from "lucide-react";
+import { Check, Copy, X } from "lucide-react";
 import { toast } from "sonner";
 import {
+  bridgeDockerCommand,
+  bridgeInstallCommand,
+  bridgeRunCommand,
   createBridgeToken,
   loadBridgeToken,
   loadNodeMode,
@@ -14,6 +17,87 @@ import {
 } from "../../lib/node-api";
 import { hapticImpact, hapticNotification } from "../../lib/telegram";
 import { sheetSpring, sheetVariants } from "../lib/motion";
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* fall through */
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function CopyBlock({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const onCopy = useCallback(async () => {
+    if (!value) return;
+    const ok = await copyText(value);
+    if (ok) {
+      setCopied(true);
+      void hapticImpact("light");
+      toast.success("Copied");
+      window.setTimeout(() => setCopied(false), 1600);
+    } else {
+      toast.error("Copy failed");
+    }
+  }, [value]);
+
+  if (!value) return null;
+
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between gap-2 mb-1.5">
+        <p className="text-[11px] font-mono text-[#A0A0B0] tracking-wide">
+          {label}
+        </p>
+        <button
+          type="button"
+          onClick={() => void onCopy()}
+          className="h-8 px-2.5 rounded-lg border border-white/10 inline-flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-[#E8E8F0] active:scale-[0.97]"
+        >
+          {copied ? (
+            <Check className="w-3 h-3 text-[#10B981]" />
+          ) : (
+            <Copy className="w-3 h-3" />
+          )}
+          {copied ? "COPIED" : "COPY"}
+        </button>
+      </div>
+      <pre className="rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 font-mono text-[10px] leading-relaxed text-[#E8E8F0] whitespace-pre-wrap break-all max-h-36 overflow-y-auto">
+        {value}
+      </pre>
+      {hint ? (
+        <p className="mt-1.5 text-[10px] text-[#A0A0B0]/85 leading-relaxed">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 export default function BridgeSheet({
   open,
@@ -33,27 +117,35 @@ export default function BridgeSheet({
   const [draftMode, setDraftMode] = useState<NodeMode>(mode);
   const [busy, setBusy] = useState(false);
 
+  const t = draft.trim();
+  const installCmd = useMemo(() => bridgeInstallCommand(), []);
+  const dockerCmd = useMemo(
+    () => (t ? bridgeDockerCommand(t) : ""),
+    [t]
+  );
+  const runCmd = useMemo(() => (t ? bridgeRunCommand(t) : ""), [t]);
+
   const save = useCallback(() => {
-    const t = draft.trim();
-    saveBridgeToken(t);
+    const next = draft.trim();
+    saveBridgeToken(next);
     saveNodeMode(draftMode);
-    onSaved(t, draftMode);
+    onSaved(next, draftMode);
     void hapticNotification("success");
-    toast.success(t ? "Bridge saved" : "Bridge token cleared");
+    toast.success(next ? "Bridge saved" : "Bridge token cleared");
     onClose();
   }, [draft, draftMode, onClose, onSaved]);
 
   const mint = useCallback(async () => {
     setBusy(true);
     try {
-      const { token: t } = await createBridgeToken("miniapp");
-      setDraft(t);
-      saveBridgeToken(t);
+      const { token: minted } = await createBridgeToken("miniapp");
+      setDraft(minted);
+      saveBridgeToken(minted);
       saveNodeMode("my");
       setDraftMode("my");
-      onSaved(t, "my");
+      onSaved(minted, "my");
       void hapticNotification("success");
-      toast.success("Token created — run Bridge agent with it");
+      toast.success("Token created — copy Docker cmd below");
     } catch (e) {
       void hapticNotification("error");
       toast.error(e instanceof Error ? e.message : "Mint failed");
@@ -140,7 +232,7 @@ export default function BridgeSheet({
               className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2.5 font-mono text-xs text-[#E8E8F0] outline-none focus:border-[#FF7A3D]/40"
             />
 
-            <div className="flex gap-2 mt-4">
+            <div className="flex gap-2 mt-4 mb-5">
               <button
                 type="button"
                 disabled={busy}
@@ -157,9 +249,40 @@ export default function BridgeSheet({
                 SAVE
               </button>
             </div>
-            <p className="mt-3 text-[10px] text-[#A0A0B0]/80 leading-relaxed">
-              Paste token from agent or generate here, then run Bridge next to
-              your Ergo node. Vault restore uses Telegram link flow.
+
+            <p className="text-[11px] font-mono text-[#A0A0B0] tracking-wide mb-3">
+              RUN NEXT TO YOUR ERGO NODE
+            </p>
+
+            {t ? (
+              <CopyBlock
+                label="DOCKER (RECOMMENDED)"
+                value={dockerCmd}
+                hint="Linux host network · reaches Ergo on 127.0.0.1:9053. Paste on the machine that runs your node."
+              />
+            ) : (
+              <p className="mb-4 text-[11px] text-[#A0A0B0] leading-relaxed">
+                Generate or paste a token to unlock the Docker one-liner.
+              </p>
+            )}
+
+            <CopyBlock
+              label="INSTALL.SH (NO DOCKER)"
+              value={installCmd}
+              hint="curl install from GitHub, then use RUN below."
+            />
+
+            {t ? (
+              <CopyBlock
+                label="RUN AGENT"
+                value={runCmd}
+                hint="After install.sh — same token as above."
+              />
+            ) : null}
+
+            <p className="mt-1 mb-2 text-[10px] text-[#A0A0B0]/80 leading-relaxed">
+              Vault restore uses Telegram link flow. Keep the agent running next
+              to your node for MY NODE mode.
             </p>
           </motion.div>
         </>

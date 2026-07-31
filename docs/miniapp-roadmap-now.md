@@ -10,10 +10,10 @@
 
 | Вкладка | Есть | Примечание |
 |---------|------|------------|
-| **Home** | LIVE, height, peers count, mempool, bridge, source, refresh, pull-to-refresh, Alerts chip | ✅ |
-| **Network (Net)** | **MAP first** (full-bleed) · LIST optional · LIVE \| ALL · peer sheet | ✅ (`markers` API; map fills toolbar→tabs) |
+| **Home** | LIVE, height, peers, mempool, **avg block time**, bridge, source, refresh, pull-to-refresh, Alerts | ✅ |
+| **Network (Net)** | **MAP first** (full-bleed) · LIST optional · **search** · LIVE \| ALL · peer sheet | ✅ |
 | **Oracles (Ora)** | NETWORK \| MY, USD/XAU prices | ✅ (API field `price`) |
-| **Me** | Bridge sheet, Alerts sheet, clear token, open full site | ✅ |
+| **Me** | Bridge sheet (**Docker / install copy**), Alerts, clear token, open full site | ✅ |
 
 ### UX shell
 - Bottom tabs, soft tab fade  
@@ -34,10 +34,10 @@
 
 | # | Фича | Приоритет |
 |---|------|-----------|
-| 1 | AVG block time (как web Metrics) на Home | 🔜 next |
-| 2 | Peer **search** on Network | 🔜 next |
-| 3 | Bridge sheet: **install / Docker copy** | 🔜 next |
-| 4 | RU strings / polish empty states | 🔜 polish |
+| 1 | AVG block time (как web Metrics) на Home | ✅ |
+| 2 | Peer **search** on Network LIST | ✅ |
+| 3 | Bridge sheet: **install / Docker copy** | ✅ |
+| 4 | RU strings / polish empty states | 🔜 next |
 | 5 | Mempool detail / tx list | only count now |
 | 6 | Share card PNG in mini | later |
 | 7 | Offline cache / PWA install | later |
@@ -57,13 +57,12 @@
 4. Network list from `markers` + state  
 5. Alerts sheet, My oracle segment, peer sheet, LIVE/ALL  
 6. **Net opens MAP first**, full-bleed to tab bar (`fillParent` + grid)  
+7. Home avg block time · Net LIST search · Bridge Docker/install copy  
 
 ### 🔜 Next (если продолжаем — порядок)
-1. **Home:** avg block time (как на web Metrics)  
-2. **Network:** peer search (desktop-style, mini-safe)  
-3. **Bridge sheet:** install command / Docker copy  
-4. **i18n RU** + empty-state polish  
-5. monorepo `packages/core` (shared types/fetch — later)  
+1. **i18n RU** + empty-state polish  
+2. monorepo `packages/core` (shared types/fetch — later)  
+3. Share PNG / offline PWA (later)  
 
 ### ⏸ Parallel (не mini, не блокирует)
 - **Devnet** full blocks — peer 213… / ждём Сашу (Chepurnoy); conf Matrix, ports 9130/9153, panel `devnet.ergolumen.net`  

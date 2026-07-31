@@ -10,7 +10,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Map as MapIcon, List, RefreshCw, Zap } from "lucide-react";
+import { Map as MapIcon, List, RefreshCw, Search, Zap } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchBridgeStatus,
@@ -18,11 +18,14 @@ import {
   hydrateSettingsFromTelegramVault,
   loadBridgeToken,
   loadNodeMode,
+  nodeRequestHeaders,
+  resolveNodeBase,
   saveBridgeToken,
   saveNodeMode,
   type BridgeStatus,
   type NodeMode,
 } from "../../lib/node-api";
+import { fetchAvgBlockTime } from "../../lib/blocks";
 import {
   getStartParam,
   getWebApp,
@@ -51,6 +54,9 @@ const PeerMap = dynamic(() => import("../../components/PeerMap"), {
     </div>
   ),
 });
+
+/** Same window as web MetricsCards / AVG BLOCK TIME */
+const AVG_BLOCK_WINDOW = 100;
 
 type NodeInfoLite = {
   fullHeight?: number;
@@ -401,6 +407,23 @@ export default function MiniAppShell() {
     enabled: tab === "home",
   });
 
+  /** Real avg block time from last N headers (one node request) */
+  const { data: avgBlock } = useQuery({
+    queryKey: ["mini-avg-block", mode, token],
+    queryFn: async () => {
+      if (mode === "my" && !token) return null;
+      return fetchAvgBlockTime(
+        resolveNodeBase(mode),
+        AVG_BLOCK_WINDOW,
+        nodeRequestHeaders(mode, token)
+      );
+    },
+    enabled: tab === "home" && (mode === "lumen" || !!token),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    retry: 1,
+  });
+
   const height =
     nodeInfo?.fullHeight ?? nodeInfo?.headersHeight ?? null;
   const headersH = nodeInfo?.headersHeight ?? null;
@@ -452,6 +475,7 @@ export default function MiniAppShell() {
         qc.invalidateQueries({ queryKey: ["mini-oracles"] }),
         qc.invalidateQueries({ queryKey: ["mini-peers-map"] }),
         qc.invalidateQueries({ queryKey: ["mini-mempool"] }),
+        qc.invalidateQueries({ queryKey: ["mini-avg-block"] }),
       ]);
     } finally {
       setRefreshing(false);
@@ -565,6 +589,9 @@ export default function MiniAppShell() {
                   syncPct={syncPct}
                   peersN={peersN}
                   mempoolSize={mempoolSize}
+                  avgBlockTime={avgBlock?.avgSeconds ?? null}
+                  avgBlockSamples={avgBlock?.samples ?? 0}
+                  avgBlockWindow={AVG_BLOCK_WINDOW}
                   nodeName={nodeInfo?.name}
                   mode={mode}
                   token={token}
@@ -664,6 +691,9 @@ function HomeBody({
   syncPct,
   peersN,
   mempoolSize,
+  avgBlockTime,
+  avgBlockSamples,
+  avgBlockWindow,
   nodeName,
   mode,
   token,
@@ -682,6 +712,9 @@ function HomeBody({
   syncPct: number | null;
   peersN?: number;
   mempoolSize: number;
+  avgBlockTime: number | null;
+  avgBlockSamples: number;
+  avgBlockWindow: number;
   nodeName?: string;
   mode: NodeMode;
   token: string;
@@ -696,6 +729,12 @@ function HomeBody({
   onToggleMode: () => void;
 }) {
   const usd = feeds.find((f) => f.id === "erg-usd" || f.pair === "ERG/USD");
+  const avgSub =
+    avgBlockTime != null && avgBlockSamples > 0
+      ? `LAST ${avgBlockWindow} · ${avgBlockSamples} Δ`
+      : avgBlockTime != null
+        ? `LAST ${avgBlockWindow}`
+        : "FROM NODE…";
   if (infoLoading) {
     return (
       <div className="space-y-3">
@@ -739,6 +778,13 @@ function HomeBody({
         <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-mono text-[#A0A0B0]">
           <span>Peers · {peersN ?? "—"}</span>
           <span>Mempool · {mempoolSize}</span>
+          <span className="text-[#FF7A3D]">
+            Avg block ·{" "}
+            {avgBlockTime != null ? `${avgBlockTime}s` : "—"}
+          </span>
+          <span className="text-[10px] text-[#A0A0B0]/90 truncate">
+            {avgSub}
+          </span>
           {nodeName ? (
             <span className="truncate col-span-2">Node · {nodeName}</span>
           ) : null}
@@ -916,11 +962,49 @@ function NetworkBody({
   void mode;
   void token;
   void height;
+  const [query, setQuery] = useState("");
+  const filtered = useMemo(() => {
+    const s = query.trim().toLowerCase();
+    if (!s) return peerRows;
+    return peerRows.filter((p) => {
+      const hay = [
+        p.name,
+        p.city,
+        p.country,
+        p.ip,
+        p.address,
+        p.version,
+        p.state,
+        p.status,
+        p.connectionType,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(s);
+    });
+  }, [peerRows, query]);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-lg font-semibold tracking-tight">Network</h1>
         <NetViewToggle netView={netView} setNetView={setNetView} />
+      </div>
+
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#A0A0B0]" />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search name, city, IP…"
+          enterKeyHint="search"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          className="w-full h-11 rounded-2xl border border-white/10 bg-black/30 pl-9 pr-3 font-mono text-[12px] text-[#E8E8F0] placeholder:text-[#A0A0B0]/70 outline-none focus:border-[#FF7A3D]/35"
+        />
       </div>
 
       <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
@@ -944,9 +1028,9 @@ function NetworkBody({
         <p className="text-[11px] font-mono text-[#A0A0B0]">
           {mapLoading
             ? "Loading peers…"
-            : `${peerRows.length} peers · ${netFilter}${
-                lowEnd ? " · lite" : ""
-              }`}
+            : `${filtered.length}${
+                query.trim() ? ` / ${peerRows.length}` : ""
+              } peers · ${netFilter}${lowEnd ? " · lite" : ""}`}
         </p>
         {mapLoading ? (
           <>
@@ -954,12 +1038,16 @@ function NetworkBody({
             <Skeleton className="h-16" />
             <Skeleton className="h-16" />
           </>
-        ) : peerRows.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <MiniCard>
-            <p className="text-sm text-[#A0A0B0]">No peers in this filter.</p>
+            <p className="text-sm text-[#A0A0B0]">
+              {query.trim()
+                ? "No peers match this search."
+                : "No peers in this filter."}
+            </p>
           </MiniCard>
         ) : (
-          peerRows.map((p, i) => (
+          filtered.map((p, i) => (
             <MiniCard
               key={`${p.id || p.ip || p.address || i}`}
               onClick={() => {
