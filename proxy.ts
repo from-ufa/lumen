@@ -91,6 +91,28 @@ export function proxy(req: NextRequest) {
   const password = readPublicPassword();
   const publicMode = password.length > 0;
   const pathname = req.nextUrl.pathname;
+  const host = (req.headers.get("host") || "").toLowerCase().split(":")[0];
+
+  // Mini App host → rewrite into /m shell (web stays on ergolumen.net)
+  // https://m.ergolumen.net/  →  /m
+  // Must keep same host/proto as the incoming request — absolute
+  // https://localhost rewrites break (Next listens HTTP only behind Caddy).
+  if (host === "m.ergolumen.net" || host === "m.localhost") {
+    const passThrough =
+      pathname.startsWith("/api/") ||
+      pathname.startsWith("/_next/") ||
+      pathname.startsWith("/bridge/") ||
+      pathname.startsWith("/m") ||
+      pathname === "/favicon.ico" ||
+      pathname === "/manifest.webmanifest";
+    if (!passThrough) {
+      const destPath = pathname === "/" ? "/m" : `/m${pathname}`;
+      // Caddy terminates TLS; next-server is plain HTTP on 127.0.0.1:3000.
+      // Absolute https:// rewrites → EPROTO (wrong version number).
+      const url = new URL(destPath + req.nextUrl.search, "http://127.0.0.1:3000");
+      return NextResponse.rewrite(url);
+    }
+  }
 
   // Public Bridge install / Docker assets (no secrets) — curl & docker build work remotely
   // GET /bridge/install.sh | bridge.js | package.json | package-lock.json

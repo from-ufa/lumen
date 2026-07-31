@@ -66,10 +66,25 @@ export default function TelegramBootstrap() {
     }
   }, []);
 
-  // Deep link start_param once
+  // Deep link start_param once (web only — Mini App shell handles tabs itself)
   useEffect(() => {
     if (deepLinkDone.current) return;
     if (!isTelegramMiniApp()) return;
+    // m.ergolumen.net / /m — MiniAppShell owns start_param → tabs
+    try {
+      const host = window.location.hostname.toLowerCase();
+      if (
+        host === "m.ergolumen.net" ||
+        host.startsWith("m.") ||
+        pathname === "/m" ||
+        pathname?.startsWith("/m/")
+      ) {
+        deepLinkDone.current = true;
+        return;
+      }
+    } catch {
+      /* */
+    }
     const view = parseStartView(getStartParam());
     if (!view) return;
     deepLinkDone.current = true;
@@ -89,24 +104,27 @@ export default function TelegramBootstrap() {
     if (view === "orbit") {
       router.replace("/?viz=constellation");
     }
-  }, [router]);
+  }, [router, pathname]);
 
-  // Vertical swipes: disable on dashboard viz / oracles (heavy touch UIs)
+  // Vertical swipes: disable on heavy touch UIs + Mini App shell
   useEffect(() => {
     if (!isTelegramMiniApp()) return;
     const heavy =
       pathname === "/" ||
       pathname === "/oracles" ||
-      pathname?.startsWith("/oracles");
+      pathname?.startsWith("/oracles") ||
+      pathname === "/m" ||
+      pathname?.startsWith("/m/");
     setTelegramVerticalSwipes(!heavy);
     return () => setTelegramVerticalSwipes(true);
   }, [pathname]);
 
-  // Low-end: prefer Map once on first dashboard entry
+  // Low-end: prefer Map once on first *web* dashboard entry (not Mini App)
   useEffect(() => {
     if (!isTelegramMiniApp() || !isTelegramLowEnd()) return;
     if (pathname !== "/") return;
     try {
+      if (window.location.hostname.toLowerCase() === "m.ergolumen.net") return;
       const key = "lumen_tg_low_map_once";
       if (sessionStorage.getItem(key)) return;
       const hasViz = new URLSearchParams(window.location.search).get("viz");

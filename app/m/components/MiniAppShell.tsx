@@ -1,0 +1,741 @@
+"use client";
+
+/**
+ * Lumen Telegram Mini App — tab shell (not a website clone).
+ * Tabs: Home · Network · Oracles · Me
+ * Decisions: m.ergolumen.net · List|Map · after /link → Home + toast
+ */
+
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Map as MapIcon, List, RefreshCw, Zap } from "lucide-react";
+import { toast } from "sonner";
+import {
+  fetchBridgeStatus,
+  fetchNodeResource,
+  hydrateSettingsFromTelegramVault,
+  loadBridgeToken,
+  loadNodeMode,
+  saveBridgeToken,
+  saveNodeMode,
+  type BridgeStatus,
+  type NodeMode,
+} from "../../lib/node-api";
+import {
+  getStartParam,
+  hapticImpact,
+  initTelegramApp,
+  isTelegramLowEnd,
+  isTelegramMiniApp,
+} from "../../lib/telegram";
+import TabBar from "./TabBar";
+import MiniCard from "./MiniCard";
+import BridgeSheet from "./BridgeSheet";
+import { tabFade } from "../lib/motion";
+import {
+  isMiniTabId,
+  openSheetFromStartParam,
+  tabFromStartParam,
+  type MiniTabId,
+} from "../lib/tabs";
+
+const PeerMap = dynamic(() => import("../../components/PeerMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full flex items-center justify-center font-mono text-[10px] tracking-[0.2em] text-[#A0A0B0]">
+      MAP…
+    </div>
+  ),
+});
+
+type NodeInfoLite = {
+  fullHeight?: number;
+  headersHeight?: number;
+  peersCount?: number;
+  name?: string;
+  isMining?: boolean;
+};
+
+async function fetchOraclesNetwork() {
+  const res = await fetch("/api/oracles?mode=network", { cache: "no-store" });
+  if (!res.ok) throw new Error("oracles");
+  return res.json() as Promise<{
+    feeds?: Array<{
+      id: string;
+      name?: string;
+      latestPrice?: number | null;
+      priceChange24h?: number | null;
+    }>;
+  }>;
+}
+
+async function fetchPeersMap(mode: NodeMode, token: string) {
+  const q =
+    mode === "my" && token
+      ? `?mode=my&token=${encodeURIComponent(token)}`
+      : "";
+  const res = await fetch(`/api/peers/map${q}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("map");
+  return res.json() as Promise<{
+    peers?: Array<{
+      address?: string;
+      ip?: string;
+      city?: string;
+      country?: string;
+      status?: string;
+    }>;
+    me?: { city?: string; country?: string };
+  }>;
+}
+
+export default function MiniAppShell() {
+  const reduce = useReducedMotion();
+  const qc = useQueryClient();
+  const [tab, setTab] = useState<MiniTabId>("home");
+  const [bridgeOpen, setBridgeOpen] = useState(false);
+  const [netView, setNetView] = useState<"list" | "map">("list");
+  const [token, setToken] = useState("");
+  const [mode, setMode] = useState<NodeMode>("lumen");
+  const [lowEnd, setLowEnd] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Boot: TG chrome + local settings + deep link
+  useEffect(() => {
+    initTelegramApp();
+    setToken(loadBridgeToken());
+    setMode(loadNodeMode());
+    setLowEnd(isTelegramLowEnd());
+
+    const param = getStartParam();
+    setTab(tabFromStartParam(param));
+    const sheet = openSheetFromStartParam(param);
+    if (sheet === "bridge") setBridgeOpen(true);
+
+    // Query ?tab=
+    try {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (isMiniTabId(t)) setTab(t);
+    } catch {
+      /* */
+    }
+
+    // Decision 3: after vault hydrate from /link → Home + toast
+    const onHydrate = (ev: Event) => {
+      const detail = (ev as CustomEvent).detail as
+        | { applied?: boolean }
+        | undefined;
+      setToken(loadBridgeToken());
+      setMode(loadNodeMode());
+      if (detail?.applied) {
+        setTab("home");
+        toast.success("Bridge restored");
+        void hapticImpact("medium");
+      }
+    };
+    window.addEventListener("lumen:settings-hydrated", onHydrate);
+
+    // Force hydrate once on mini open (TG vault)
+    if (isTelegramMiniApp()) {
+      void hydrateSettingsFromTelegramVault().then((h) => {
+        if (h.applied) {
+          setToken(loadBridgeToken());
+          setMode(loadNodeMode());
+          setTab("home");
+          toast.success("Bridge restored");
+        } else if (h.reason === "already_synced") {
+          setToken(loadBridgeToken());
+        }
+      });
+    }
+
+    return () => window.removeEventListener("lumen:settings-hydrated", onHydrate);
+  }, []);
+
+  const onTab = useCallback(
+    (id: MiniTabId) => {
+      if (id === tab) return;
+      void hapticImpact("light");
+      setTab(id);
+      try {
+        const u = new URL(window.location.href);
+        u.searchParams.set("tab", id);
+        window.history.replaceState({}, "", u.pathname + u.search);
+      } catch {
+        /* */
+      }
+    },
+    [tab]
+  );
+
+  const {
+    data: nodeInfo,
+    isFetching: infoFetching,
+    refetch: refetchInfo,
+    isError: infoError,
+  } = useQuery({
+    queryKey: ["mini-nodeInfo", mode, token],
+    queryFn: async (): Promise<NodeInfoLite> => {
+      if (mode === "my" && !token) throw new Error("no_token");
+      const res = await fetchNodeResource(mode, token, "info", {
+        timeoutMs: mode === "my" ? 14000 : 6500,
+      });
+      if (!res.ok) throw new Error(`info ${res.status}`);
+      return res.json();
+    },
+    refetchInterval: 8_000,
+    retry: 1,
+  });
+
+  const { data: bridgeStatus } = useQuery({
+    queryKey: ["mini-bridge", token],
+    queryFn: (): Promise<BridgeStatus> => fetchBridgeStatus(token),
+    enabled: !!token,
+    refetchInterval: 8_000,
+  });
+
+  const { data: oracles } = useQuery({
+    queryKey: ["mini-oracles"],
+    queryFn: fetchOraclesNetwork,
+    refetchInterval: 8_000,
+    enabled: tab === "oracles" || tab === "home",
+  });
+
+  const { data: mapData, isLoading: mapLoading } = useQuery({
+    queryKey: ["mini-peers-map", mode, token],
+    queryFn: () => fetchPeersMap(mode, token),
+    enabled: tab === "network",
+    refetchInterval: 12_000,
+  });
+
+  const height =
+    nodeInfo?.fullHeight ?? nodeInfo?.headersHeight ?? null;
+  const peersN = nodeInfo?.peersCount;
+  const bridgeOnline = !!bridgeStatus?.connected;
+  const isOnline = !infoError && height != null;
+
+  const feeds = oracles?.feeds ?? [];
+  const peerRows = useMemo(() => {
+    const list = mapData?.peers ?? [];
+    return list.slice(0, 80);
+  }, [mapData?.peers]);
+
+  const refreshAll = useCallback(async () => {
+    setRefreshing(true);
+    void hapticImpact("light");
+    try {
+      await Promise.all([
+        refetchInfo(),
+        qc.invalidateQueries({ queryKey: ["mini-bridge"] }),
+        qc.invalidateQueries({ queryKey: ["mini-oracles"] }),
+        qc.invalidateQueries({ queryKey: ["mini-peers-map"] }),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [qc, refetchInfo]);
+
+  const onSavedBridge = useCallback((t: string, m: NodeMode) => {
+    setToken(t);
+    setMode(m);
+    void qc.invalidateQueries({ queryKey: ["mini-nodeInfo"] });
+    void qc.invalidateQueries({ queryKey: ["mini-bridge"] });
+    void qc.invalidateQueries({ queryKey: ["mini-peers-map"] });
+  }, [qc]);
+
+  return (
+    <div className="flex flex-col h-dvh max-h-dvh overflow-hidden">
+      {/* Top safe + brand strip */}
+      <header
+        className="shrink-0 px-4 pb-2 border-b border-white/[0.06]"
+        style={{ paddingTop: "max(0.65rem, env(safe-area-inset-top))" }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#FF7A3D] to-[#00E5FF] flex items-center justify-center shrink-0">
+              <Zap className="w-4 h-4 text-black" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[17px] font-semibold tracking-tight leading-none">
+                lumen
+              </div>
+              <div className="text-[9px] font-mono text-[#A0A0B0] tracking-[0.14em] mt-0.5">
+                {mode === "my" ? "MY NODE" : "NETWORK"}
+              </div>
+            </div>
+          </div>
+          <span
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono tracking-wider ${
+              isOnline
+                ? "border-[#10B981]/40 text-[#10B981] bg-[#10B981]/10"
+                : "border-[#EF4444]/40 text-[#EF4444] bg-[#EF4444]/10"
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
+              }`}
+            />
+            {isOnline ? "LIVE" : "OFF"}
+          </span>
+        </div>
+      </header>
+
+      {/* Content */}
+      <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={tab}
+            className="px-3.5 py-3 pb-4"
+            initial={reduce ? false : tabFade.initial}
+            animate={tabFade.animate}
+            exit={reduce ? undefined : tabFade.exit}
+            transition={
+              reduce ? { duration: 0.01 } : tabFade.transition
+            }
+          >
+            {tab === "home" && (
+              <HomeBody
+                height={height}
+                peersN={peersN}
+                nodeName={nodeInfo?.name}
+                mode={mode}
+                token={token}
+                bridgeOnline={bridgeOnline}
+                infoFetching={infoFetching || refreshing}
+                feeds={feeds}
+                onRefresh={() => void refreshAll()}
+                onOpenBridge={() => setBridgeOpen(true)}
+                onOracles={() => onTab("oracles")}
+                onToggleMode={() => {
+                  const next: NodeMode = mode === "my" ? "lumen" : "my";
+                  if (next === "my" && !token) {
+                    setBridgeOpen(true);
+                    return;
+                  }
+                  saveNodeMode(next);
+                  setMode(next);
+                  void hapticImpact("light");
+                }}
+              />
+            )}
+            {tab === "network" && (
+              <NetworkBody
+                netView={netView}
+                setNetView={setNetView}
+                lowEnd={lowEnd}
+                peerRows={peerRows}
+                mapLoading={mapLoading}
+                mode={mode}
+                token={token}
+                height={height}
+              />
+            )}
+            {tab === "oracles" && (
+              <OraclesBody
+                feeds={feeds}
+                hasToken={!!token}
+                onConnect={() => setBridgeOpen(true)}
+              />
+            )}
+            {tab === "me" && (
+              <MeBody
+                mode={mode}
+                token={token}
+                bridgeOnline={bridgeOnline}
+                onOpenBridge={() => setBridgeOpen(true)}
+                onClear={() => {
+                  saveBridgeToken("");
+                  saveNodeMode("lumen");
+                  setToken("");
+                  setMode("lumen");
+                  toast.message("Token cleared");
+                }}
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      <TabBar active={tab} onChange={onTab} />
+
+      <BridgeSheet
+        open={bridgeOpen}
+        onClose={() => setBridgeOpen(false)}
+        token={token}
+        mode={mode}
+        onSaved={onSavedBridge}
+      />
+    </div>
+  );
+}
+
+function HomeBody({
+  height,
+  peersN,
+  nodeName,
+  mode,
+  token,
+  bridgeOnline,
+  infoFetching,
+  feeds,
+  onRefresh,
+  onOpenBridge,
+  onOracles,
+  onToggleMode,
+}: {
+  height: number | null;
+  peersN?: number;
+  nodeName?: string;
+  mode: NodeMode;
+  token: string;
+  bridgeOnline: boolean;
+  infoFetching: boolean;
+  feeds: Array<{ id: string; latestPrice?: number | null }>;
+  onRefresh: () => void;
+  onOpenBridge: () => void;
+  onOracles: () => void;
+  onToggleMode: () => void;
+}) {
+  const usd = feeds.find((f) => f.id === "erg-usd");
+  return (
+    <div className="space-y-3">
+      <MiniCard onClick={onToggleMode}>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
+            SOURCE
+          </span>
+          <span className="text-xs font-mono text-[#FF7A3D] tracking-wider">
+            {mode === "my" ? "MY NODE ›" : "LUMEN ›"}
+          </span>
+        </div>
+      </MiniCard>
+
+      <MiniCard>
+        <div className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
+          HEIGHT
+        </div>
+        <div className="mt-1 font-mono text-3xl tracking-tight tabular-nums text-white">
+          {height != null ? height.toLocaleString() : "—"}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-mono text-[#A0A0B0]">
+          <span>Peers · {peersN ?? "—"}</span>
+          {nodeName ? <span className="truncate">Node · {nodeName}</span> : null}
+          {token ? (
+            <span className={bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"}>
+              Bridge · {bridgeOnline ? "online" : "offline"}
+            </span>
+          ) : (
+            <span>Bridge · not set</span>
+          )}
+        </div>
+      </MiniCard>
+
+      <div className="grid grid-cols-2 gap-2">
+        <ActionChip
+          label={infoFetching ? "…" : "Refresh"}
+          icon={
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${infoFetching ? "animate-spin" : ""}`}
+            />
+          }
+          onClick={onRefresh}
+        />
+        <ActionChip label="Bridge" onClick={onOpenBridge} />
+        <ActionChip label="Oracles" onClick={onOracles} />
+        <ActionChip
+          label={
+            usd?.latestPrice != null
+              ? `$${Number(usd.latestPrice).toFixed(2)}`
+              : "ERG/USD"
+          }
+          onClick={onOracles}
+        />
+      </div>
+
+      {!token ? (
+        <MiniCard onClick={onOpenBridge}>
+          <p className="text-sm text-[#E8E8F0]">Connect your node</p>
+          <p className="text-[11px] text-[#A0A0B0] mt-1">
+            Generate or paste a bridge token — no desktop site needed.
+          </p>
+        </MiniCard>
+      ) : null}
+    </div>
+  );
+}
+
+function ActionChip({
+  label,
+  onClick,
+  icon,
+}: {
+  label: string;
+  onClick: () => void;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="h-12 rounded-2xl border border-white/10 bg-white/[0.05] font-mono text-[11px] tracking-wider text-[#E8E8F0] inline-flex items-center justify-center gap-1.5 active:scale-[0.98] lumen-ui-transition"
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function NetworkBody({
+  netView,
+  setNetView,
+  lowEnd,
+  peerRows,
+  mapLoading,
+  mode,
+  token,
+  height,
+}: {
+  netView: "list" | "map";
+  setNetView: (v: "list" | "map") => void;
+  lowEnd: boolean;
+  peerRows: Array<{
+    address?: string;
+    ip?: string;
+    city?: string;
+    country?: string;
+    status?: string;
+  }>;
+  mapLoading: boolean;
+  mode: NodeMode;
+  token: string;
+  height: number | null;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold tracking-tight">Network</h1>
+        <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
+          <button
+            type="button"
+            onClick={() => {
+              setNetView("list");
+              void hapticImpact("light");
+            }}
+            className={`h-9 px-3 rounded-full inline-flex items-center gap-1 text-[10px] font-mono tracking-wider ${
+              netView === "list"
+                ? "bg-white/10 text-white"
+                : "text-[#A0A0B0]"
+            }`}
+          >
+            <List className="w-3.5 h-3.5" /> LIST
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setNetView("map");
+              void hapticImpact("light");
+            }}
+            className={`h-9 px-3 rounded-full inline-flex items-center gap-1 text-[10px] font-mono tracking-wider ${
+              netView === "map"
+                ? "bg-white/10 text-white"
+                : "text-[#A0A0B0]"
+            }`}
+          >
+            <MapIcon className="w-3.5 h-3.5" /> MAP
+          </button>
+        </div>
+      </div>
+
+      {netView === "list" ? (
+        <div className="space-y-2">
+          <p className="text-[11px] font-mono text-[#A0A0B0]">
+            {mapLoading
+              ? "Loading peers…"
+              : `${peerRows.length} peers${lowEnd ? " · lite" : ""}`}
+          </p>
+          {peerRows.length === 0 && !mapLoading ? (
+            <MiniCard>
+              <p className="text-sm text-[#A0A0B0]">No peer geo yet.</p>
+            </MiniCard>
+          ) : (
+            peerRows.map((p, i) => (
+              <MiniCard key={`${p.ip || p.address || i}`}>
+                <div className="flex justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm truncate">
+                      {p.city || p.country || "Unknown"}
+                      {p.country && p.city ? `, ${p.country}` : ""}
+                    </div>
+                    <div className="text-[10px] font-mono text-[#A0A0B0] truncate mt-0.5">
+                      {p.ip || p.address || "—"}
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-mono text-[#A0A0B0] shrink-0">
+                    {p.status || ""}
+                  </span>
+                </div>
+              </MiniCard>
+            ))
+          )}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-white/10 overflow-hidden h-[min(62dvh,520px)] bg-[#0C0C12]">
+          <PeerMap
+            blockHeight={height ?? undefined}
+            hideControls={false}
+            nodeMode={mode}
+            bridgeToken={token}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OraclesBody({
+  feeds,
+  hasToken,
+  onConnect,
+}: {
+  feeds: Array<{
+    id: string;
+    name?: string;
+    latestPrice?: number | null;
+    priceChange24h?: number | null;
+  }>;
+  hasToken: boolean;
+  onConnect: () => void;
+}) {
+  const usd = feeds.find((f) => f.id === "erg-usd");
+  const xau = feeds.find((f) => f.id === "erg-xau");
+  return (
+    <div className="space-y-3">
+      <h1 className="text-lg font-semibold tracking-tight">Oracles</h1>
+      <div className="grid grid-cols-1 gap-2">
+        <OracleTile title="ERG / USD" price={usd?.latestPrice} ch={usd?.priceChange24h} accent="#00E5FF" />
+        <OracleTile title="ERG / XAU" price={xau?.latestPrice} ch={xau?.priceChange24h} accent="#E8C547" />
+      </div>
+      {!hasToken ? (
+        <MiniCard onClick={onConnect}>
+          <p className="text-sm">My Oracle</p>
+          <p className="text-[11px] text-[#A0A0B0] mt-1">
+            Connect bridge to see your operator view.
+          </p>
+        </MiniCard>
+      ) : (
+        <MiniCard>
+          <p className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
+            MY ORACLE
+          </p>
+          <p className="text-sm mt-1 text-[#E8E8F0]">
+            Use full site for dual constellation · token is ready.
+          </p>
+        </MiniCard>
+      )}
+    </div>
+  );
+}
+
+function OracleTile({
+  title,
+  price,
+  ch,
+  accent,
+}: {
+  title: string;
+  price?: number | null;
+  ch?: number | null;
+  accent: string;
+}) {
+  const up = ch != null && ch >= 0;
+  return (
+    <MiniCard>
+      <div className="text-[10px] font-mono tracking-[0.16em]" style={{ color: accent }}>
+        {title}
+      </div>
+      <div className="mt-1 font-mono text-2xl tabular-nums text-white">
+        {price != null && Number.isFinite(price)
+          ? price < 10
+            ? price.toFixed(4)
+            : price.toFixed(2)
+          : "—"}
+      </div>
+      {ch != null ? (
+        <div
+          className={`mt-1 text-[11px] font-mono ${
+            up ? "text-[#10B981]" : "text-[#EF4444]"
+          }`}
+        >
+          {up ? "+" : ""}
+          {(ch * 100).toFixed(2)}%
+        </div>
+      ) : null}
+    </MiniCard>
+  );
+}
+
+function MeBody({
+  mode,
+  token,
+  bridgeOnline,
+  onOpenBridge,
+  onClear,
+}: {
+  mode: NodeMode;
+  token: string;
+  bridgeOnline: boolean;
+  onOpenBridge: () => void;
+  onClear: () => void;
+}) {
+  const tail = token ? `…${token.slice(-6)}` : "—";
+  return (
+    <div className="space-y-3">
+      <h1 className="text-lg font-semibold tracking-tight">Me</h1>
+      <MiniCard onClick={onOpenBridge}>
+        <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
+          BRIDGE
+        </div>
+        <div className="mt-1 text-sm">
+          {token ? (
+            <>
+              Token {tail} ·{" "}
+              <span className={bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"}>
+                {bridgeOnline ? "online" : "offline"}
+              </span>
+            </>
+          ) : (
+            "Not connected — tap to set up"
+          )}
+        </div>
+        <div className="mt-1 text-[11px] font-mono text-[#A0A0B0]">
+          Mode · {mode === "my" ? "My Node" : "lumen"}
+        </div>
+      </MiniCard>
+      <MiniCard
+        onClick={() => {
+          try {
+            window.open("https://ergolumen.net", "_blank", "noopener,noreferrer");
+          } catch {
+            /* */
+          }
+        }}
+      >
+        <div className="text-sm">Open full site</div>
+        <div className="text-[11px] text-[#A0A0B0] mt-0.5">
+          Orbit · desktop cockpit · ergolumen.net
+        </div>
+      </MiniCard>
+      {token ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="w-full h-11 rounded-xl border border-[#EF4444]/30 text-[#EF4444] font-mono text-[11px] tracking-wider"
+        >
+          CLEAR TOKEN
+        </button>
+      ) : null}
+    </div>
+  );
+}
