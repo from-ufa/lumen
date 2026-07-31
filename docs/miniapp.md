@@ -139,6 +139,24 @@ Orbit 3D · Boom · typewriters · dual WebGL oracles · 5-й tab
 
 ---
 
-## Later (optional)
+## Agreed next (see ROADMAP.md)
 
-monorepo `packages/core` · share PNG · quiet hours · MAP search · devnet full · iOS Phase 2  
+After review fact-check — **priority backlog**:
+
+| Pri | Items |
+|-----|--------|
+| **P0 Security** | Hash bridge tokens at rest · token rotation · audit log |
+| **P1 Bridge** | Hub metrics · per-token rate limit · staging |
+| **P2 Alerts** | Quiet hours · extra thresholds · alert history · (later webhook) |
+| **P3 Product** | Time-series charts · onboarding video · discoverability · GeoIP opt-out |
+| **P4 Eng** | GitHub Actions CI · smoke tests |
+
+Full table: [ROADMAP.md](./ROADMAP.md) · Mini short map: [miniapp-roadmap-now.md](./miniapp-roadmap-now.md)
+
+**Already shipped (do not re-plan as missing):** install one-liner, Alerts 9 types + mute, Mini Me LINK/DISCONNECT, dual mode, TG bot OPEN APP/WEB.
+
+---
+
+## Out of mini
+
+Orbit 3D · Boom · typewriters · dual WebGL · 5th tab  

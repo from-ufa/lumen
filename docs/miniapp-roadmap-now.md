@@ -1,40 +1,47 @@
 # Mini App — product map
 
 **URL:** https://m.ergolumen.net  
-**Full product description:** [miniapp.md](./miniapp.md)  
-**Web:** https://ergolumen.net  
+**Full description:** [miniapp.md](./miniapp.md)  
+**Product roadmap (incl. agreed improvements):** [ROADMAP.md](./ROADMAP.md)  
 **Updated:** 2026-07-31  
 
 ---
 
-## Architecture
+## Architecture (shipped)
 
 ```
 HOME  Overview | Blocks | Mempool
 NET   MAP first (full-bleed) | LIST + search
 ORA   NETWORK | MY  ·  Pools | Operators
 ME    Connection · LINK · DISCONNECT · EN/RU
-🔔    Alerts hub (header) — 9 toggles + master + thresholds
+🔔    Alerts hub — 9 toggles + master + thresholds
 ```
 
-Bot `/start` → **OPEN APP** → m.ergolumen.net  
-Guest = LUMEN only · YOU only with personal MY + token  
-DISCONNECT sticks (opt-out + vault clear)  
-LINK: site code → Me paste  
+Bot `/start` → **OPEN APP** + **OPEN WEB**  
+Guest = LUMEN · DISCONNECT sticks · LINK from site  
 
 ---
 
-## Done (production)
+## Done
 
-MVP shell · MAP full-bleed · i18n · rich ora · operators  
-Home command center · blocks · mempool  
-TG alerts catalog with per-type mute  
-Me status + disconnect + link  
-LUMEN labels · laconic bot start  
+MVP · MAP · i18n · rich ora · operators · blocks/mempool  
+Alerts catalog mute · Me status · bot start · no Desktop fullscreen  
 
-## Later (optional)
+---
 
-monorepo core · share PNG · quiet hours · MAP search · devnet · iOS P2  
+## Next (from agreed ROADMAP — when we continue)
+
+| Pri | Focus |
+|-----|--------|
+| **P0** | Token hash at rest · rotation · audit log |
+| **P1** | Bridge metrics · per-token rate limit · staging |
+| **P2** | Quiet hours · extra thresholds · alert history |
+| **P3** | Time-series charts · discoverability · map privacy opt-out |
+| **P4** | CI + smoke tests |
+
+Install one-liner **already exists** (`bridge/install.sh`) — onboarding polish = video/docs, not inventing curl.
+
+---
 
 ## Deploy
 
