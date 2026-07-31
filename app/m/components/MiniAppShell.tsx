@@ -207,7 +207,8 @@ export default function MiniAppShell() {
   const [tab, setTab] = useState<MiniTabId>("home");
   const [bridgeOpen, setBridgeOpen] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [netView, setNetView] = useState<"list" | "map">("list");
+  /** Default MAP first; LIST on demand */
+  const [netView, setNetView] = useState<"list" | "map">("map");
   const [netFilter, setNetFilter] = useState<"live" | "all">("live");
   const [peerDetail, setPeerDetail] = useState<PeerRow | null>(null);
   const [oracleSeg, setOracleSeg] = useState<"network" | "my">("network");
@@ -507,9 +508,13 @@ export default function MiniAppShell() {
         </div>
       </header>
 
-      {/* Content + pull-to-refresh on Home */}
+      {/* Content: Network MAP fills remaining viewport; others scroll */}
       <main
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+        className={`flex-1 min-h-0 overflow-x-hidden ${
+          tab === "network" && netView === "map"
+            ? "flex flex-col overflow-hidden"
+            : "overflow-y-auto"
+        }`}
         onTouchStart={(e) => {
           if (tab !== "home") return;
           (e.currentTarget as HTMLElement & { _ty?: number })._ty =
@@ -532,95 +537,106 @@ export default function MiniAppShell() {
             {pullY > 56 ? "Release to refresh" : "Pull to refresh"}
           </div>
         ) : null}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={tab}
-            className="px-3.5 py-3 pb-4"
-            initial={reduce ? false : tabFade.initial}
-            animate={tabFade.animate}
-            exit={reduce ? undefined : tabFade.exit}
-            transition={
-              reduce ? { duration: 0.01 } : tabFade.transition
-            }
-          >
-            {tab === "home" && (
-              <HomeBody
-                height={height}
-                headersH={headersH}
-                syncPct={syncPct}
-                peersN={peersN}
-                mempoolSize={mempoolSize}
-                nodeName={nodeInfo?.name}
-                mode={mode}
-                token={token}
-                bridgeOnline={bridgeOnline}
-                infoLoading={!nodeInfo && infoFetching}
-                infoFetching={infoFetching || refreshing}
-                feeds={feeds}
-                onRefresh={() => void refreshAll()}
-                onOpenBridge={() => setBridgeOpen(true)}
-                onOracles={() => onTab("oracles")}
-                onAlerts={() => setAlertsOpen(true)}
-                onToggleMode={() => {
-                  const next: NodeMode = mode === "my" ? "lumen" : "my";
-                  if (next === "my" && !token) {
-                    setBridgeOpen(true);
-                    return;
+
+        {tab === "network" && netView === "map" ? (
+          <NetworkMapFull
+            netView={netView}
+            setNetView={setNetView}
+            mode={mode}
+            token={token}
+            height={height}
+          />
+        ) : (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={tab}
+              className="px-3.5 py-3 pb-4"
+              initial={reduce ? false : tabFade.initial}
+              animate={tabFade.animate}
+              exit={reduce ? undefined : tabFade.exit}
+              transition={
+                reduce ? { duration: 0.01 } : tabFade.transition
+              }
+            >
+              {tab === "home" && (
+                <HomeBody
+                  height={height}
+                  headersH={headersH}
+                  syncPct={syncPct}
+                  peersN={peersN}
+                  mempoolSize={mempoolSize}
+                  nodeName={nodeInfo?.name}
+                  mode={mode}
+                  token={token}
+                  bridgeOnline={bridgeOnline}
+                  infoLoading={!nodeInfo && infoFetching}
+                  infoFetching={infoFetching || refreshing}
+                  feeds={feeds}
+                  onRefresh={() => void refreshAll()}
+                  onOpenBridge={() => setBridgeOpen(true)}
+                  onOracles={() => onTab("oracles")}
+                  onAlerts={() => setAlertsOpen(true)}
+                  onToggleMode={() => {
+                    const next: NodeMode = mode === "my" ? "lumen" : "my";
+                    if (next === "my" && !token) {
+                      setBridgeOpen(true);
+                      return;
+                    }
+                    saveNodeMode(next);
+                    setMode(next);
+                    void hapticImpact("light");
+                  }}
+                />
+              )}
+              {tab === "network" && (
+                <NetworkBody
+                  netView={netView}
+                  setNetView={setNetView}
+                  netFilter={netFilter}
+                  setNetFilter={setNetFilter}
+                  lowEnd={lowEnd}
+                  peerRows={peerRows}
+                  mapLoading={mapLoading}
+                  mode={mode}
+                  token={token}
+                  height={height}
+                  onPeer={setPeerDetail}
+                />
+              )}
+              {tab === "oracles" && (
+                <OraclesBody
+                  seg={oracleSeg}
+                  setSeg={setOracleSeg}
+                  feeds={feeds}
+                  myFeeds={myFeeds}
+                  hasToken={!!token}
+                  loading={
+                    oracleSeg === "my" ? oraclesMyLoading : oraclesNetLoading
                   }
-                  saveNodeMode(next);
-                  setMode(next);
-                  void hapticImpact("light");
-                }}
-              />
-            )}
-            {tab === "network" && (
-              <NetworkBody
-                netView={netView}
-                setNetView={setNetView}
-                netFilter={netFilter}
-                setNetFilter={setNetFilter}
-                lowEnd={lowEnd}
-                peerRows={peerRows}
-                mapLoading={mapLoading}
-                mode={mode}
-                token={token}
-                height={height}
-                onPeer={setPeerDetail}
-              />
-            )}
-            {tab === "oracles" && (
-              <OraclesBody
-                seg={oracleSeg}
-                setSeg={setOracleSeg}
-                feeds={feeds}
-                myFeeds={myFeeds}
-                hasToken={!!token}
-                loading={
-                  oracleSeg === "my" ? oraclesMyLoading : oraclesNetLoading
-                }
-                myBridgeConnected={!!oraclesMy?.bridge?.connected}
-                onConnect={() => setBridgeOpen(true)}
-              />
-            )}
-            {tab === "me" && (
-              <MeBody
-                mode={mode}
-                token={token}
-                bridgeOnline={bridgeOnline}
-                onOpenBridge={() => setBridgeOpen(true)}
-                onOpenAlerts={() => setAlertsOpen(true)}
-                onClear={() => {
-                  saveBridgeToken("");
-                  saveNodeMode("lumen");
-                  setToken("");
-                  setMode("lumen");
-                  toast.message("Token cleared");
-                  void hapticImpact("light");
-                }}
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
+                  myBridgeConnected={!!oraclesMy?.bridge?.connected}
+                  onConnect={() => setBridgeOpen(true)}
+                />
+              )}
+              {tab === "me" && (
+                <MeBody
+                  mode={mode}
+                  token={token}
+                  bridgeOnline={bridgeOnline}
+                  onOpenBridge={() => setBridgeOpen(true)}
+                  onOpenAlerts={() => setAlertsOpen(true)}
+                  onClear={() => {
+                    saveBridgeToken("");
+                    saveNodeMode("lumen");
+                    setToken("");
+                    setMode("lumen");
+                    toast.message("Token cleared");
+                    void hapticImpact("light");
+                  }}
+                />
+              )}
+            </motion.div>
+          </AnimatePresence>
+        )}
       </main>
 
       <TabBar active={tab} onChange={onTab} />
@@ -795,6 +811,77 @@ function ActionChip({
   );
 }
 
+/** Full-bleed map: toolbar + flex-1 map to tab bar (no dead space below). */
+function NetworkMapFull({
+  netView,
+  setNetView,
+  mode,
+  token,
+  height,
+}: {
+  netView: "list" | "map";
+  setNetView: (v: "list" | "map") => void;
+  mode: NodeMode;
+  token: string;
+  height: number | null;
+}) {
+  return (
+    <div className="flex flex-col flex-1 min-h-0 h-full">
+      <div className="shrink-0 flex items-center justify-between gap-2 px-3.5 py-2 border-b border-white/[0.06]">
+        <h1 className="text-base font-semibold tracking-tight">Network</h1>
+        <NetViewToggle netView={netView} setNetView={setNetView} />
+      </div>
+      <div className="relative flex-1 min-h-0 w-full bg-[#0C0C12]">
+        <div className="absolute inset-0">
+          <PeerMap
+            blockHeight={height ?? undefined}
+            hideControls={false}
+            nodeMode={mode}
+            bridgeToken={token}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NetViewToggle({
+  netView,
+  setNetView,
+}: {
+  netView: "list" | "map";
+  setNetView: (v: "list" | "map") => void;
+}) {
+  return (
+    <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
+      <button
+        type="button"
+        onClick={() => {
+          setNetView("map");
+          void hapticImpact("light");
+        }}
+        className={`h-9 px-3 rounded-full inline-flex items-center gap-1 text-[10px] font-mono tracking-wider ${
+          netView === "map" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
+        }`}
+      >
+        <MapIcon className="w-3.5 h-3.5" /> MAP
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setNetView("list");
+          void hapticImpact("light");
+        }}
+        className={`h-9 px-3 rounded-full inline-flex items-center gap-1 text-[10px] font-mono tracking-wider ${
+          netView === "list" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
+        }`}
+      >
+        <List className="w-3.5 h-3.5" /> LIST
+      </button>
+    </div>
+  );
+}
+
 function NetworkBody({
   netView,
   setNetView,
@@ -820,121 +907,83 @@ function NetworkBody({
   height: number | null;
   onPeer: (p: PeerRow) => void;
 }) {
+  // MAP mode is rendered by NetworkMapFull (full height); this is LIST only
+  void mode;
+  void token;
+  void height;
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h1 className="text-lg font-semibold tracking-tight">Network</h1>
-        <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
-          <button
-            type="button"
-            onClick={() => {
-              setNetView("list");
-              void hapticImpact("light");
-            }}
-            className={`h-9 px-3 rounded-full inline-flex items-center gap-1 text-[10px] font-mono tracking-wider ${
-              netView === "list" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
-            }`}
-          >
-            <List className="w-3.5 h-3.5" /> LIST
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setNetView("map");
-              void hapticImpact("light");
-            }}
-            className={`h-9 px-3 rounded-full inline-flex items-center gap-1 text-[10px] font-mono tracking-wider ${
-              netView === "map" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
-            }`}
-          >
-            <MapIcon className="w-3.5 h-3.5" /> MAP
-          </button>
-        </div>
+        <NetViewToggle netView={netView} setNetView={setNetView} />
       </div>
 
-      {netView === "list" ? (
-        <>
-          <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
-            {(["live", "all"] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => {
-                  setNetFilter(f);
-                  void hapticImpact("light");
-                }}
-                className={`h-8 px-3 rounded-full text-[10px] font-mono tracking-wider ${
-                  netFilter === f
-                    ? "bg-white/10 text-white"
-                    : "text-[#A0A0B0]"
-                }`}
-              >
-                {f.toUpperCase()}
-              </button>
-            ))}
-          </div>
-          <div className="space-y-2">
-            <p className="text-[11px] font-mono text-[#A0A0B0]">
-              {mapLoading
-                ? "Loading peers…"
-                : `${peerRows.length} peers · ${netFilter}${
-                    lowEnd ? " · lite" : ""
-                  }`}
-            </p>
-            {mapLoading ? (
-              <>
-                <Skeleton className="h-16" />
-                <Skeleton className="h-16" />
-                <Skeleton className="h-16" />
-              </>
-            ) : peerRows.length === 0 ? (
-              <MiniCard>
-                <p className="text-sm text-[#A0A0B0]">
-                  No peers in this filter.
-                </p>
-              </MiniCard>
-            ) : (
-              peerRows.map((p, i) => (
-                <MiniCard
-                  key={`${p.id || p.ip || p.address || i}`}
-                  onClick={() => {
-                    onPeer(p);
-                    void hapticImpact("light");
-                  }}
-                >
-                  <div className="flex justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm truncate">
-                        {p.name ||
-                          [p.city, p.country].filter(Boolean).join(", ") ||
-                          "Unknown"}
-                      </div>
-                      <div className="text-[10px] font-mono text-[#A0A0B0] truncate mt-0.5">
-                        {[p.city, p.country].filter(Boolean).join(", ") ||
-                          p.ip ||
-                          p.address ||
-                          "—"}
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-mono text-[#A0A0B0] shrink-0 uppercase">
-                      {p.state || p.status || "›"}
-                    </span>
+      <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
+        {(["live", "all"] as const).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => {
+              setNetFilter(f);
+              void hapticImpact("light");
+            }}
+            className={`h-8 px-3 rounded-full text-[10px] font-mono tracking-wider ${
+              netFilter === f ? "bg-white/10 text-white" : "text-[#A0A0B0]"
+            }`}
+          >
+            {f.toUpperCase()}
+          </button>
+        ))}
+      </div>
+      <div className="space-y-2">
+        <p className="text-[11px] font-mono text-[#A0A0B0]">
+          {mapLoading
+            ? "Loading peers…"
+            : `${peerRows.length} peers · ${netFilter}${
+                lowEnd ? " · lite" : ""
+              }`}
+        </p>
+        {mapLoading ? (
+          <>
+            <Skeleton className="h-16" />
+            <Skeleton className="h-16" />
+            <Skeleton className="h-16" />
+          </>
+        ) : peerRows.length === 0 ? (
+          <MiniCard>
+            <p className="text-sm text-[#A0A0B0]">No peers in this filter.</p>
+          </MiniCard>
+        ) : (
+          peerRows.map((p, i) => (
+            <MiniCard
+              key={`${p.id || p.ip || p.address || i}`}
+              onClick={() => {
+                onPeer(p);
+                void hapticImpact("light");
+              }}
+            >
+              <div className="flex justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-sm truncate">
+                    {p.name ||
+                      [p.city, p.country].filter(Boolean).join(", ") ||
+                      "Unknown"}
                   </div>
-                </MiniCard>
-              ))
-            )}
-          </div>
-        </>
-      ) : (
-        <div className="rounded-2xl border border-white/10 overflow-hidden h-[min(62dvh,520px)] bg-[#0C0C12]">
-          <PeerMap
-            blockHeight={height ?? undefined}
-            hideControls={false}
-            nodeMode={mode}
-            bridgeToken={token}
-          />
-        </div>
-      )}
+                  <div className="text-[10px] font-mono text-[#A0A0B0] truncate mt-0.5">
+                    {[p.city, p.country].filter(Boolean).join(", ") ||
+                      p.ip ||
+                      p.address ||
+                      "—"}
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono text-[#A0A0B0] shrink-0 uppercase">
+                  {p.state || p.status || "›"}
+                </span>
+              </div>
+            </MiniCard>
+          ))
+        )}
+      </div>
     </div>
   );
 }
