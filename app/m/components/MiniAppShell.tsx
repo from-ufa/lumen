@@ -48,6 +48,9 @@ import MiniCard from "./MiniCard";
 import BridgeSheet from "./BridgeSheet";
 import AlertsSheet from "./AlertsSheet";
 import EmptyState from "./EmptyState";
+import OracleFeedCard, {
+  type OracleFeedRich,
+} from "./OracleFeedCards";
 import { tabFade } from "../lib/motion";
 import {
   isMiniTabId,
@@ -93,39 +96,37 @@ type PeerRow = {
   connectionType?: string;
 };
 
-type OracleFeed = {
-  id: string;
-  title?: string;
-  pair?: string;
-  /** API field (not latestPrice) */
-  price?: number | null;
-  priceLabel?: string | null;
+type OracleFeed = OracleFeedRich & {
   priceChange24h?: number | null;
-  status?: string | null;
-  history?: Array<{ price?: number | null } | number>;
 };
 
 type OracleApiResponse = {
   feeds?: OracleFeed[];
   view?: string;
   mode?: string;
-  bridge?: { connected?: boolean };
+  bridge?: {
+    connected?: boolean;
+    oraclesConfigured?: string[];
+    error?: string;
+    version?: string | null;
+  };
 };
 
-/** Normalize API → UI (price, optional Δ from history) */
+/** Normalize API → UI (keep full feed; optional Δ from history) */
 function normalizeFeeds(raw: OracleFeed[] | undefined): OracleFeed[] {
   return (raw ?? []).map((f) => {
     const price =
       typeof f.price === "number" && Number.isFinite(f.price) ? f.price : null;
     let ch: number | null =
       typeof f.priceChange24h === "number" ? f.priceChange24h : null;
+    // history is newest-first from API; use last point for short Δ if needed
     if (ch == null && price != null && Array.isArray(f.history) && f.history.length > 1) {
-      const first = f.history[0];
+      const older = f.history[f.history.length - 1];
       const prev =
-        typeof first === "number"
-          ? first
-          : typeof first?.price === "number"
-            ? first.price
+        typeof older === "number"
+          ? older
+          : typeof older?.price === "number"
+            ? older.price
             : null;
       if (prev != null && prev !== 0) ch = (price - prev) / prev;
     }
@@ -662,6 +663,9 @@ function Shell() {
                     oracleSeg === "my" ? oraclesMyLoading : oraclesNetLoading
                   }
                   myBridgeConnected={!!oraclesMy?.bridge?.connected}
+                  myBridgeConfigured={
+                    oraclesMy?.bridge?.oraclesConfigured ?? []
+                  }
                   onConnect={() => setBridgeOpen(true)}
                 />
               )}
@@ -1140,6 +1144,7 @@ function OraclesBody({
   hasToken,
   loading,
   myBridgeConnected,
+  myBridgeConfigured,
   onConnect,
 }: {
   seg: "network" | "my";
@@ -1149,16 +1154,18 @@ function OraclesBody({
   hasToken: boolean;
   loading: boolean;
   myBridgeConnected: boolean;
+  myBridgeConfigured?: string[];
   onConnect: () => void;
 }) {
   const { t } = useMiniI18n();
   const active = seg === "my" ? myFeeds : feeds;
-  const usd = active.find(
-    (f) => f.id === "erg-usd" || f.pair === "ERG/USD"
-  );
-  const xau = active.find(
-    (f) => f.id === "erg-xau" || f.pair === "ERG/XAU"
-  );
+  // Prefer canonical order USD → XAU
+  const ordered = [...active].sort((a, b) => {
+    const rank = (id?: string) =>
+      id === "erg-usd" ? 0 : id === "erg-xau" ? 1 : 2;
+    return rank(a.id) - rank(b.id);
+  });
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -1194,15 +1201,15 @@ function OraclesBody({
         />
       ) : loading ? (
         <>
-          <Skeleton className="h-24" />
-          <Skeleton className="h-24" />
+          <Skeleton className="h-40" />
+          <Skeleton className="h-40" />
         </>
       ) : (
         <>
           {seg === "my" ? (
             <MiniCard>
               <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-                {t("agent")}
+                {t("ora_bridge_banner")}
               </div>
               <div
                 className={`mt-1 text-sm font-mono ${
@@ -1210,95 +1217,49 @@ function OraclesBody({
                 }`}
               >
                 {myBridgeConnected
-                  ? t("agent_online")
-                  : t("agent_offline")}
+                  ? t("ora_bridge_online")
+                  : t("ora_bridge_offline")}
               </div>
+              {myBridgeConfigured && myBridgeConfigured.length > 0 ? (
+                <div className="mt-1 text-[10px] font-mono text-[#A0A0B0]">
+                  {t("ora_configured", {
+                    list: myBridgeConfigured.join(", "),
+                  })}
+                </div>
+              ) : null}
             </MiniCard>
           ) : null}
-          <div className="grid grid-cols-1 gap-2">
-            <OracleTile
-              title={usd?.title || usd?.pair || "ERG / USD"}
-              price={usd?.price}
-              priceLabel={usd?.priceLabel}
-              ch={usd?.priceChange24h}
-              accent="#00E5FF"
-            />
-            <OracleTile
-              title={xau?.title || xau?.pair || "ERG / XAU"}
-              price={xau?.price}
-              priceLabel={xau?.priceLabel}
-              ch={xau?.priceChange24h}
-              accent="#E8C547"
-            />
-          </div>
-          {seg === "my" && active.length === 0 && hasToken ? (
+
+          {ordered.length === 0 ? (
             <EmptyState
-              title={t("empty_oracle_my")}
-              body={t("empty_oracle_my_body")}
+              title={
+                seg === "my" ? t("empty_oracle_my") : t("empty_oracle_net")
+              }
+              body={
+                seg === "my"
+                  ? t("empty_oracle_my_body")
+                  : t("empty_oracle_net_body")
+              }
               icon={<LineChart className="w-4 h-4" />}
             />
-          ) : null}
-          {seg === "network" && active.length === 0 ? (
-            <EmptyState
-              title={t("empty_oracle_net")}
-              body={t("empty_oracle_net_body")}
-              icon={<LineChart className="w-4 h-4" />}
-            />
-          ) : null}
+          ) : (
+            <div className="grid grid-cols-1 gap-2.5">
+              {ordered.map((f) => (
+                <OracleFeedCard
+                  key={f.id}
+                  feed={f}
+                  variant={seg}
+                  showOperator={
+                    // MY: always try operator panel; NETWORK: show lumen host operator if present
+                    seg === "my" || !!f.myOperator || !!f.nodes?.some((n) => n.isMine)
+                  }
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
-  );
-}
-
-function OracleTile({
-  title,
-  price,
-  priceLabel,
-  ch,
-  accent,
-}: {
-  title: string;
-  price?: number | null;
-  priceLabel?: string | null;
-  ch?: number | null;
-  accent: string;
-}) {
-  const up = ch != null && ch >= 0;
-  const display =
-    price != null && Number.isFinite(price)
-      ? price < 10
-        ? price.toFixed(4)
-        : price.toFixed(2)
-      : priceLabel || "—";
-  return (
-    <MiniCard>
-      <div
-        className="text-[10px] font-mono tracking-[0.16em]"
-        style={{ color: accent }}
-      >
-        {title}
-      </div>
-      <div className="mt-1 font-mono text-2xl tabular-nums text-white">
-        {typeof display === "string" && display.startsWith("$")
-          ? display
-          : price != null && Number.isFinite(price)
-            ? title.includes("USD")
-              ? `$${display}`
-              : display
-            : display}
-      </div>
-      {ch != null && Number.isFinite(ch) ? (
-        <div
-          className={`mt-1 text-[11px] font-mono ${
-            up ? "text-[#10B981]" : "text-[#EF4444]"
-          }`}
-        >
-          {up ? "+" : ""}
-          {(ch * 100).toFixed(2)}%
-        </div>
-      ) : null}
-    </MiniCard>
   );
 }
 
