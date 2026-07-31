@@ -85,7 +85,7 @@ async function handleCommand(
   const userId = fromId ?? chatId;
 
   if (cmd === "/start" || cmd === "/app") {
-    // One short message + single OPEN APP button (see webAppKeyboard)
+    // Short welcome + OPEN APP (mini) + OPEN WEB (full site)
     await replyHtml(chatId, startWelcomeHtml(), true);
     return;
   }
@@ -96,7 +96,7 @@ async function handleCommand(
       [
         "⚡ <b>lumen</b> · help",
         "",
-        "/start — open Mini App",
+        "/start — Mini App + full site",
         "/status — node snapshot",
         "/oracles — prices",
         "/link CODE — import browser token",

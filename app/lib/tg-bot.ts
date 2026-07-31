@@ -18,6 +18,15 @@ export function getWebAppUrl(): string {
   ).replace(/\/$/, "");
 }
 
+/** Full site (desktop Orbit / oracles) — not Mini App. */
+export function getPublicSiteUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    process.env.LUMEN_PUBLIC_SITE?.trim() ||
+    "https://ergolumen.net"
+  ).replace(/\/$/, "");
+}
+
 export async function tgApi<T = unknown>(
   method: string,
   body?: Record<string, unknown>
@@ -45,15 +54,24 @@ export async function tgApi<T = unknown>(
   }
 }
 
-/** Single CTA — OPEN APP (Mini App). */
+/**
+ * /start keyboard:
+ *  [ 🚀 OPEN APP ]  — Mini App (web_app)
+ *  [ 🌐 OPEN WEB ]  — full site (url, browser / in-app browser)
+ */
 export function webAppKeyboard() {
-  const url = getWebAppUrl();
+  const mini = getWebAppUrl();
+  const site = getPublicSiteUrl();
   return {
     inline_keyboard: [
       [
         {
           text: "🚀 OPEN APP",
-          web_app: { url },
+          web_app: { url: mini },
+        },
+        {
+          text: "🌐 OPEN WEB",
+          url: site,
         },
       ],
     ],
@@ -67,7 +85,7 @@ export function startWelcomeHtml(): string {
     "",
     "Ergo · node · oracles · map · alerts",
     "",
-    "👉 Tap below — that’s all.",
+    "👉 Mini App or full site — tap below.",
   ].join("\n");
 }
 
