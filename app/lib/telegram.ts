@@ -117,8 +117,41 @@ function safeCall(fn: () => void) {
 }
 
 /**
+ * True for Telegram Desktop / web clients (Windows, macOS, browser).
+ * These must NOT call requestFullscreen — that covers the whole OS screen.
+ */
+export function isTelegramDesktopClient(): boolean {
+  const wa = getWebApp();
+  const p = (wa?.platform || "").toLowerCase();
+  if (
+    p === "tdesktop" ||
+    p === "macos" ||
+    p === "web" ||
+    p === "weba" ||
+    p === "webk" ||
+    p === "unigram"
+  ) {
+    return true;
+  }
+  // Heuristic: fine pointer + large viewport often = desktop TG
+  if (typeof window !== "undefined") {
+    try {
+      if (window.matchMedia("(pointer: fine) and (min-width: 900px)").matches) {
+        if (p !== "ios" && p !== "android") return true;
+      }
+    } catch {
+      /* */
+    }
+  }
+  return false;
+}
+
+/**
  * Bootstrap Mini App chrome. Call once from client Providers.
  * No-op outside Telegram.
+ *
+ * Height: expand() = fill Telegram Mini App panel (correct).
+ * Do NOT requestFullscreen on Desktop — Windows TG then covers the whole screen.
  */
 export function initTelegramApp(): void {
   if (typeof window === "undefined") return;
@@ -126,12 +159,26 @@ export function initTelegramApp(): void {
   if (!wa) return;
 
   safeCall(() => wa.ready());
+  // Fill available Mini App height inside Telegram — not OS fullscreen
   safeCall(() => wa.expand());
   safeCall(() => wa.setHeaderColor(LUMEN_HEADER));
   safeCall(() => wa.setBackgroundColor(LUMEN_BG));
   safeCall(() => wa.setBottomBarColor?.(LUMEN_BG));
-  // Fullscreen when supported (Bot API 8+)
-  safeCall(() => wa.requestFullscreen?.());
+
+  // Exit OS fullscreen if a previous build requested it (Desktop)
+  if (isTelegramDesktopClient()) {
+    safeCall(() => {
+      const w = wa as TelegramWebApp & {
+        exitFullscreen?: () => void;
+        isFullscreen?: boolean;
+      };
+      if (w.isFullscreen && typeof w.exitFullscreen === "function") {
+        w.exitFullscreen();
+      }
+    });
+  }
+  // Never auto requestFullscreen — Mini App is a panel, not a game/kiosk.
+  // (Bot API 8+ requestFullscreen makes Desktop TG cover the whole display.)
 
   applyThemeCss(wa);
 
