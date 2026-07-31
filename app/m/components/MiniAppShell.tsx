@@ -51,6 +51,8 @@ import EmptyState from "./EmptyState";
 import OracleFeedCard, {
   type OracleFeedRich,
 } from "./OracleFeedCards";
+import MempoolPanel, { type MiniMempoolTx } from "./MempoolPanel";
+import OperatorsPanel from "./OperatorsPanel";
 import { tabFade } from "../lib/motion";
 import {
   isMiniTabId,
@@ -191,8 +193,94 @@ async function fetchPeersMap(mode: NodeMode, token: string) {
   return { peers, me: data.me, totalPeers: data.totalPeers, liveMapped: data.liveMapped };
 }
 
-async function fetchMempoolSize(mode: NodeMode, token: string) {
-  if (mode === "my" && !token) return 0;
+type MempoolPayload = {
+  size: number;
+  txs: MiniMempoolTx[];
+  source: string;
+};
+
+function mapNodeUnconfirmed(raw: unknown): MiniMempoolTx[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 48).map((t) => {
+    const tx = t as {
+      id?: string;
+      size?: number;
+      inputs?: unknown[] | number;
+      outputs?: Array<{ value?: number | string; assets?: unknown[] }> | number;
+    };
+    let ergNano: string | null = null;
+    let outputsN: number | null = null;
+    let inputsN: number | null = null;
+    let tokens: MiniMempoolTx["tokens"] = null;
+    if (Array.isArray(tx.inputs)) inputsN = tx.inputs.length;
+    else if (typeof tx.inputs === "number") inputsN = tx.inputs;
+    if (Array.isArray(tx.outputs)) {
+      outputsN = tx.outputs.length;
+      let sum = BigInt(0);
+      const toks: NonNullable<MiniMempoolTx["tokens"]> = [];
+      for (const o of tx.outputs) {
+        try {
+          if (o?.value != null) sum += BigInt(String(o.value));
+        } catch {
+          /* */
+        }
+        const assets = (o as { assets?: Array<{ tokenId?: string; amount?: string }> })
+          ?.assets;
+        if (Array.isArray(assets)) {
+          for (const a of assets) {
+            if (a?.tokenId)
+              toks.push({ tokenId: a.tokenId, amount: a.amount });
+          }
+        }
+      }
+      if (sum > BigInt(0)) ergNano = sum.toString();
+      if (toks.length) tokens = toks;
+    } else if (typeof tx.outputs === "number") {
+      outputsN = tx.outputs;
+    }
+    return {
+      id: tx.id || "",
+      size: tx.size ?? null,
+      inputs: inputsN,
+      outputs: outputsN,
+      ergNano,
+      tokens,
+      pending: true,
+    };
+  });
+}
+
+async function fetchMempool(
+  mode: NodeMode,
+  token: string
+): Promise<MempoolPayload> {
+  if (mode === "my" && !token) {
+    return { size: 0, txs: [], source: "—" };
+  }
+  // Lumen host: prefer rich chain mempool; fallback to node REST
+  if (mode === "lumen") {
+    try {
+      const res = await fetch("/api/chain/mempool?limit=40", {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          count?: number;
+          transactions?: MiniMempoolTx[];
+        };
+        const txs = Array.isArray(data.transactions)
+          ? data.transactions
+          : [];
+        return {
+          size: data.count ?? txs.length,
+          txs,
+          source: "chain",
+        };
+      }
+    } catch {
+      /* fall through */
+    }
+  }
   try {
     const res = await fetchNodeResource(
       mode,
@@ -200,15 +288,19 @@ async function fetchMempoolSize(mode: NodeMode, token: string) {
       "transactions/unconfirmed",
       { timeoutMs: mode === "my" ? 14000 : 6500 }
     );
-    if (!res.ok) return 0;
+    if (!res.ok) return { size: 0, txs: [], source: "node" };
     const data = (await res.json()) as unknown;
-    if (Array.isArray(data)) return data.length;
-    if (data && typeof data === "object" && Array.isArray((data as { transactions?: unknown }).transactions)) {
-      return ((data as { transactions: unknown[] }).transactions).length;
-    }
-    return 0;
+    const list = Array.isArray(data)
+      ? data
+      : data &&
+          typeof data === "object" &&
+          Array.isArray((data as { transactions?: unknown }).transactions)
+        ? (data as { transactions: unknown[] }).transactions
+        : [];
+    const txs = mapNodeUnconfirmed(list);
+    return { size: list.length, txs, source: "node" };
   } catch {
-    return 0;
+    return { size: 0, txs: [], source: "—" };
   }
 }
 
@@ -422,12 +514,16 @@ function Shell() {
     refetchInterval: 12_000,
   });
 
-  const { data: mempoolSize = 0 } = useQuery({
+  const {
+    data: mempool = { size: 0, txs: [], source: "—" },
+    isLoading: mempoolLoading,
+  } = useQuery({
     queryKey: ["mini-mempool", mode, token],
-    queryFn: () => fetchMempoolSize(mode, token),
-    refetchInterval: 10_000,
+    queryFn: () => fetchMempool(mode, token),
+    refetchInterval: 8_000,
     enabled: tab === "home",
   });
+  const mempoolSize = mempool.size;
 
   /** Real avg block time from last N headers (one node request) */
   const { data: avgBlock } = useQuery({
@@ -611,6 +707,9 @@ function Shell() {
                   syncPct={syncPct}
                   peersN={peersN}
                   mempoolSize={mempoolSize}
+                  mempoolTxs={mempool.txs}
+                  mempoolSource={mempool.source}
+                  mempoolLoading={mempoolLoading}
                   avgBlockTime={avgBlock?.avgSeconds ?? null}
                   avgBlockSamples={avgBlock?.samples ?? 0}
                   avgBlockWindow={AVG_BLOCK_WINDOW}
@@ -716,6 +815,9 @@ function HomeBody({
   syncPct,
   peersN,
   mempoolSize,
+  mempoolTxs,
+  mempoolSource,
+  mempoolLoading,
   avgBlockTime,
   avgBlockSamples,
   avgBlockWindow,
@@ -737,6 +839,9 @@ function HomeBody({
   syncPct: number | null;
   peersN?: number;
   mempoolSize: number;
+  mempoolTxs: MiniMempoolTx[];
+  mempoolSource: string;
+  mempoolLoading: boolean;
   avgBlockTime: number | null;
   avgBlockSamples: number;
   avgBlockWindow: number;
@@ -754,6 +859,7 @@ function HomeBody({
   onToggleMode: () => void;
 }) {
   const { t } = useMiniI18n();
+  const [panel, setPanel] = useState<"dash" | "mempool">("dash");
   const usd = feeds.find((f) => f.id === "erg-usd" || f.pair === "ERG/USD");
   const avgSub =
     avgBlockTime != null && avgBlockSamples > 0
@@ -761,109 +867,160 @@ function HomeBody({
       : avgBlockTime != null
         ? t("avg_sub_window", { w: avgBlockWindow })
         : t("avg_sub_loading");
-  if (infoLoading) {
-    return (
-      <div className="space-y-3">
-        <Skeleton className="h-14" />
-        <Skeleton className="h-32" />
-        <div className="grid grid-cols-2 gap-2">
-          <Skeleton className="h-12" />
-          <Skeleton className="h-12" />
-          <Skeleton className="h-12" />
-          <Skeleton className="h-12" />
-        </div>
-      </div>
-    );
-  }
+
   return (
     <div className="space-y-3">
-      <MiniCard onClick={onToggleMode}>
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
-            {t("source")}
-          </span>
-          <span className="text-xs font-mono text-[#FF7A3D] tracking-wider">
-            {mode === "my" ? t("source_my_node") : t("source_lumen_node")}
-          </span>
-        </div>
-      </MiniCard>
-
-      <MiniCard>
-        <div className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
-          {t("height")}
-        </div>
-        <div className="mt-1 font-mono text-3xl tracking-tight tabular-nums text-white">
-          {height != null ? height.toLocaleString() : "—"}
-        </div>
-        {headersH != null && height != null && headersH !== height ? (
-          <div className="mt-1 text-[10px] font-mono text-[#F59E0B]">
-            {t("headers_sync", {
-              h: headersH.toLocaleString(),
-              p: syncPct ?? "—",
-            })}
-          </div>
-        ) : null}
-        <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-mono text-[#A0A0B0]">
-          <span>{t("peers", { n: peersN ?? "—" })}</span>
-          <span>{t("mempool", { n: mempoolSize })}</span>
-          <span className="text-[#FF7A3D]">
-            {t("avg_block", {
-              v: avgBlockTime != null ? `${avgBlockTime}s` : "—",
-            })}
-          </span>
-          <span className="text-[10px] text-[#A0A0B0]/90 truncate">
-            {avgSub}
-          </span>
-          {nodeName ? (
-            <span className="truncate col-span-2">
-              {t("node", { n: nodeName })}
-            </span>
-          ) : null}
-          {token ? (
-            <span
-              className={`col-span-2 ${
-                bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-lg font-semibold tracking-tight">
+          {panel === "dash" ? t("tab_home") : t("mp_title")}
+        </h1>
+        <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
+          {(
+            [
+              { id: "dash" as const, label: t("home_seg_dash") },
+              {
+                id: "mempool" as const,
+                label: `${t("home_seg_mempool")}${
+                  mempoolSize > 0 ? ` ${mempoolSize}` : ""
+                }`,
+              },
+            ] as const
+          ).map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => {
+                setPanel(s.id);
+                void hapticImpact("light");
+              }}
+              className={`h-8 px-3 rounded-full text-[10px] font-mono tracking-wider ${
+                panel === s.id ? "bg-white/10 text-white" : "text-[#A0A0B0]"
               }`}
             >
-              {bridgeOnline ? t("bridge_online") : t("bridge_offline")}
-            </span>
-          ) : (
-            <span className="col-span-2">{t("bridge_not_set")}</span>
-          )}
+              {s.label}
+            </button>
+          ))}
         </div>
-      </MiniCard>
-
-      <div className="grid grid-cols-2 gap-2">
-        <ActionChip
-          label={infoFetching ? "…" : t("action_refresh")}
-          icon={
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${infoFetching ? "animate-spin" : ""}`}
-            />
-          }
-          onClick={onRefresh}
-        />
-        <ActionChip label={t("action_bridge")} onClick={onOpenBridge} />
-        <ActionChip label={t("action_alerts")} onClick={onAlerts} />
-        <ActionChip
-          label={
-            usd?.price != null
-              ? `$${Number(usd.price).toFixed(2)}`
-              : usd?.priceLabel || t("action_oracles")
-          }
-          onClick={onOracles}
-        />
       </div>
 
-      {!token ? (
-        <EmptyState
-          title={t("empty_connect_title")}
-          body={t("empty_connect_body")}
-          icon={<Link2 className="w-4 h-4" />}
-          onClick={onOpenBridge}
-          actionLabel={t("action_bridge")}
+      {panel === "mempool" ? (
+        <MempoolPanel
+          size={mempoolSize}
+          txs={mempoolTxs}
+          loading={mempoolLoading}
+          source={mempoolSource}
         />
-      ) : null}
+      ) : infoLoading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-14" />
+          <Skeleton className="h-32" />
+          <div className="grid grid-cols-2 gap-2">
+            <Skeleton className="h-12" />
+            <Skeleton className="h-12" />
+            <Skeleton className="h-12" />
+            <Skeleton className="h-12" />
+          </div>
+        </div>
+      ) : (
+        <>
+          <MiniCard onClick={onToggleMode}>
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
+                {t("source")}
+              </span>
+              <span className="text-xs font-mono text-[#FF7A3D] tracking-wider">
+                {mode === "my" ? t("source_my_node") : t("source_lumen_node")}
+              </span>
+            </div>
+          </MiniCard>
+
+          <MiniCard>
+            <div className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
+              {t("height")}
+            </div>
+            <div className="mt-1 font-mono text-3xl tracking-tight tabular-nums text-white">
+              {height != null ? height.toLocaleString() : "—"}
+            </div>
+            {headersH != null && height != null && headersH !== height ? (
+              <div className="mt-1 text-[10px] font-mono text-[#F59E0B]">
+                {t("headers_sync", {
+                  h: headersH.toLocaleString(),
+                  p: syncPct ?? "—",
+                })}
+              </div>
+            ) : null}
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-mono text-[#A0A0B0]">
+              <span>{t("peers", { n: peersN ?? "—" })}</span>
+              <button
+                type="button"
+                className="text-left text-[#00E5FF]"
+                onClick={() => {
+                  setPanel("mempool");
+                  void hapticImpact("light");
+                }}
+              >
+                {t("mempool", { n: mempoolSize })} ›
+              </button>
+              <span className="text-[#FF7A3D]">
+                {t("avg_block", {
+                  v: avgBlockTime != null ? `${avgBlockTime}s` : "—",
+                })}
+              </span>
+              <span className="text-[10px] text-[#A0A0B0]/90 truncate">
+                {avgSub}
+              </span>
+              {nodeName ? (
+                <span className="truncate col-span-2">
+                  {t("node", { n: nodeName })}
+                </span>
+              ) : null}
+              {token ? (
+                <span
+                  className={`col-span-2 ${
+                    bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"
+                  }`}
+                >
+                  {bridgeOnline ? t("bridge_online") : t("bridge_offline")}
+                </span>
+              ) : (
+                <span className="col-span-2">{t("bridge_not_set")}</span>
+              )}
+            </div>
+          </MiniCard>
+
+          <div className="grid grid-cols-2 gap-2">
+            <ActionChip
+              label={infoFetching ? "…" : t("action_refresh")}
+              icon={
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${infoFetching ? "animate-spin" : ""}`}
+                />
+              }
+              onClick={onRefresh}
+            />
+            <ActionChip label={t("action_bridge")} onClick={onOpenBridge} />
+            <ActionChip label={t("action_alerts")} onClick={onAlerts} />
+            <ActionChip
+              label={
+                usd?.price != null
+                  ? `$${Number(usd.price).toFixed(2)}`
+                  : usd?.priceLabel || t("action_oracles")
+              }
+              onClick={onOracles}
+            />
+          </div>
+
+          {!token ? (
+            <EmptyState
+              title={t("empty_connect_title")}
+              body={t("empty_connect_body")}
+              icon={<Link2 className="w-4 h-4" />}
+              onClick={onOpenBridge}
+              actionLabel={t("action_bridge")}
+            />
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
@@ -1158,6 +1315,7 @@ function OraclesBody({
   onConnect: () => void;
 }) {
   const { t } = useMiniI18n();
+  const [view, setView] = useState<"pools" | "ops">("pools");
   const active = seg === "my" ? myFeeds : feeds;
   // Prefer canonical order USD → XAU
   const ordered = [...active].sort((a, b) => {
@@ -1165,6 +1323,18 @@ function OraclesBody({
       id === "erg-usd" ? 0 : id === "erg-xau" ? 1 : 2;
     return rank(a.id) - rank(b.id);
   });
+
+  const opsLive = ordered.reduce((acc, f) => {
+    for (const n of f.nodes || []) {
+      const st = (n.status || "").toLowerCase();
+      if (st === "live" || st === "active") acc += 1;
+    }
+    return acc;
+  }, 0);
+  const opsTotal = ordered.reduce(
+    (acc, f) => acc + (f.nodes?.length || 0),
+    0
+  );
 
   return (
     <div className="space-y-3">
@@ -1191,6 +1361,35 @@ function OraclesBody({
         </div>
       </div>
 
+      {/* Submenu: Pools | Operators */}
+      <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20 w-full">
+        <button
+          type="button"
+          onClick={() => {
+            setView("pools");
+            void hapticImpact("light");
+          }}
+          className={`flex-1 h-9 rounded-full text-[10px] font-mono tracking-wider ${
+            view === "pools" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
+          }`}
+        >
+          {t("ora_view_pools")}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setView("ops");
+            void hapticImpact("light");
+          }}
+          className={`flex-1 h-9 rounded-full text-[10px] font-mono tracking-wider ${
+            view === "ops" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
+          }`}
+        >
+          {t("ora_view_ops")}
+          {opsTotal > 0 ? ` · ${opsLive}/${opsTotal}` : ""}
+        </button>
+      </div>
+
       {seg === "my" && !hasToken ? (
         <EmptyState
           title={t("empty_oracle_connect_title")}
@@ -1199,6 +1398,8 @@ function OraclesBody({
           onClick={onConnect}
           actionLabel={t("action_bridge")}
         />
+      ) : view === "ops" ? (
+        <OperatorsPanel feeds={ordered} loading={loading} />
       ) : loading ? (
         <>
           <Skeleton className="h-40" />
@@ -1250,8 +1451,9 @@ function OraclesBody({
                   feed={f}
                   variant={seg}
                   showOperator={
-                    // MY: always try operator panel; NETWORK: show lumen host operator if present
-                    seg === "my" || !!f.myOperator || !!f.nodes?.some((n) => n.isMine)
+                    seg === "my" ||
+                    !!f.myOperator ||
+                    !!f.nodes?.some((n) => n.isMine)
                   }
                 />
               ))}

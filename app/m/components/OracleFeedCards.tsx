@@ -66,6 +66,7 @@ export type OracleFeedRich = {
     rewardTokens?: number | null;
     status?: string;
     isMine?: boolean;
+    idleKey?: boolean;
     detail?: string | null;
   }>;
   history?: Array<{ price?: number | null } | number>;
