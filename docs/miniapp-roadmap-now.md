@@ -37,7 +37,7 @@
 | 1 | AVG block time (как web Metrics) на Home | ✅ |
 | 2 | Peer **search** on Network LIST | ✅ |
 | 3 | Bridge sheet: **install / Docker copy** | ✅ |
-| 4 | RU strings / polish empty states | 🔜 next |
+| 4 | RU strings / polish empty states | ✅ |
 | 5 | Mempool detail / tx list | only count now |
 | 6 | Share card PNG in mini | later |
 | 7 | Offline cache / PWA install | later |
@@ -58,11 +58,12 @@
 5. Alerts sheet, My oracle segment, peer sheet, LIVE/ALL  
 6. **Net opens MAP first**, full-bleed to tab bar (`fillParent` + grid)  
 7. Home avg block time · Net LIST search · Bridge Docker/install copy  
+8. **i18n EN/RU** (TG language + Me toggle) · EmptyState polish  
 
 ### 🔜 Next (если продолжаем — порядок)
-1. **i18n RU** + empty-state polish  
-2. monorepo `packages/core` (shared types/fetch — later)  
-3. Share PNG / offline PWA (later)  
+1. monorepo `packages/core` (shared types/fetch — later)  
+2. Share PNG / offline PWA (later)  
+3. Mempool detail (later)  
 
 ### ⏸ Parallel (не mini, не блокирует)
 - **Devnet** full blocks — peer 213… / ждём Сашу (Chepurnoy); conf Matrix, ports 9130/9153, panel `devnet.ergolumen.net`  

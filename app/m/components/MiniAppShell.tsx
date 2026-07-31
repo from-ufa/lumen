@@ -10,7 +10,16 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Map as MapIcon, List, RefreshCw, Search, Zap } from "lucide-react";
+import {
+  Map as MapIcon,
+  List,
+  RefreshCw,
+  Search,
+  Zap,
+  Link2,
+  Radio,
+  LineChart,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchBridgeStatus,
@@ -38,6 +47,7 @@ import TabBar from "./TabBar";
 import MiniCard from "./MiniCard";
 import BridgeSheet from "./BridgeSheet";
 import AlertsSheet from "./AlertsSheet";
+import EmptyState from "./EmptyState";
 import { tabFade } from "../lib/motion";
 import {
   isMiniTabId,
@@ -45,6 +55,8 @@ import {
   tabFromStartParam,
   type MiniTabId,
 } from "../lib/tabs";
+import { detectMiniLocale, t as tStatic } from "../lib/i18n";
+import { MiniI18nProvider, useMiniI18n } from "../lib/MiniI18n";
 
 const PeerMap = dynamic(() => import("../../components/PeerMap"), {
   ssr: false,
@@ -208,7 +220,16 @@ function Skeleton({ className = "" }: { className?: string }) {
 }
 
 export default function MiniAppShell() {
+  return (
+    <MiniI18nProvider>
+      <Shell />
+    </MiniI18nProvider>
+  );
+}
+
+function Shell() {
   const reduce = useReducedMotion();
+  const { t } = useMiniI18n();
   const qc = useQueryClient();
   const [tab, setTab] = useState<MiniTabId>("home");
   const [bridgeOpen, setBridgeOpen] = useState(false);
@@ -285,7 +306,7 @@ export default function MiniAppShell() {
       setMode(loadNodeMode());
       if (detail?.applied) {
         setTab("home");
-        toast.success("Bridge restored");
+        toast.success(tStatic(detectMiniLocale(), "toast_bridge_restored"));
         void hapticImpact("medium");
       }
     };
@@ -298,7 +319,7 @@ export default function MiniAppShell() {
           setToken(loadBridgeToken());
           setMode(loadNodeMode());
           setTab("home");
-          toast.success("Bridge restored");
+          toast.success(tStatic(detectMiniLocale(), "toast_bridge_restored"));
         } else if (h.reason === "already_synced") {
           setToken(loadBridgeToken());
         }
@@ -511,7 +532,7 @@ export default function MiniAppShell() {
                 lumen
               </div>
               <div className="text-[9px] font-mono text-[#A0A0B0] tracking-[0.14em] mt-0.5">
-                {mode === "my" ? "MY NODE" : "NETWORK"}
+                {mode === "my" ? t("source_my") : t("source_lumen")}
               </div>
             </div>
           </div>
@@ -527,7 +548,7 @@ export default function MiniAppShell() {
                 isOnline ? "bg-[#10B981] status-dot" : "bg-[#EF4444]"
               }`}
             />
-            {isOnline ? "LIVE" : "OFF"}
+            {isOnline ? t("status_live") : t("status_off")}
           </span>
         </div>
       </header>
@@ -558,7 +579,7 @@ export default function MiniAppShell() {
       >
         {tab === "home" && pullY > 8 ? (
           <div className="text-center text-[10px] font-mono text-[#A0A0B0] pt-1">
-            {pullY > 56 ? "Release to refresh" : "Pull to refresh"}
+            {pullY > 56 ? t("release_refresh") : t("pull_refresh")}
           </div>
         ) : null}
 
@@ -656,7 +677,7 @@ export default function MiniAppShell() {
                     saveNodeMode("lumen");
                     setToken("");
                     setMode("lumen");
-                    toast.message("Token cleared");
+                    toast.message(t("toast_token_cleared"));
                     void hapticImpact("light");
                   }}
                 />
@@ -728,13 +749,14 @@ function HomeBody({
   onAlerts: () => void;
   onToggleMode: () => void;
 }) {
+  const { t } = useMiniI18n();
   const usd = feeds.find((f) => f.id === "erg-usd" || f.pair === "ERG/USD");
   const avgSub =
     avgBlockTime != null && avgBlockSamples > 0
-      ? `LAST ${avgBlockWindow} · ${avgBlockSamples} Δ`
+      ? t("avg_sub_samples", { w: avgBlockWindow, s: avgBlockSamples })
       : avgBlockTime != null
-        ? `LAST ${avgBlockWindow}`
-        : "FROM NODE…";
+        ? t("avg_sub_window", { w: avgBlockWindow })
+        : t("avg_sub_loading");
   if (infoLoading) {
     return (
       <div className="space-y-3">
@@ -754,39 +776,44 @@ function HomeBody({
       <MiniCard onClick={onToggleMode}>
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
-            SOURCE
+            {t("source")}
           </span>
           <span className="text-xs font-mono text-[#FF7A3D] tracking-wider">
-            {mode === "my" ? "MY NODE ›" : "LUMEN ›"}
+            {mode === "my" ? t("source_my_node") : t("source_lumen_node")}
           </span>
         </div>
       </MiniCard>
 
       <MiniCard>
         <div className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
-          HEIGHT
+          {t("height")}
         </div>
         <div className="mt-1 font-mono text-3xl tracking-tight tabular-nums text-white">
           {height != null ? height.toLocaleString() : "—"}
         </div>
         {headersH != null && height != null && headersH !== height ? (
           <div className="mt-1 text-[10px] font-mono text-[#F59E0B]">
-            Headers {headersH.toLocaleString()}
-            {syncPct != null ? ` · sync ~${syncPct}%` : ""}
+            {t("headers_sync", {
+              h: headersH.toLocaleString(),
+              p: syncPct ?? "—",
+            })}
           </div>
         ) : null}
         <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-mono text-[#A0A0B0]">
-          <span>Peers · {peersN ?? "—"}</span>
-          <span>Mempool · {mempoolSize}</span>
+          <span>{t("peers", { n: peersN ?? "—" })}</span>
+          <span>{t("mempool", { n: mempoolSize })}</span>
           <span className="text-[#FF7A3D]">
-            Avg block ·{" "}
-            {avgBlockTime != null ? `${avgBlockTime}s` : "—"}
+            {t("avg_block", {
+              v: avgBlockTime != null ? `${avgBlockTime}s` : "—",
+            })}
           </span>
           <span className="text-[10px] text-[#A0A0B0]/90 truncate">
             {avgSub}
           </span>
           {nodeName ? (
-            <span className="truncate col-span-2">Node · {nodeName}</span>
+            <span className="truncate col-span-2">
+              {t("node", { n: nodeName })}
+            </span>
           ) : null}
           {token ? (
             <span
@@ -794,17 +821,17 @@ function HomeBody({
                 bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"
               }`}
             >
-              Bridge · {bridgeOnline ? "online" : "offline"}
+              {bridgeOnline ? t("bridge_online") : t("bridge_offline")}
             </span>
           ) : (
-            <span className="col-span-2">Bridge · not set</span>
+            <span className="col-span-2">{t("bridge_not_set")}</span>
           )}
         </div>
       </MiniCard>
 
       <div className="grid grid-cols-2 gap-2">
         <ActionChip
-          label={infoFetching ? "…" : "Refresh"}
+          label={infoFetching ? "…" : t("action_refresh")}
           icon={
             <RefreshCw
               className={`w-3.5 h-3.5 ${infoFetching ? "animate-spin" : ""}`}
@@ -812,25 +839,26 @@ function HomeBody({
           }
           onClick={onRefresh}
         />
-        <ActionChip label="Bridge" onClick={onOpenBridge} />
-        <ActionChip label="Alerts" onClick={onAlerts} />
+        <ActionChip label={t("action_bridge")} onClick={onOpenBridge} />
+        <ActionChip label={t("action_alerts")} onClick={onAlerts} />
         <ActionChip
           label={
             usd?.price != null
               ? `$${Number(usd.price).toFixed(2)}`
-              : usd?.priceLabel || "Oracles"
+              : usd?.priceLabel || t("action_oracles")
           }
           onClick={onOracles}
         />
       </div>
 
       {!token ? (
-        <MiniCard onClick={onOpenBridge}>
-          <p className="text-sm text-[#E8E8F0]">Connect your node</p>
-          <p className="text-[11px] text-[#A0A0B0] mt-1">
-            Generate or paste a bridge token — no desktop site needed.
-          </p>
-        </MiniCard>
+        <EmptyState
+          title={t("empty_connect_title")}
+          body={t("empty_connect_body")}
+          icon={<Link2 className="w-4 h-4" />}
+          onClick={onOpenBridge}
+          actionLabel={t("action_bridge")}
+        />
       ) : null}
     </div>
   );
@@ -871,10 +899,13 @@ function NetworkMapFull({
   token: string;
   height: number | null;
 }) {
+  const { t } = useMiniI18n();
   return (
     <div className="grid grid-rows-[auto_minmax(0,1fr)] flex-1 min-h-0 h-full w-full">
       <div className="shrink-0 z-10 flex items-center justify-between gap-2 px-3.5 py-2 border-b border-white/[0.06] bg-[#0A0A0F]">
-        <h1 className="text-base font-semibold tracking-tight">Network</h1>
+        <h1 className="text-base font-semibold tracking-tight">
+          {t("network_title")}
+        </h1>
         <NetViewToggle netView={netView} setNetView={setNetView} />
       </div>
       {/*
@@ -903,6 +934,7 @@ function NetViewToggle({
   netView: "list" | "map";
   setNetView: (v: "list" | "map") => void;
 }) {
+  const { t } = useMiniI18n();
   return (
     <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
       <button
@@ -915,7 +947,7 @@ function NetViewToggle({
           netView === "map" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
         }`}
       >
-        <MapIcon className="w-3.5 h-3.5" /> MAP
+        <MapIcon className="w-3.5 h-3.5" /> {t("map")}
       </button>
       <button
         type="button"
@@ -927,7 +959,7 @@ function NetViewToggle({
           netView === "list" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
         }`}
       >
-        <List className="w-3.5 h-3.5" /> LIST
+        <List className="w-3.5 h-3.5" /> {t("list")}
       </button>
     </div>
   );
@@ -962,6 +994,7 @@ function NetworkBody({
   void mode;
   void token;
   void height;
+  const { t } = useMiniI18n();
   const [query, setQuery] = useState("");
   const filtered = useMemo(() => {
     const s = query.trim().toLowerCase();
@@ -985,10 +1018,15 @@ function NetworkBody({
     });
   }, [peerRows, query]);
 
+  const filterLabel =
+    netFilter === "live" ? t("filter_live") : t("filter_all");
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold tracking-tight">Network</h1>
+        <h1 className="text-lg font-semibold tracking-tight">
+          {t("network_title")}
+        </h1>
         <NetViewToggle netView={netView} setNetView={setNetView} />
       </div>
 
@@ -998,7 +1036,7 @@ function NetworkBody({
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search name, city, IP…"
+          placeholder={t("search_peers")}
           enterKeyHint="search"
           autoCapitalize="off"
           autoCorrect="off"
@@ -1020,17 +1058,24 @@ function NetworkBody({
               netFilter === f ? "bg-white/10 text-white" : "text-[#A0A0B0]"
             }`}
           >
-            {f.toUpperCase()}
+            {f === "live" ? t("filter_live") : t("filter_all")}
           </button>
         ))}
       </div>
       <div className="space-y-2">
         <p className="text-[11px] font-mono text-[#A0A0B0]">
           {mapLoading
-            ? "Loading peers…"
-            : `${filtered.length}${
-                query.trim() ? ` / ${peerRows.length}` : ""
-              } peers · ${netFilter}${lowEnd ? " · lite" : ""}`}
+            ? t("peers_loading")
+            : query.trim()
+              ? t("peers_count_q", {
+                  n: filtered.length,
+                  total: peerRows.length,
+                  f: `${filterLabel}${lowEnd ? " · lite" : ""}`,
+                })
+              : t("peers_count", {
+                  n: filtered.length,
+                  f: `${filterLabel}${lowEnd ? " · lite" : ""}`,
+                })}
         </p>
         {mapLoading ? (
           <>
@@ -1039,13 +1084,19 @@ function NetworkBody({
             <Skeleton className="h-16" />
           </>
         ) : filtered.length === 0 ? (
-          <MiniCard>
-            <p className="text-sm text-[#A0A0B0]">
-              {query.trim()
-                ? "No peers match this search."
-                : "No peers in this filter."}
-            </p>
-          </MiniCard>
+          <EmptyState
+            title={
+              query.trim()
+                ? t("empty_peers_search")
+                : t("empty_peers_filter")
+            }
+            body={
+              query.trim()
+                ? t("empty_peers_search_body")
+                : t("empty_peers_filter_body")
+            }
+            icon={<Radio className="w-4 h-4" />}
+          />
         ) : (
           filtered.map((p, i) => (
             <MiniCard
@@ -1060,7 +1111,7 @@ function NetworkBody({
                   <div className="text-sm truncate">
                     {p.name ||
                       [p.city, p.country].filter(Boolean).join(", ") ||
-                      "Unknown"}
+                      t("peer_unknown")}
                   </div>
                   <div className="text-[10px] font-mono text-[#A0A0B0] truncate mt-0.5">
                     {[p.city, p.country].filter(Boolean).join(", ") ||
@@ -1100,6 +1151,7 @@ function OraclesBody({
   myBridgeConnected: boolean;
   onConnect: () => void;
 }) {
+  const { t } = useMiniI18n();
   const active = seg === "my" ? myFeeds : feeds;
   const usd = active.find(
     (f) => f.id === "erg-usd" || f.pair === "ERG/USD"
@@ -1110,7 +1162,9 @@ function OraclesBody({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold tracking-tight">Oracles</h1>
+        <h1 className="text-lg font-semibold tracking-tight">
+          {t("oracles_title")}
+        </h1>
         <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
           {(["network", "my"] as const).map((s) => (
             <button
@@ -1124,19 +1178,20 @@ function OraclesBody({
                 seg === s ? "bg-white/10 text-white" : "text-[#A0A0B0]"
               }`}
             >
-              {s === "network" ? "NETWORK" : "MY"}
+              {s === "network" ? t("oracles_network") : t("oracles_my")}
             </button>
           ))}
         </div>
       </div>
 
       {seg === "my" && !hasToken ? (
-        <MiniCard onClick={onConnect}>
-          <p className="text-sm">Connect bridge</p>
-          <p className="text-[11px] text-[#A0A0B0] mt-1">
-            Your operator feeds need a bridge token.
-          </p>
-        </MiniCard>
+        <EmptyState
+          title={t("empty_oracle_connect_title")}
+          body={t("empty_oracle_connect_body")}
+          icon={<Link2 className="w-4 h-4" />}
+          onClick={onConnect}
+          actionLabel={t("action_bridge")}
+        />
       ) : loading ? (
         <>
           <Skeleton className="h-24" />
@@ -1147,7 +1202,7 @@ function OraclesBody({
           {seg === "my" ? (
             <MiniCard>
               <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-                AGENT
+                {t("agent")}
               </div>
               <div
                 className={`mt-1 text-sm font-mono ${
@@ -1155,8 +1210,8 @@ function OraclesBody({
                 }`}
               >
                 {myBridgeConnected
-                  ? "Bridge online"
-                  : "Bridge offline / no data"}
+                  ? t("agent_online")
+                  : t("agent_offline")}
               </div>
             </MiniCard>
           ) : null}
@@ -1177,18 +1232,18 @@ function OraclesBody({
             />
           </div>
           {seg === "my" && active.length === 0 && hasToken ? (
-            <MiniCard>
-              <p className="text-sm text-[#A0A0B0]">
-                No operator feeds yet — ensure oracle scope on the agent.
-              </p>
-            </MiniCard>
+            <EmptyState
+              title={t("empty_oracle_my")}
+              body={t("empty_oracle_my_body")}
+              icon={<LineChart className="w-4 h-4" />}
+            />
           ) : null}
           {seg === "network" && active.length === 0 ? (
-            <MiniCard>
-              <p className="text-sm text-[#A0A0B0]">
-                Oracle feeds unavailable — pull to refresh or try again.
-              </p>
-            </MiniCard>
+            <EmptyState
+              title={t("empty_oracle_net")}
+              body={t("empty_oracle_net_body")}
+              icon={<LineChart className="w-4 h-4" />}
+            />
           ) : null}
         </>
       )}
@@ -1262,41 +1317,66 @@ function MeBody({
   onOpenAlerts: () => void;
   onClear: () => void;
 }) {
+  const { t, locale, setLocale } = useMiniI18n();
   const tail = token ? `…${token.slice(-6)}` : "—";
   return (
     <div className="space-y-3">
-      <h1 className="text-lg font-semibold tracking-tight">Me</h1>
+      <h1 className="text-lg font-semibold tracking-tight">{t("me_title")}</h1>
       <MiniCard onClick={onOpenBridge}>
         <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-          BRIDGE
+          {t("bridge")}
         </div>
         <div className="mt-1 text-sm">
           {token ? (
             <>
-              Token {tail} ·{" "}
+              {t("token_status", { t: tail })}
               <span
                 className={
                   bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"
                 }
               >
-                {bridgeOnline ? "online" : "offline"}
+                {bridgeOnline ? t("online") : t("offline")}
               </span>
             </>
           ) : (
-            "Not connected — tap to set up"
+            t("not_connected")
           )}
         </div>
         <div className="mt-1 text-[11px] font-mono text-[#A0A0B0]">
-          Mode · {mode === "my" ? "My Node" : "lumen"}
+          {t("mode_line", {
+            m: mode === "my" ? t("mode_my") : t("mode_lumen"),
+          })}
         </div>
       </MiniCard>
       <MiniCard onClick={onOpenAlerts}>
         <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-          ALERTS
+          {t("alerts")}
         </div>
-        <div className="mt-1 text-sm">Telegram watchdog</div>
+        <div className="mt-1 text-sm">{t("alerts_watchdog")}</div>
         <div className="text-[11px] text-[#A0A0B0] mt-0.5">
-          Bridge / oracle problem pings
+          {t("alerts_watchdog_sub")}
+        </div>
+      </MiniCard>
+      <MiniCard>
+        <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider mb-2">
+          {t("language")}
+        </div>
+        <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
+          {(["en", "ru"] as const).map((l) => (
+            <button
+              key={l}
+              type="button"
+              onClick={() => {
+                setLocale(l);
+                void hapticImpact("light");
+              }}
+              className={`h-8 px-4 rounded-full text-[10px] font-mono tracking-wider ${
+                locale === l ? "bg-white/10 text-white" : "text-[#A0A0B0]"
+              }`}
+            >
+              {l === "en" ? t("lang_en") : t("lang_ru")}
+            </button>
+          ))}
         </div>
       </MiniCard>
       <MiniCard
@@ -1312,9 +1392,9 @@ function MeBody({
           }
         }}
       >
-        <div className="text-sm">Open full site</div>
+        <div className="text-sm">{t("open_site")}</div>
         <div className="text-[11px] text-[#A0A0B0] mt-0.5">
-          Orbit · desktop cockpit · ergolumen.net
+          {t("open_site_sub")}
         </div>
       </MiniCard>
       {token ? (
@@ -1323,7 +1403,7 @@ function MeBody({
           onClick={onClear}
           className="w-full h-11 rounded-xl border border-[#EF4444]/30 text-[#EF4444] font-mono text-[11px] tracking-wider"
         >
-          CLEAR TOKEN
+          {t("clear_token")}
         </button>
       ) : null}
     </div>
@@ -1338,13 +1418,14 @@ function PeerSheet({
   onClose: () => void;
 }) {
   const reduce = useReducedMotion();
+  const { t } = useMiniI18n();
   return (
     <AnimatePresence>
       {peer ? (
         <>
           <motion.button
             type="button"
-            aria-label="Close"
+            aria-label={t("close_aria")}
             className="fixed inset-0 z-[80] bg-black/55"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -1360,39 +1441,39 @@ function PeerSheet({
             transition={{ duration: reduce ? 0.01 : 0.26 }}
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
-            <h2 className="text-base font-semibold mb-3">Peer</h2>
+            <h2 className="text-base font-semibold mb-3">{t("peer_title")}</h2>
             <dl className="space-y-2 text-sm font-mono">
               {peer.name ? (
                 <div className="flex justify-between gap-2">
-                  <dt className="text-[#A0A0B0]">Name</dt>
+                  <dt className="text-[#A0A0B0]">{t("peer_name")}</dt>
                   <dd className="text-right truncate max-w-[60%]">{peer.name}</dd>
                 </div>
               ) : null}
               <div className="flex justify-between gap-2">
-                <dt className="text-[#A0A0B0]">Place</dt>
+                <dt className="text-[#A0A0B0]">{t("peer_place")}</dt>
                 <dd className="text-right">
                   {[peer.city, peer.country].filter(Boolean).join(", ") || "—"}
                 </dd>
               </div>
               <div className="flex justify-between gap-2">
-                <dt className="text-[#A0A0B0]">IP</dt>
+                <dt className="text-[#A0A0B0]">{t("peer_ip")}</dt>
                 <dd className="text-right truncate max-w-[60%]">
                   {peer.ip || peer.address || "—"}
                 </dd>
               </div>
               <div className="flex justify-between gap-2">
-                <dt className="text-[#A0A0B0]">Status</dt>
+                <dt className="text-[#A0A0B0]">{t("peer_status")}</dt>
                 <dd className="uppercase">{peer.state || peer.status || "—"}</dd>
               </div>
               {peer.connectionType ? (
                 <div className="flex justify-between gap-2">
-                  <dt className="text-[#A0A0B0]">Link</dt>
+                  <dt className="text-[#A0A0B0]">{t("peer_link")}</dt>
                   <dd>{peer.connectionType}</dd>
                 </div>
               ) : null}
               {peer.version ? (
                 <div className="flex justify-between gap-2">
-                  <dt className="text-[#A0A0B0]">Version</dt>
+                  <dt className="text-[#A0A0B0]">{t("peer_version")}</dt>
                   <dd className="truncate max-w-[60%]">{peer.version}</dd>
                 </div>
               ) : null}
@@ -1402,7 +1483,7 @@ function PeerSheet({
               onClick={onClose}
               className="mt-4 w-full h-11 rounded-xl border border-white/15 font-mono text-[11px] tracking-wider"
             >
-              CLOSE
+              {t("close")}
             </button>
           </motion.div>
         </>

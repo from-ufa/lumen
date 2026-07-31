@@ -17,6 +17,7 @@ import {
 } from "../../lib/node-api";
 import { hapticImpact, hapticNotification } from "../../lib/telegram";
 import { sheetSpring, sheetVariants } from "../lib/motion";
+import { useMiniI18n } from "../lib/MiniI18n";
 
 async function copyText(text: string): Promise<boolean> {
   try {
@@ -52,6 +53,7 @@ function CopyBlock({
   value: string;
   hint?: string;
 }) {
+  const { t } = useMiniI18n();
   const [copied, setCopied] = useState(false);
   const onCopy = useCallback(async () => {
     if (!value) return;
@@ -59,12 +61,12 @@ function CopyBlock({
     if (ok) {
       setCopied(true);
       void hapticImpact("light");
-      toast.success("Copied");
+      toast.success(t("toast_copied"));
       window.setTimeout(() => setCopied(false), 1600);
     } else {
-      toast.error("Copy failed");
+      toast.error(t("toast_copy_failed"));
     }
-  }, [value]);
+  }, [value, t]);
 
   if (!value) return null;
 
@@ -84,7 +86,7 @@ function CopyBlock({
           ) : (
             <Copy className="w-3 h-3" />
           )}
-          {copied ? "COPIED" : "COPY"}
+          {copied ? t("copied") : t("copy")}
         </button>
       </div>
       <pre className="rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 font-mono text-[10px] leading-relaxed text-[#E8E8F0] whitespace-pre-wrap break-all max-h-36 overflow-y-auto">
@@ -113,17 +115,18 @@ export default function BridgeSheet({
   onSaved: (token: string, mode: NodeMode) => void;
 }) {
   const reduce = useReducedMotion();
+  const { t } = useMiniI18n();
   const [draft, setDraft] = useState(token);
   const [draftMode, setDraftMode] = useState<NodeMode>(mode);
   const [busy, setBusy] = useState(false);
 
-  const t = draft.trim();
+  const tok = draft.trim();
   const installCmd = useMemo(() => bridgeInstallCommand(), []);
   const dockerCmd = useMemo(
-    () => (t ? bridgeDockerCommand(t) : ""),
-    [t]
+    () => (tok ? bridgeDockerCommand(tok) : ""),
+    [tok]
   );
-  const runCmd = useMemo(() => (t ? bridgeRunCommand(t) : ""), [t]);
+  const runCmd = useMemo(() => (tok ? bridgeRunCommand(tok) : ""), [tok]);
 
   const save = useCallback(() => {
     const next = draft.trim();
@@ -131,9 +134,9 @@ export default function BridgeSheet({
     saveNodeMode(draftMode);
     onSaved(next, draftMode);
     void hapticNotification("success");
-    toast.success(next ? "Bridge saved" : "Bridge token cleared");
+    toast.success(next ? t("toast_bridge_saved") : t("toast_bridge_cleared"));
     onClose();
-  }, [draft, draftMode, onClose, onSaved]);
+  }, [draft, draftMode, onClose, onSaved, t]);
 
   const mint = useCallback(async () => {
     setBusy(true);
@@ -145,14 +148,14 @@ export default function BridgeSheet({
       setDraftMode("my");
       onSaved(minted, "my");
       void hapticNotification("success");
-      toast.success("Token created — copy Docker cmd below");
+      toast.success(t("toast_token_created"));
     } catch (e) {
       void hapticNotification("error");
-      toast.error(e instanceof Error ? e.message : "Mint failed");
+      toast.error(e instanceof Error ? e.message : t("toast_mint_failed"));
     } finally {
       setBusy(false);
     }
-  }, [onSaved]);
+  }, [onSaved, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -166,7 +169,7 @@ export default function BridgeSheet({
         <>
           <motion.button
             type="button"
-            aria-label="Close"
+            aria-label={t("close_aria")}
             className="fixed inset-0 z-[80] bg-black/55"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -177,7 +180,7 @@ export default function BridgeSheet({
           <motion.div
             role="dialog"
             aria-modal
-            aria-label="Bridge settings"
+            aria-label={t("bridge_sheet_title")}
             className="fixed inset-x-0 bottom-0 z-[90] max-h-[88dvh] overflow-y-auto rounded-t-3xl border border-white/10 bg-[#12121A] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
             variants={reduce ? undefined : sheetVariants}
             initial={reduce ? false : "hidden"}
@@ -187,7 +190,9 @@ export default function BridgeSheet({
           >
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-base font-semibold tracking-tight">Bridge</h2>
+              <h2 className="text-base font-semibold tracking-tight">
+                {t("bridge_sheet_title")}
+              </h2>
               <button
                 type="button"
                 onClick={onClose}
@@ -198,7 +203,7 @@ export default function BridgeSheet({
             </div>
 
             <p className="text-[11px] font-mono text-[#A0A0B0] tracking-wide mb-3">
-              SOURCE
+              {t("bridge_source")}
             </p>
             <div className="grid grid-cols-2 gap-2 mb-5">
               {(["lumen", "my"] as const).map((m) => (
@@ -215,13 +220,13 @@ export default function BridgeSheet({
                       : "border-white/10 text-[#A0A0B0]"
                   }`}
                 >
-                  {m === "lumen" ? "LUMEN" : "MY NODE"}
+                  {m === "lumen" ? "LUMEN" : t("source_my")}
                 </button>
               ))}
             </div>
 
             <p className="text-[11px] font-mono text-[#A0A0B0] tracking-wide mb-2">
-              BRIDGE TOKEN
+              {t("bridge_token_label")}
             </p>
             <textarea
               value={draft}
@@ -239,50 +244,49 @@ export default function BridgeSheet({
                 onClick={() => void mint()}
                 className="flex-1 h-11 rounded-xl border border-white/15 bg-white/[0.06] font-mono text-[11px] tracking-wider disabled:opacity-50"
               >
-                {busy ? "…" : "GENERATE"}
+                {busy ? "…" : t("generate")}
               </button>
               <button
                 type="button"
                 onClick={save}
                 className="flex-1 h-11 rounded-xl border border-[#FF7A3D]/40 bg-[#FF7A3D]/20 text-[#FF7A3D] font-mono text-[11px] tracking-wider font-semibold"
               >
-                SAVE
+                {t("save")}
               </button>
             </div>
 
             <p className="text-[11px] font-mono text-[#A0A0B0] tracking-wide mb-3">
-              RUN NEXT TO YOUR ERGO NODE
+              {t("run_next_to_node")}
             </p>
 
-            {t ? (
+            {tok ? (
               <CopyBlock
-                label="DOCKER (RECOMMENDED)"
+                label={t("docker_label")}
                 value={dockerCmd}
-                hint="Linux host network · reaches Ergo on 127.0.0.1:9053. Paste on the machine that runs your node."
+                hint={t("docker_hint")}
               />
             ) : (
               <p className="mb-4 text-[11px] text-[#A0A0B0] leading-relaxed">
-                Generate or paste a token to unlock the Docker one-liner.
+                {t("need_token_docker")}
               </p>
             )}
 
             <CopyBlock
-              label="INSTALL.SH (NO DOCKER)"
+              label={t("install_label")}
               value={installCmd}
-              hint="curl install from GitHub, then use RUN below."
+              hint={t("install_hint")}
             />
 
-            {t ? (
+            {tok ? (
               <CopyBlock
-                label="RUN AGENT"
+                label={t("run_label")}
                 value={runCmd}
-                hint="After install.sh — same token as above."
+                hint={t("run_hint")}
               />
             ) : null}
 
             <p className="mt-1 mb-2 text-[10px] text-[#A0A0B0]/80 leading-relaxed">
-              Vault restore uses Telegram link flow. Keep the agent running next
-              to your node for MY NODE mode.
+              {t("bridge_footer")}
             </p>
           </motion.div>
         </>
