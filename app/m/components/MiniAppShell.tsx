@@ -72,12 +72,43 @@ type PeerRow = {
 
 type OracleFeed = {
   id: string;
-  name?: string;
-  latestPrice?: number | null;
+  title?: string;
+  pair?: string;
+  /** API field (not latestPrice) */
+  price?: number | null;
+  priceLabel?: string | null;
   priceChange24h?: number | null;
-  postingRate?: number | null;
-  lastPostedAt?: number | null;
+  status?: string | null;
+  history?: Array<{ price?: number | null } | number>;
 };
+
+type OracleApiResponse = {
+  feeds?: OracleFeed[];
+  view?: string;
+  mode?: string;
+  bridge?: { connected?: boolean };
+};
+
+/** Normalize API → UI (price, optional Δ from history) */
+function normalizeFeeds(raw: OracleFeed[] | undefined): OracleFeed[] {
+  return (raw ?? []).map((f) => {
+    const price =
+      typeof f.price === "number" && Number.isFinite(f.price) ? f.price : null;
+    let ch: number | null =
+      typeof f.priceChange24h === "number" ? f.priceChange24h : null;
+    if (ch == null && price != null && Array.isArray(f.history) && f.history.length > 1) {
+      const first = f.history[0];
+      const prev =
+        typeof first === "number"
+          ? first
+          : typeof first?.price === "number"
+            ? first.price
+            : null;
+      if (prev != null && prev !== 0) ch = (price - prev) / prev;
+    }
+    return { ...f, price, priceChange24h: ch };
+  });
+}
 
 async function fetchOracles(mode: "network" | "my", token: string) {
   const q =
@@ -86,11 +117,11 @@ async function fetchOracles(mode: "network" | "my", token: string) {
       : "?mode=network";
   const res = await fetch(`/api/oracles${q}`, { cache: "no-store" });
   if (!res.ok) throw new Error("oracles");
-  return res.json() as Promise<{
-    feeds?: OracleFeed[];
-    mode?: string;
-    bridge?: { connected?: boolean };
-  }>;
+  const data = (await res.json()) as OracleApiResponse;
+  return {
+    ...data,
+    feeds: normalizeFeeds(data.feeds),
+  };
 }
 
 async function fetchPeersMap(mode: NodeMode, token: string) {
@@ -602,7 +633,7 @@ function HomeBody({
   onAlerts: () => void;
   onToggleMode: () => void;
 }) {
-  const usd = feeds.find((f) => f.id === "erg-usd");
+  const usd = feeds.find((f) => f.id === "erg-usd" || f.pair === "ERG/USD");
   if (infoLoading) {
     return (
       <div className="space-y-3">
@@ -677,9 +708,9 @@ function HomeBody({
         <ActionChip label="Alerts" onClick={onAlerts} />
         <ActionChip
           label={
-            usd?.latestPrice != null
-              ? `$${Number(usd.latestPrice).toFixed(2)}`
-              : "Oracles"
+            usd?.price != null
+              ? `$${Number(usd.price).toFixed(2)}`
+              : usd?.priceLabel || "Oracles"
           }
           onClick={onOracles}
         />
@@ -878,8 +909,12 @@ function OraclesBody({
   onConnect: () => void;
 }) {
   const active = seg === "my" ? myFeeds : feeds;
-  const usd = active.find((f) => f.id === "erg-usd");
-  const xau = active.find((f) => f.id === "erg-xau");
+  const usd = active.find(
+    (f) => f.id === "erg-usd" || f.pair === "ERG/USD"
+  );
+  const xau = active.find(
+    (f) => f.id === "erg-xau" || f.pair === "ERG/XAU"
+  );
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -927,20 +962,24 @@ function OraclesBody({
                   myBridgeConnected ? "text-[#10B981]" : "text-[#F59E0B]"
                 }`}
               >
-                {myBridgeConnected ? "Bridge online" : "Bridge offline / no data"}
+                {myBridgeConnected
+                  ? "Bridge online"
+                  : "Bridge offline / no data"}
               </div>
             </MiniCard>
           ) : null}
           <div className="grid grid-cols-1 gap-2">
             <OracleTile
-              title="ERG / USD"
-              price={usd?.latestPrice}
+              title={usd?.title || usd?.pair || "ERG / USD"}
+              price={usd?.price}
+              priceLabel={usd?.priceLabel}
               ch={usd?.priceChange24h}
               accent="#00E5FF"
             />
             <OracleTile
-              title="ERG / XAU"
-              price={xau?.latestPrice}
+              title={xau?.title || xau?.pair || "ERG / XAU"}
+              price={xau?.price}
+              priceLabel={xau?.priceLabel}
               ch={xau?.priceChange24h}
               accent="#E8C547"
             />
@@ -949,6 +988,13 @@ function OraclesBody({
             <MiniCard>
               <p className="text-sm text-[#A0A0B0]">
                 No operator feeds yet — ensure oracle scope on the agent.
+              </p>
+            </MiniCard>
+          ) : null}
+          {seg === "network" && active.length === 0 ? (
+            <MiniCard>
+              <p className="text-sm text-[#A0A0B0]">
+                Oracle feeds unavailable — pull to refresh or try again.
               </p>
             </MiniCard>
           ) : null}
@@ -961,28 +1007,41 @@ function OraclesBody({
 function OracleTile({
   title,
   price,
+  priceLabel,
   ch,
   accent,
 }: {
   title: string;
   price?: number | null;
+  priceLabel?: string | null;
   ch?: number | null;
   accent: string;
 }) {
   const up = ch != null && ch >= 0;
+  const display =
+    price != null && Number.isFinite(price)
+      ? price < 10
+        ? price.toFixed(4)
+        : price.toFixed(2)
+      : priceLabel || "—";
   return (
     <MiniCard>
-      <div className="text-[10px] font-mono tracking-[0.16em]" style={{ color: accent }}>
+      <div
+        className="text-[10px] font-mono tracking-[0.16em]"
+        style={{ color: accent }}
+      >
         {title}
       </div>
       <div className="mt-1 font-mono text-2xl tabular-nums text-white">
-        {price != null && Number.isFinite(price)
-          ? price < 10
-            ? price.toFixed(4)
-            : price.toFixed(2)
-          : "—"}
+        {typeof display === "string" && display.startsWith("$")
+          ? display
+          : price != null && Number.isFinite(price)
+            ? title.includes("USD")
+              ? `$${display}`
+              : display
+            : display}
       </div>
-      {ch != null ? (
+      {ch != null && Number.isFinite(ch) ? (
         <div
           className={`mt-1 text-[11px] font-mono ${
             up ? "text-[#10B981]" : "text-[#EF4444]"
