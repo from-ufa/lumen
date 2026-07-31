@@ -869,18 +869,42 @@ function Shell() {
               )}
               {tab === "me" && (
                 <MeBody
-                  mode={effectiveMode}
+                  mode={mode}
+                  effectiveMode={effectiveMode}
+                  isPersonal={isPersonal}
                   token={token}
                   bridgeOnline={bridgeOnline}
+                  oracleSeg={oracleSeg}
                   onOpenBridge={() => setBridgeOpen(true)}
                   onOpenAlerts={() => setAlertsOpen(true)}
-                  onClear={() => {
+                  onSetSource={(next) => {
+                    if (next === "my" && !token) {
+                      setBridgeOpen(true);
+                      return;
+                    }
+                    saveNodeMode(next);
+                    setMode(next);
+                    if (next === "lumen") setOracleSeg("network");
+                    void hapticImpact("light");
+                    void qc.invalidateQueries({ queryKey: ["mini-nodeInfo"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-peers-map"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-oracles"] });
+                  }}
+                  onDisconnect={() => {
                     saveBridgeToken("");
                     saveNodeMode("lumen");
                     setToken("");
                     setMode("lumen");
-                    toast.message(t("toast_token_cleared"));
-                    void hapticImpact("light");
+                    setOracleSeg("network");
+                    toast.message(t("me_disconnected_toast"));
+                    void hapticImpact("medium");
+                    void qc.invalidateQueries({ queryKey: ["mini-nodeInfo"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-bridge"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-peers-map"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-oracles"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-mempool"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-blocks"] });
+                    void qc.invalidateQueries({ queryKey: ["mini-avg-block"] });
                   }}
                 />
               )}
@@ -1688,60 +1712,261 @@ function OraclesBody({
 }
 
 function MeBody({
-  mode,
+  effectiveMode,
+  isPersonal,
   token,
   bridgeOnline,
+  oracleSeg,
   onOpenBridge,
   onOpenAlerts,
-  onClear,
+  onSetSource,
+  onDisconnect,
 }: {
   mode: NodeMode;
+  effectiveMode: NodeMode;
+  isPersonal: boolean;
   token: string;
   bridgeOnline: boolean;
+  oracleSeg: "network" | "my";
   onOpenBridge: () => void;
   onOpenAlerts: () => void;
-  onClear: () => void;
+  onSetSource: (m: NodeMode) => void;
+  onDisconnect: () => void;
 }) {
   const { t, locale, setLocale } = useMiniI18n();
-  const tail = token ? `…${token.slice(-6)}` : "—";
+  const hasToken = !!token;
+  const tail = hasToken ? `…${token.slice(-6)}` : "";
+
+  // Three clear states for the human
+  type ConnState = "none" | "agent_on" | "agent_off";
+  const conn: ConnState = !hasToken
+    ? "none"
+    : bridgeOnline
+      ? "agent_on"
+      : "agent_off";
+
+  const statusColor =
+    conn === "agent_on"
+      ? "#10B981"
+      : conn === "agent_off"
+        ? "#F59E0B"
+        : "#A0A0B0";
+  const statusBg =
+    conn === "agent_on"
+      ? "rgba(16,185,129,0.12)"
+      : conn === "agent_off"
+        ? "rgba(245,158,11,0.12)"
+        : "rgba(255,255,255,0.04)";
+  const statusBorder =
+    conn === "agent_on"
+      ? "rgba(16,185,129,0.4)"
+      : conn === "agent_off"
+        ? "rgba(245,158,11,0.4)"
+        : "rgba(255,255,255,0.1)";
+
+  const statusTitle =
+    conn === "agent_on"
+      ? t("me_status_connected")
+      : conn === "agent_off"
+        ? t("me_status_token_offline")
+        : t("me_status_guest");
+
+  const statusBody =
+    conn === "agent_on"
+      ? t("me_status_connected_body")
+      : conn === "agent_off"
+        ? t("me_status_token_offline_body")
+        : t("me_status_guest_body");
+
+  // What Ora / Net / Home actually show right now
+  const dataLabel =
+    isPersonal
+      ? t("me_viewing_personal")
+      : t("me_viewing_lumen");
+  const oraLabel =
+    oracleSeg === "my" && hasToken
+      ? t("me_ora_my")
+      : t("me_ora_lumen");
+
   return (
     <div className="space-y-3">
       <h1 className="text-lg font-semibold tracking-tight">{t("me_title")}</h1>
-      <MiniCard onClick={onOpenBridge}>
-        <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-          {t("bridge")}
+
+      {/* ═══ BIG connection status ═══ */}
+      <div
+        className="rounded-2xl border px-3.5 py-3.5"
+        style={{
+          borderColor: statusBorder,
+          background: statusBg,
+        }}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div
+              className="text-[10px] font-mono tracking-[0.16em] uppercase"
+              style={{ color: statusColor }}
+            >
+              {t("me_connection")}
+            </div>
+            <div
+              className="mt-1 text-xl font-semibold tracking-tight"
+              style={{ color: statusColor }}
+            >
+              {statusTitle}
+            </div>
+            <p className="mt-1.5 text-[12px] text-[#A0A0B0] leading-relaxed">
+              {statusBody}
+            </p>
+          </div>
+          <span
+            className="shrink-0 w-3 h-3 rounded-full mt-1.5"
+            style={{
+              background: statusColor,
+              boxShadow: `0 0 12px ${statusColor}`,
+            }}
+          />
         </div>
-        <div className="mt-1 text-sm">
-          {token ? (
-            <>
-              {t("token_status", { t: tail })}
+
+        {hasToken ? (
+          <div className="mt-3 pt-3 border-t border-white/10 space-y-1.5 text-[11px] font-mono text-[#A0A0B0]">
+            <div className="flex justify-between gap-2">
+              <span>{t("me_token")}</span>
+              <span className="text-[#E8E8F0]">{tail}</span>
+            </div>
+            <div className="flex justify-between gap-2">
+              <span>{t("me_agent")}</span>
               <span
-                className={
-                  bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"
-                }
+                style={{
+                  color: bridgeOnline ? "#10B981" : "#F59E0B",
+                }}
               >
-                {bridgeOnline ? t("online") : t("offline")}
+                {bridgeOnline ? t("me_agent_online") : t("me_agent_offline")}
               </span>
-            </>
-          ) : (
-            t("not_connected")
-          )}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* ═══ What app is showing NOW ═══ */}
+      <MiniCard>
+        <div className="text-[10px] font-mono tracking-[0.16em] text-[#A0A0B0] mb-2">
+          {t("me_now_showing")}
         </div>
-        <div className="mt-1 text-[11px] font-mono text-[#A0A0B0]">
-          {t("mode_line", {
-            m: mode === "my" ? t("mode_my") : t("mode_lumen"),
-          })}
+        <div className="space-y-2 text-[12px]">
+          <div className="flex justify-between gap-2">
+            <span className="text-[#A0A0B0]">{t("me_now_node")}</span>
+            <span
+              className="font-mono font-medium"
+              style={{ color: isPersonal ? "#FF7A3D" : "#00E5FF" }}
+            >
+              {dataLabel}
+            </span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span className="text-[#A0A0B0]">{t("me_now_ora")}</span>
+            <span
+              className="font-mono font-medium"
+              style={{
+                color:
+                  oracleSeg === "my" && hasToken ? "#FF7A3D" : "#00E5FF",
+              }}
+            >
+              {oraLabel}
+            </span>
+          </div>
         </div>
+        <p className="mt-2 text-[10px] text-[#6B6B78] leading-relaxed">
+          {t("me_now_hint")}
+        </p>
       </MiniCard>
+
+      {/* ═══ Source switch ═══ */}
+      <div>
+        <div className="text-[10px] font-mono tracking-[0.14em] text-[#6B6B78] mb-2 px-0.5">
+          {t("me_data_source")}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onSetSource("lumen")}
+            className={`rounded-2xl border px-3 py-3 text-left ${
+              effectiveMode === "lumen"
+                ? "border-[#00E5FF]/45 bg-[#00E5FF]/10"
+                : "border-white/10 bg-white/[0.03]"
+            }`}
+          >
+            <div
+              className={`text-[11px] font-mono tracking-wider font-semibold ${
+                effectiveMode === "lumen" ? "text-[#00E5FF]" : "text-[#A0A0B0]"
+              }`}
+            >
+              LUMEN
+            </div>
+            <div className="mt-1 text-[10px] text-[#6B6B78] leading-snug">
+              {t("me_src_lumen_sub")}
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetSource("my")}
+            className={`rounded-2xl border px-3 py-3 text-left ${
+              isPersonal
+                ? "border-[#FF7A3D]/45 bg-[#FF7A3D]/10"
+                : "border-white/10 bg-white/[0.03]"
+            }`}
+          >
+            <div
+              className={`text-[11px] font-mono tracking-wider font-semibold ${
+                isPersonal ? "text-[#FF7A3D]" : "text-[#A0A0B0]"
+              }`}
+            >
+              {t("mode_my").toUpperCase()}
+            </div>
+            <div className="mt-1 text-[10px] text-[#6B6B78] leading-snug">
+              {hasToken ? t("me_src_my_sub") : t("me_src_my_need_token")}
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* ═══ Actions ═══ */}
+      {!hasToken ? (
+        <button
+          type="button"
+          onClick={onOpenBridge}
+          className="w-full h-12 rounded-2xl border border-[#FF7A3D]/45 bg-[#FF7A3D]/20 text-[#FF7A3D] font-mono text-[12px] tracking-wider font-semibold active:scale-[0.98]"
+        >
+          {t("me_connect_cta")}
+        </button>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onOpenBridge}
+            className="h-12 rounded-2xl border border-white/15 bg-white/[0.05] font-mono text-[11px] tracking-wider text-[#E8E8F0] active:scale-[0.98]"
+          >
+            {t("me_edit_bridge")}
+          </button>
+          <button
+            type="button"
+            onClick={onDisconnect}
+            className="h-12 rounded-2xl border border-[#EF4444]/40 bg-[#EF4444]/10 text-[#EF4444] font-mono text-[11px] tracking-wider font-semibold active:scale-[0.98]"
+          >
+            {t("me_disconnect")}
+          </button>
+        </div>
+      )}
+
       <MiniCard onClick={onOpenAlerts}>
         <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
           {t("alerts")}
         </div>
         <div className="mt-1 text-sm">{t("alerts_watchdog")}</div>
         <div className="text-[11px] text-[#A0A0B0] mt-0.5">
-          {t("alerts_watchdog_sub")}
+          {hasToken ? t("alerts_watchdog_sub") : t("me_alerts_need_token")}
         </div>
       </MiniCard>
+
       <MiniCard>
         <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider mb-2">
           {t("language")}
@@ -1764,6 +1989,7 @@ function MeBody({
           ))}
         </div>
       </MiniCard>
+
       <MiniCard
         onClick={() => {
           try {
@@ -1782,15 +2008,6 @@ function MeBody({
           {t("open_site_sub")}
         </div>
       </MiniCard>
-      {token ? (
-        <button
-          type="button"
-          onClick={onClear}
-          className="w-full h-11 rounded-xl border border-[#EF4444]/30 text-[#EF4444] font-mono text-[11px] tracking-wider"
-        >
-          {t("clear_token")}
-        </button>
-      ) : null}
     </div>
   );
 }
