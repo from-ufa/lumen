@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
       enabled?: unknown;
       claimReminder?: unknown;
       postLagBlocks?: unknown;
+      minPeers?: unknown;
     };
     sendTest?: unknown;
     label?: unknown;
@@ -143,6 +144,10 @@ export async function POST(req: NextRequest) {
       postLagBlocks:
         typeof body.prefs?.postLagBlocks === "number"
           ? body.prefs.postLagBlocks
+          : undefined,
+      minPeers:
+        typeof body.prefs?.minPeers === "number"
+          ? Math.max(0, Math.min(50, Math.floor(body.prefs.minPeers)))
           : undefined,
     },
     label: typeof body.label === "string" ? body.label : null,

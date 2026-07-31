@@ -1,5 +1,6 @@
 /**
- * TA-1 alert engine: probe bridge/oracle signals → edge notify via Bot API.
+ * TA-2 alert engine: bridge + node + oracle signals → edge notify via Bot API.
+ * Opt-in only; does not touch web UI.
  */
 
 import { bridgeServerFetch } from "./bridge-server";
@@ -16,9 +17,23 @@ import {
 const COOLDOWN_MS: Record<string, number> = {
   "bridge.offline": 30 * 60_000,
   "bridge.online": 10 * 60_000,
+  "node.unreachable": 30 * 60_000,
+  "node.peers_low": 2 * 60 * 60_000,
+  "node.sync_lag": 60 * 60_000,
+  "node.height_stuck": 2 * 60 * 60_000,
+  "node.online": 10 * 60_000,
   "oracle.agent_down": 30 * 60_000,
   "oracle.post_lag": 60 * 60_000,
+  "oracle.low_gas": 12 * 60 * 60_000,
+  "oracle.missed_refresh": 60 * 60_000,
 };
+
+/** Headers lag (full vs headers on same node) before warn */
+const NODE_HEADER_LAG_BLOCKS = 50;
+/** Behind lumen host tip before warn */
+const NODE_NETWORK_LAG_BLOCKS = 80;
+/** Same fullHeight this long → height stuck */
+const NODE_HEIGHT_STUCK_MS = 30 * 60_000;
 
 type Desired = {
   key: string;
@@ -26,6 +41,7 @@ type Desired = {
   severity: "critical" | "warn" | "ok";
   title: string;
   body: string[];
+  meta?: TgAlertState["meta"];
 };
 
 function esc(s: string): string {
@@ -33,6 +49,10 @@ function esc(s: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+function baseKey(key: string): string {
+  return key.includes(":") ? key.split(":")[0] : key;
 }
 
 async function probeBridge(token: string): Promise<{
@@ -75,6 +95,102 @@ async function probeBridge(token: string): Promise<{
   }
 }
 
+/** Operator node via Bridge proxy */
+async function probeNode(token: string): Promise<{
+  ok: boolean;
+  fullHeight: number | null;
+  headersHeight: number | null;
+  peersCount: number | null;
+  name: string | null;
+  error?: string;
+}> {
+  try {
+    const upstream = await bridgeServerFetch(`/api/bridge/node/info`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "X-Lumen-Bridge-Token": token,
+      },
+      timeoutMs: 12_000,
+    });
+    const data = (await upstream.json().catch(() => ({}))) as {
+      fullHeight?: number;
+      headersHeight?: number;
+      peersCount?: number;
+      name?: string;
+      error?: string;
+      message?: string;
+    };
+    if (!upstream.ok) {
+      return {
+        ok: false,
+        fullHeight: null,
+        headersHeight: null,
+        peersCount: null,
+        name: null,
+        error:
+          data.error ||
+          data.message ||
+          `http_${upstream.status}`,
+      };
+    }
+    const full =
+      typeof data.fullHeight === "number" ? data.fullHeight : null;
+    const headers =
+      typeof data.headersHeight === "number" ? data.headersHeight : null;
+    if (full == null && headers == null) {
+      return {
+        ok: false,
+        fullHeight: null,
+        headersHeight: null,
+        peersCount: null,
+        name: null,
+        error: "empty_info",
+      };
+    }
+    return {
+      ok: true,
+      fullHeight: full,
+      headersHeight: headers,
+      peersCount:
+        typeof data.peersCount === "number" ? data.peersCount : null,
+      name: typeof data.name === "string" ? data.name : null,
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      fullHeight: null,
+      headersHeight: null,
+      peersCount: null,
+      name: null,
+      error: e instanceof Error ? e.message : "node_probe_failed",
+    };
+  }
+}
+
+/** Lumen host tip for network lag comparison (best-effort) */
+async function probeLumenTip(): Promise<number | null> {
+  const base =
+    process.env.LUMEN_INTERNAL_URL?.trim() || "http://127.0.0.1:3000";
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/api/node/info`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => ({}))) as {
+      fullHeight?: number;
+      headersHeight?: number;
+    };
+    if (typeof data.fullHeight === "number") return data.fullHeight;
+    if (typeof data.headersHeight === "number") return data.headersHeight;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 async function probeOraclesDetailed(token: string): Promise<{
   feeds: Array<{
     id: string;
@@ -83,6 +199,8 @@ async function probeOraclesDetailed(token: string): Promise<{
     postAgeBlocks: number | null;
     claimable: number | null;
     liveMax: number;
+    walletErg: number | null;
+    inLastRefresh: boolean | null;
   }>;
   error?: string;
 }> {
@@ -109,6 +227,8 @@ async function probeOraclesDetailed(token: string): Promise<{
           isHealthy?: boolean | null;
           postAgeBlocks?: number | null;
           claimableRewards?: number | null;
+          walletErg?: number | null;
+          inLastRefresh?: boolean | null;
         } | null;
         statusThresholds?: { liveMax?: number };
       }>;
@@ -127,6 +247,8 @@ async function probeOraclesDetailed(token: string): Promise<{
           postAgeBlocks: f.myOperator?.postAgeBlocks ?? null,
           claimable: f.myOperator?.claimableRewards ?? null,
           liveMax: f.statusThresholds?.liveMax ?? 24,
+          walletErg: f.myOperator?.walletErg ?? null,
+          inLastRefresh: f.myOperator?.inLastRefresh ?? null,
         })),
     };
   } catch (e) {
@@ -143,17 +265,12 @@ function cooldownOk(
   now: number
 ): boolean {
   if (!prev?.lastNotifiedAt) return true;
-  const cd = COOLDOWN_MS[key.split(":")[0]] ?? COOLDOWN_MS[key] ?? 30 * 60_000;
-  // keys like oracle.agent_down:erg-usd
-  const base = key.includes(":") ? key.split(":")[0] : key;
-  const ms = COOLDOWN_MS[base] ?? cd;
+  const base = baseKey(key);
+  const ms = COOLDOWN_MS[base] ?? 30 * 60_000;
   return now - prev.lastNotifiedAt >= ms;
 }
 
-async function sendAlert(
-  chatId: number,
-  d: Desired
-): Promise<boolean> {
+async function sendAlert(chatId: number, d: Desired): Promise<boolean> {
   const icon =
     d.severity === "critical" ? "⚠️" : d.severity === "warn" ? "⚡" : "✅";
   const html = [
@@ -161,7 +278,7 @@ async function sendAlert(
     "",
     ...d.body.map((l) => esc(l)),
     "",
-    "<i>Lumen alerts · TA-1</i>",
+    "<i>Lumen · Mini App → Alerts</i>",
   ].join("\n");
   const res = await replyHtml(chatId, html, true);
   return !!res.ok;
@@ -175,8 +292,8 @@ function applyEdge(
   const prev = sub.state[desired.key];
   const prevStatus = prev?.status ?? "unknown";
   const nextStatus = desired.status;
+  const meta = desired.meta ?? prev?.meta;
 
-  // First observation: seed state, only notify on bad
   if (!prev || prevStatus === "unknown") {
     const notify = nextStatus === "bad" && cooldownOk(prev, desired.key, now);
     return {
@@ -185,23 +302,23 @@ function applyEdge(
         status: nextStatus,
         since: now,
         lastNotifiedAt: notify ? now : prev?.lastNotifiedAt ?? null,
+        meta,
       },
     };
   }
 
   if (prevStatus === nextStatus) {
-    // Still bad — cooldown re-notify optional; TA-1: no spam while stuck bad
     return {
       notify: false,
       next: {
         status: nextStatus,
         since: prev.since,
         lastNotifiedAt: prev.lastNotifiedAt,
+        meta: desired.meta ?? prev.meta,
       },
     };
   }
 
-  // Edge: status changed
   const notify = cooldownOk(prev, desired.key, now);
   return {
     notify,
@@ -209,7 +326,62 @@ function applyEdge(
       status: nextStatus,
       since: now,
       lastNotifiedAt: notify ? now : prev.lastNotifiedAt,
+      meta,
     },
+  };
+}
+
+/**
+ * Height-stuck: height unchanged for NODE_HEIGHT_STUCK_MS.
+ * Resets `since` when height advances.
+ */
+function evalHeightStuck(
+  sub: TgAlertSubscription,
+  height: number | null,
+  now: number
+): Desired | null {
+  if (height == null) return null;
+  const key = "node.height_stuck";
+  const prev = sub.state[key];
+  const prevH = prev?.meta?.height;
+
+  if (prevH == null || prevH !== height) {
+    // Height moved (or first sample) — healthy
+    return {
+      key,
+      status: "ok",
+      severity: "ok",
+      title: "Node height advancing",
+      body: [`Height ${height.toLocaleString()} — chain is moving.`],
+      meta: { height },
+    };
+  }
+
+  // Same height as last tick
+  const since = prev?.since ?? now;
+  if (now - since >= NODE_HEIGHT_STUCK_MS) {
+    const mins = Math.round((now - since) / 60_000);
+    return {
+      key,
+      status: "bad",
+      severity: "warn",
+      title: "Node height stuck",
+      body: [
+        `Full height stuck at ${height.toLocaleString()} for ~${mins} min.`,
+        "Node may be stalled, isolated, or waiting on peers.",
+        "Check logs / peers / disk.",
+      ],
+      meta: { height },
+    };
+  }
+
+  return {
+    key,
+    status: "ok",
+    severity: "ok",
+    title: "Node height stuck",
+    body: [],
+    meta: { height },
   };
 }
 
@@ -239,11 +411,10 @@ export async function evaluateSubscription(
         title: "Bridge offline",
         body: [
           "Your Lumen Bridge agent is not connected.",
-          br.error ? `Detail: ${br.error}` : "Check Docker / node process.",
-          "Open Mini App → Settings → reconnect agent.",
+          br.error ? `Detail: ${br.error}` : "Check Docker / agent process.",
+          "Open Mini App → Bridge → run agent next to your node.",
         ],
       });
-      // When offline, mark online state as not-ok implicitly via edge on recovery
       desiredList.push({
         key: "bridge.online",
         status: "bad",
@@ -272,7 +443,140 @@ export async function evaluateSubscription(
     }
   }
 
-  // --- Oracle (only if connected + scope) ---
+  // --- Node (My Node via bridge) ---
+  if (sub.scopes.node && br.connected) {
+    const node = await probeNode(token);
+    checked += 1;
+    const minPeers = Math.max(0, sub.prefs.minPeers ?? 3);
+
+    if (!node.ok) {
+      desiredList.push({
+        key: "node.unreachable",
+        status: "bad",
+        severity: "critical",
+        title: "Node unreachable",
+        body: [
+          "Bridge is online, but Ergo node /info failed.",
+          node.error ? `Detail: ${node.error}` : "Is the node process up?",
+          "Check LUMEN_NODE URL and node REST port (9053).",
+        ],
+      });
+      desiredList.push({
+        key: "node.online",
+        status: "bad",
+        severity: "ok",
+        title: "Node online",
+        body: [],
+      });
+    } else {
+      desiredList.push({
+        key: "node.unreachable",
+        status: "ok",
+        severity: "ok",
+        title: "Node unreachable",
+        body: [],
+      });
+      desiredList.push({
+        key: "node.online",
+        status: "ok",
+        severity: "ok",
+        title: "Node back online",
+        body: [
+          node.name ? `Node: ${node.name}` : "Ergo node is responding.",
+          node.fullHeight != null
+            ? `Height: ${node.fullHeight.toLocaleString()}`
+            : "",
+          node.peersCount != null ? `Peers: ${node.peersCount}` : "",
+        ].filter(Boolean),
+      });
+
+      // Peers low
+      if (node.peersCount != null) {
+        if (node.peersCount < minPeers) {
+          desiredList.push({
+            key: "node.peers_low",
+            status: "bad",
+            severity: "warn",
+            title: "Node peers low",
+            body: [
+              `Only ${node.peersCount} P2P peer(s) (min ${minPeers}).`,
+              "Node may struggle to stay in sync.",
+              "Check firewall / known peers / public IP.",
+            ],
+            meta: { peers: node.peersCount, height: node.fullHeight },
+          });
+        } else {
+          desiredList.push({
+            key: "node.peers_low",
+            status: "ok",
+            severity: "ok",
+            title: "Node peers restored",
+            body: [
+              `Peers OK: ${node.peersCount} (min ${minPeers}).`,
+            ],
+            meta: { peers: node.peersCount, height: node.fullHeight },
+          });
+        }
+      }
+
+      // Sync lag: headers vs full, and vs lumen tip
+      const full = node.fullHeight;
+      const headers = node.headersHeight;
+      let lagBad = false;
+      const lagBody: string[] = [];
+      if (
+        full != null &&
+        headers != null &&
+        headers - full >= NODE_HEADER_LAG_BLOCKS
+      ) {
+        lagBad = true;
+        lagBody.push(
+          `Syncing: full ${full.toLocaleString()} / headers ${headers.toLocaleString()} (Δ ${headers - full}).`
+        );
+      }
+      const lumenTip = await probeLumenTip();
+      if (
+        full != null &&
+        lumenTip != null &&
+        lumenTip - full >= NODE_NETWORK_LAG_BLOCKS
+      ) {
+        lagBad = true;
+        lagBody.push(
+          `Behind network tip: node ${full.toLocaleString()} · network ~${lumenTip.toLocaleString()} (Δ ${lumenTip - full}).`
+        );
+      }
+      if (lagBad) {
+        desiredList.push({
+          key: "node.sync_lag",
+          status: "bad",
+          severity: "warn",
+          title: "Node sync lag",
+          body: [
+            ...lagBody,
+            "Wait for catch-up or check disk / peers / CPU.",
+          ],
+          meta: { height: full, headers },
+        });
+      } else if (full != null) {
+        desiredList.push({
+          key: "node.sync_lag",
+          status: "ok",
+          severity: "ok",
+          title: "Node sync recovered",
+          body: [
+            `Height ${full.toLocaleString()} is in range again.`,
+          ],
+          meta: { height: full, headers },
+        });
+      }
+
+      // Height stuck
+      const stuck = evalHeightStuck(sub, full, now);
+      if (stuck) desiredList.push(stuck);
+    }
+  }
+
+  // --- Oracle ---
   if (sub.scopes.oracle && br.connected) {
     const orc = await probeOraclesDetailed(token);
     checked += 1;
@@ -281,7 +585,6 @@ export async function evaluateSubscription(
     }
     const lagThreshold = sub.prefs.postLagBlocks || 24;
     for (const f of orc.feeds) {
-      // Agent down
       if (f.isHealthy === false) {
         desiredList.push({
           key: `oracle.agent_down:${f.id}`,
@@ -308,7 +611,6 @@ export async function evaluateSubscription(
         });
       }
 
-      // Post lag
       if (
         f.postAgeBlocks != null &&
         f.postAgeBlocks > Math.max(lagThreshold, f.liveMax)
@@ -333,34 +635,116 @@ export async function evaluateSubscription(
           body: [],
         });
       }
+
+      // Low gas
+      if (f.walletErg != null && f.walletErg < 0.5) {
+        desiredList.push({
+          key: `oracle.low_gas:${f.id}`,
+          status: "bad",
+          severity: "warn",
+          title: `Low gas · ${f.pair}`,
+          body: [
+            `Wallet has ${f.walletErg.toFixed(3)} ERG.`,
+            "Top up for posting fees or agent may stop.",
+          ],
+        });
+      } else if (f.walletErg != null) {
+        desiredList.push({
+          key: `oracle.low_gas:${f.id}`,
+          status: "ok",
+          severity: "ok",
+          title: `Low gas · ${f.pair}`,
+          body: [],
+        });
+      }
+
+      // Missed last pool refresh
+      if (f.inLastRefresh === false) {
+        desiredList.push({
+          key: `oracle.missed_refresh:${f.id}`,
+          status: "bad",
+          severity: "warn",
+          title: `Missed refresh · ${f.pair}`,
+          body: [
+            "Your datapoint was not taken into the latest pool box.",
+            "Check post timing / pool epoch.",
+          ],
+        });
+      } else if (f.inLastRefresh === true) {
+        desiredList.push({
+          key: `oracle.missed_refresh:${f.id}`,
+          status: "ok",
+          severity: "ok",
+          title: `Missed refresh · ${f.pair}`,
+          body: [],
+        });
+      }
     }
   }
 
-  // Apply edges
+  // Apply edges + notify
   for (const d of desiredList) {
-    // Skip empty recovery templates that aren't real recovery messages
+    // Height stuck: when still ok but height same, preserve `since` if meta matches
+    if (
+      d.key === "node.height_stuck" &&
+      d.status === "ok" &&
+      d.meta?.height != null
+    ) {
+      const prev = sub.state[d.key];
+      if (prev?.meta?.height === d.meta.height && prev.status === "ok") {
+        // keep since (don't reset)
+        updateSubState(
+          sub.id,
+          d.key,
+          {
+            status: "ok",
+            since: prev.since,
+            lastNotifiedAt: prev.lastNotifiedAt,
+            meta: d.meta,
+          },
+          { lastTickAt: new Date(now).toISOString(), lastError: null }
+        );
+        sub.state[d.key] = {
+          status: "ok",
+          since: prev.since,
+          lastNotifiedAt: prev.lastNotifiedAt,
+          meta: d.meta,
+        };
+        continue;
+      }
+    }
+
     const edge = applyEdge(sub, d, now);
+    // Height first-sample / height-changed: force since=now
+    if (
+      d.key === "node.height_stuck" &&
+      d.meta?.height != null &&
+      (sub.state[d.key]?.meta?.height !== d.meta.height ||
+        !sub.state[d.key])
+    ) {
+      edge.next.since = now;
+      edge.next.meta = d.meta;
+    }
+
     updateSubState(sub.id, d.key, edge.next, {
       lastTickAt: new Date(now).toISOString(),
       lastError: null,
     });
-    // Sync local sub.state for subsequent keys in same tick
     sub.state[d.key] = edge.next;
 
     if (!edge.notify) continue;
 
-    // Only send human messages for meaningful content
     const isRecovery =
       d.status === "ok" &&
-      (d.key === "bridge.online" || d.key.startsWith("oracle.agent_down"));
+      d.body.length > 0 &&
+      (d.key === "bridge.online" ||
+        d.key === "node.online" ||
+        d.key === "node.height_stuck" ||
+        d.key === "node.peers_low" ||
+        d.key === "node.sync_lag" ||
+        d.key.startsWith("oracle."));
     const isBad = d.status === "bad";
     if (!isBad && !isRecovery) continue;
-    if (isRecovery && d.body.length === 0) continue;
-
-    // bridge.online only when recovering from bad offline
-    if (d.key === "bridge.online" && d.status === "ok") {
-      // already filtered by edge from bad→ok
-    }
 
     const ok = await sendAlert(sub.chatId, d);
     if (ok) {
@@ -407,14 +791,22 @@ export async function sendTestAlert(chatId: number): Promise<boolean> {
   const res = await tgApi("sendMessage", {
     chat_id: chatId,
     text: [
-      "✅ <b>Lumen alerts connected</b>",
+      "✅ <b>Lumen alerts armed</b>",
       "",
-      "You will get private messages when:",
-      "• Bridge goes offline / comes back",
-      "• Oracle agent is DOWN",
-      "• Oracle publish lag is high",
+      "<b>Node</b>",
+      "• Bridge offline / back online",
+      "• Node unreachable",
+      "• Peers too low",
+      "• Sync lag (headers / network tip)",
+      "• Height stuck ~30 min",
       "",
-      "<i>Mute anytime: /alerts off</i>",
+      "<b>Oracle</b>",
+      "• Agent DOWN / recovered",
+      "• Publish lag",
+      "• Missed pool refresh",
+      "• Low gas ERG",
+      "",
+      "<i>Mute: /alerts off · Mini App → Alerts</i>",
     ].join("\n"),
     parse_mode: "HTML",
     disable_web_page_preview: true,

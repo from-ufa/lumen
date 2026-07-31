@@ -23,6 +23,12 @@ export type TgAlertState = {
   status: "ok" | "bad" | "unknown";
   since: number;
   lastNotifiedAt: number | null;
+  /** Optional probe snapshot (height, peers) for stuck / lag logic */
+  meta?: {
+    height?: number | null;
+    peers?: number | null;
+    headers?: number | null;
+  };
 };
 
 export type TgAlertSubscription = {
@@ -326,7 +332,12 @@ export function publicSubView(s: TgAlertSubscription) {
     stateSummary: Object.fromEntries(
       Object.entries(s.state).map(([k, v]) => [
         k,
-        { status: v.status, since: v.since, lastNotifiedAt: v.lastNotifiedAt },
+        {
+          status: v.status,
+          since: v.since,
+          lastNotifiedAt: v.lastNotifiedAt,
+          meta: v.meta ?? null,
+        },
       ])
     ),
   };
