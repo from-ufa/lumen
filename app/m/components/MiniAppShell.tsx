@@ -25,6 +25,7 @@ import {
 } from "../../lib/node-api";
 import {
   getStartParam,
+  getWebApp,
   hapticImpact,
   initTelegramApp,
   isTelegramLowEnd,
@@ -33,6 +34,7 @@ import {
 import TabBar from "./TabBar";
 import MiniCard from "./MiniCard";
 import BridgeSheet from "./BridgeSheet";
+import AlertsSheet from "./AlertsSheet";
 import { tabFade } from "../lib/motion";
 import {
   isMiniTabId,
@@ -58,16 +60,36 @@ type NodeInfoLite = {
   isMining?: boolean;
 };
 
-async function fetchOraclesNetwork() {
-  const res = await fetch("/api/oracles?mode=network", { cache: "no-store" });
+type PeerRow = {
+  address?: string;
+  ip?: string;
+  city?: string;
+  country?: string;
+  status?: string;
+  lastMessage?: number;
+  version?: string;
+};
+
+type OracleFeed = {
+  id: string;
+  name?: string;
+  latestPrice?: number | null;
+  priceChange24h?: number | null;
+  postingRate?: number | null;
+  lastPostedAt?: number | null;
+};
+
+async function fetchOracles(mode: "network" | "my", token: string) {
+  const q =
+    mode === "my" && token
+      ? `?mode=my&token=${encodeURIComponent(token)}`
+      : "?mode=network";
+  const res = await fetch(`/api/oracles${q}`, { cache: "no-store" });
   if (!res.ok) throw new Error("oracles");
   return res.json() as Promise<{
-    feeds?: Array<{
-      id: string;
-      name?: string;
-      latestPrice?: number | null;
-      priceChange24h?: number | null;
-    }>;
+    feeds?: OracleFeed[];
+    mode?: string;
+    bridge?: { connected?: boolean };
   }>;
 }
 
@@ -79,15 +101,38 @@ async function fetchPeersMap(mode: NodeMode, token: string) {
   const res = await fetch(`/api/peers/map${q}`, { cache: "no-store" });
   if (!res.ok) throw new Error("map");
   return res.json() as Promise<{
-    peers?: Array<{
-      address?: string;
-      ip?: string;
-      city?: string;
-      country?: string;
-      status?: string;
-    }>;
+    peers?: PeerRow[];
     me?: { city?: string; country?: string };
   }>;
+}
+
+async function fetchMempoolSize(mode: NodeMode, token: string) {
+  if (mode === "my" && !token) return 0;
+  try {
+    const res = await fetchNodeResource(
+      mode,
+      token,
+      "transactions/unconfirmed",
+      { timeoutMs: mode === "my" ? 14000 : 6500 }
+    );
+    if (!res.ok) return 0;
+    const data = (await res.json()) as unknown;
+    if (Array.isArray(data)) return data.length;
+    if (data && typeof data === "object" && Array.isArray((data as { transactions?: unknown }).transactions)) {
+      return ((data as { transactions: unknown[] }).transactions).length;
+    }
+    return 0;
+  } catch {
+    return 0;
+  }
+}
+
+function Skeleton({ className = "" }: { className?: string }) {
+  return (
+    <div
+      className={`rounded-2xl border border-white/[0.06] bg-white/[0.03] animate-pulse ${className}`}
+    />
+  );
 }
 
 export default function MiniAppShell() {
@@ -95,11 +140,16 @@ export default function MiniAppShell() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<MiniTabId>("home");
   const [bridgeOpen, setBridgeOpen] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const [netView, setNetView] = useState<"list" | "map">("list");
+  const [netFilter, setNetFilter] = useState<"live" | "all">("live");
+  const [peerDetail, setPeerDetail] = useState<PeerRow | null>(null);
+  const [oracleSeg, setOracleSeg] = useState<"network" | "my">("network");
   const [token, setToken] = useState("");
   const [mode, setMode] = useState<NodeMode>("lumen");
   const [lowEnd, setLowEnd] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [pullY, setPullY] = useState(0);
 
   // Boot: TG chrome + local settings + deep link
   useEffect(() => {
@@ -143,6 +193,7 @@ export default function MiniAppShell() {
     setTab(tabFromStartParam(param));
     const sheet = openSheetFromStartParam(param);
     if (sheet === "bridge") setBridgeOpen(true);
+    if (sheet === "alerts") setAlertsOpen(true);
 
     // Query ?tab=
     try {
@@ -183,6 +234,35 @@ export default function MiniAppShell() {
 
     return () => window.removeEventListener("lumen:settings-hydrated", onHydrate);
   }, []);
+
+  // TG BackButton when a sheet is open
+  useEffect(() => {
+    const wa = getWebApp();
+    if (!wa?.BackButton) return;
+    const anyOpen = bridgeOpen || alertsOpen || !!peerDetail;
+    try {
+      if (anyOpen) {
+        wa.BackButton.show();
+        const onBack = () => {
+          if (peerDetail) setPeerDetail(null);
+          else if (alertsOpen) setAlertsOpen(false);
+          else if (bridgeOpen) setBridgeOpen(false);
+        };
+        wa.BackButton.onClick(onBack);
+        return () => {
+          try {
+            wa.BackButton.offClick(onBack);
+            wa.BackButton.hide();
+          } catch {
+            /* */
+          }
+        };
+      }
+      wa.BackButton.hide();
+    } catch {
+      /* */
+    }
+  }, [bridgeOpen, alertsOpen, peerDetail]);
 
   const onTab = useCallback(
     (id: MiniTabId) => {
@@ -226,11 +306,18 @@ export default function MiniAppShell() {
     refetchInterval: 8_000,
   });
 
-  const { data: oracles } = useQuery({
-    queryKey: ["mini-oracles"],
-    queryFn: fetchOraclesNetwork,
+  const { data: oraclesNet, isLoading: oraclesNetLoading } = useQuery({
+    queryKey: ["mini-oracles", "network"],
+    queryFn: () => fetchOracles("network", ""),
     refetchInterval: 8_000,
     enabled: tab === "oracles" || tab === "home",
+  });
+
+  const { data: oraclesMy, isLoading: oraclesMyLoading } = useQuery({
+    queryKey: ["mini-oracles", "my", token],
+    queryFn: () => fetchOracles("my", token),
+    refetchInterval: 8_000,
+    enabled: tab === "oracles" && oracleSeg === "my" && !!token,
   });
 
   const { data: mapData, isLoading: mapLoading } = useQuery({
@@ -240,17 +327,42 @@ export default function MiniAppShell() {
     refetchInterval: 12_000,
   });
 
+  const { data: mempoolSize = 0 } = useQuery({
+    queryKey: ["mini-mempool", mode, token],
+    queryFn: () => fetchMempoolSize(mode, token),
+    refetchInterval: 10_000,
+    enabled: tab === "home",
+  });
+
   const height =
     nodeInfo?.fullHeight ?? nodeInfo?.headersHeight ?? null;
+  const headersH = nodeInfo?.headersHeight ?? null;
   const peersN = nodeInfo?.peersCount;
   const bridgeOnline = !!bridgeStatus?.connected;
   const isOnline = !infoError && height != null;
+  const syncPct =
+    height != null && headersH != null && headersH > 0
+      ? Math.min(100, Math.round((height / headersH) * 100))
+      : null;
 
-  const feeds = oracles?.feeds ?? [];
+  const feeds = oraclesNet?.feeds ?? [];
+  const myFeeds = oraclesMy?.feeds ?? [];
   const peerRows = useMemo(() => {
     const list = mapData?.peers ?? [];
-    return list.slice(0, 80);
-  }, [mapData?.peers]);
+    const now = Date.now();
+    const filtered =
+      netFilter === "all"
+        ? list
+        : list.filter((p) => {
+            const st = (p.status || "").toLowerCase();
+            if (st.includes("live") || st.includes("connected")) return true;
+            const lm = p.lastMessage;
+            if (!lm) return false;
+            const ms = lm > 1e12 ? lm : lm * 1000;
+            return now - ms < 180_000;
+          });
+    return filtered.slice(0, 100);
+  }, [mapData?.peers, netFilter]);
 
   const refreshAll = useCallback(async () => {
     setRefreshing(true);
@@ -261,9 +373,11 @@ export default function MiniAppShell() {
         qc.invalidateQueries({ queryKey: ["mini-bridge"] }),
         qc.invalidateQueries({ queryKey: ["mini-oracles"] }),
         qc.invalidateQueries({ queryKey: ["mini-peers-map"] }),
+        qc.invalidateQueries({ queryKey: ["mini-mempool"] }),
       ]);
     } finally {
       setRefreshing(false);
+      setPullY(0);
     }
   }, [qc, refetchInfo]);
 
@@ -316,8 +430,31 @@ export default function MiniAppShell() {
         </div>
       </header>
 
-      {/* Content */}
-      <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+      {/* Content + pull-to-refresh on Home */}
+      <main
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden"
+        onTouchStart={(e) => {
+          if (tab !== "home") return;
+          (e.currentTarget as HTMLElement & { _ty?: number })._ty =
+            e.touches[0]?.clientY;
+        }}
+        onTouchMove={(e) => {
+          if (tab !== "home" || refreshing) return;
+          const el = e.currentTarget as HTMLElement & { _ty?: number };
+          if (el.scrollTop > 0 || el._ty == null) return;
+          const dy = e.touches[0].clientY - el._ty;
+          if (dy > 0 && dy < 90) setPullY(dy);
+        }}
+        onTouchEnd={() => {
+          if (tab === "home" && pullY > 56) void refreshAll();
+          else setPullY(0);
+        }}
+      >
+        {tab === "home" && pullY > 8 ? (
+          <div className="text-center text-[10px] font-mono text-[#A0A0B0] pt-1">
+            {pullY > 56 ? "Release to refresh" : "Pull to refresh"}
+          </div>
+        ) : null}
         <AnimatePresence mode="wait">
           <motion.div
             key={tab}
@@ -332,16 +469,21 @@ export default function MiniAppShell() {
             {tab === "home" && (
               <HomeBody
                 height={height}
+                headersH={headersH}
+                syncPct={syncPct}
                 peersN={peersN}
+                mempoolSize={mempoolSize}
                 nodeName={nodeInfo?.name}
                 mode={mode}
                 token={token}
                 bridgeOnline={bridgeOnline}
+                infoLoading={!nodeInfo && infoFetching}
                 infoFetching={infoFetching || refreshing}
                 feeds={feeds}
                 onRefresh={() => void refreshAll()}
                 onOpenBridge={() => setBridgeOpen(true)}
                 onOracles={() => onTab("oracles")}
+                onAlerts={() => setAlertsOpen(true)}
                 onToggleMode={() => {
                   const next: NodeMode = mode === "my" ? "lumen" : "my";
                   if (next === "my" && !token) {
@@ -358,18 +500,28 @@ export default function MiniAppShell() {
               <NetworkBody
                 netView={netView}
                 setNetView={setNetView}
+                netFilter={netFilter}
+                setNetFilter={setNetFilter}
                 lowEnd={lowEnd}
                 peerRows={peerRows}
                 mapLoading={mapLoading}
                 mode={mode}
                 token={token}
                 height={height}
+                onPeer={setPeerDetail}
               />
             )}
             {tab === "oracles" && (
               <OraclesBody
+                seg={oracleSeg}
+                setSeg={setOracleSeg}
                 feeds={feeds}
+                myFeeds={myFeeds}
                 hasToken={!!token}
+                loading={
+                  oracleSeg === "my" ? oraclesMyLoading : oraclesNetLoading
+                }
+                myBridgeConnected={!!oraclesMy?.bridge?.connected}
                 onConnect={() => setBridgeOpen(true)}
               />
             )}
@@ -379,12 +531,14 @@ export default function MiniAppShell() {
                 token={token}
                 bridgeOnline={bridgeOnline}
                 onOpenBridge={() => setBridgeOpen(true)}
+                onOpenAlerts={() => setAlertsOpen(true)}
                 onClear={() => {
                   saveBridgeToken("");
                   saveNodeMode("lumen");
                   setToken("");
                   setMode("lumen");
                   toast.message("Token cleared");
+                  void hapticImpact("light");
                 }}
               />
             )}
@@ -401,38 +555,68 @@ export default function MiniAppShell() {
         mode={mode}
         onSaved={onSavedBridge}
       />
+      <AlertsSheet
+        open={alertsOpen}
+        onClose={() => setAlertsOpen(false)}
+        bridgeToken={token}
+      />
+      <PeerSheet peer={peerDetail} onClose={() => setPeerDetail(null)} />
     </div>
   );
 }
 
 function HomeBody({
   height,
+  headersH,
+  syncPct,
   peersN,
+  mempoolSize,
   nodeName,
   mode,
   token,
   bridgeOnline,
+  infoLoading,
   infoFetching,
   feeds,
   onRefresh,
   onOpenBridge,
   onOracles,
+  onAlerts,
   onToggleMode,
 }: {
   height: number | null;
+  headersH: number | null;
+  syncPct: number | null;
   peersN?: number;
+  mempoolSize: number;
   nodeName?: string;
   mode: NodeMode;
   token: string;
   bridgeOnline: boolean;
+  infoLoading: boolean;
   infoFetching: boolean;
-  feeds: Array<{ id: string; latestPrice?: number | null }>;
+  feeds: OracleFeed[];
   onRefresh: () => void;
   onOpenBridge: () => void;
   onOracles: () => void;
+  onAlerts: () => void;
   onToggleMode: () => void;
 }) {
   const usd = feeds.find((f) => f.id === "erg-usd");
+  if (infoLoading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-14" />
+        <Skeleton className="h-32" />
+        <div className="grid grid-cols-2 gap-2">
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
+          <Skeleton className="h-12" />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="space-y-3">
       <MiniCard onClick={onToggleMode}>
@@ -453,15 +637,28 @@ function HomeBody({
         <div className="mt-1 font-mono text-3xl tracking-tight tabular-nums text-white">
           {height != null ? height.toLocaleString() : "—"}
         </div>
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-mono text-[#A0A0B0]">
+        {headersH != null && height != null && headersH !== height ? (
+          <div className="mt-1 text-[10px] font-mono text-[#F59E0B]">
+            Headers {headersH.toLocaleString()}
+            {syncPct != null ? ` · sync ~${syncPct}%` : ""}
+          </div>
+        ) : null}
+        <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-mono text-[#A0A0B0]">
           <span>Peers · {peersN ?? "—"}</span>
-          {nodeName ? <span className="truncate">Node · {nodeName}</span> : null}
+          <span>Mempool · {mempoolSize}</span>
+          {nodeName ? (
+            <span className="truncate col-span-2">Node · {nodeName}</span>
+          ) : null}
           {token ? (
-            <span className={bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"}>
+            <span
+              className={`col-span-2 ${
+                bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"
+              }`}
+            >
               Bridge · {bridgeOnline ? "online" : "offline"}
             </span>
           ) : (
-            <span>Bridge · not set</span>
+            <span className="col-span-2">Bridge · not set</span>
           )}
         </div>
       </MiniCard>
@@ -477,12 +674,12 @@ function HomeBody({
           onClick={onRefresh}
         />
         <ActionChip label="Bridge" onClick={onOpenBridge} />
-        <ActionChip label="Oracles" onClick={onOracles} />
+        <ActionChip label="Alerts" onClick={onAlerts} />
         <ActionChip
           label={
             usd?.latestPrice != null
               ? `$${Number(usd.latestPrice).toFixed(2)}`
-              : "ERG/USD"
+              : "Oracles"
           }
           onClick={onOracles}
         />
@@ -524,31 +721,31 @@ function ActionChip({
 function NetworkBody({
   netView,
   setNetView,
+  netFilter,
+  setNetFilter,
   lowEnd,
   peerRows,
   mapLoading,
   mode,
   token,
   height,
+  onPeer,
 }: {
   netView: "list" | "map";
   setNetView: (v: "list" | "map") => void;
+  netFilter: "live" | "all";
+  setNetFilter: (v: "live" | "all") => void;
   lowEnd: boolean;
-  peerRows: Array<{
-    address?: string;
-    ip?: string;
-    city?: string;
-    country?: string;
-    status?: string;
-  }>;
+  peerRows: PeerRow[];
   mapLoading: boolean;
   mode: NodeMode;
   token: string;
   height: number | null;
+  onPeer: (p: PeerRow) => void;
 }) {
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-lg font-semibold tracking-tight">Network</h1>
         <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
           <button
@@ -558,9 +755,7 @@ function NetworkBody({
               void hapticImpact("light");
             }}
             className={`h-9 px-3 rounded-full inline-flex items-center gap-1 text-[10px] font-mono tracking-wider ${
-              netView === "list"
-                ? "bg-white/10 text-white"
-                : "text-[#A0A0B0]"
+              netView === "list" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
             }`}
           >
             <List className="w-3.5 h-3.5" /> LIST
@@ -572,9 +767,7 @@ function NetworkBody({
               void hapticImpact("light");
             }}
             className={`h-9 px-3 rounded-full inline-flex items-center gap-1 text-[10px] font-mono tracking-wider ${
-              netView === "map"
-                ? "bg-white/10 text-white"
-                : "text-[#A0A0B0]"
+              netView === "map" ? "bg-white/10 text-white" : "text-[#A0A0B0]"
             }`}
           >
             <MapIcon className="w-3.5 h-3.5" /> MAP
@@ -583,37 +776,74 @@ function NetworkBody({
       </div>
 
       {netView === "list" ? (
-        <div className="space-y-2">
-          <p className="text-[11px] font-mono text-[#A0A0B0]">
-            {mapLoading
-              ? "Loading peers…"
-              : `${peerRows.length} peers${lowEnd ? " · lite" : ""}`}
-          </p>
-          {peerRows.length === 0 && !mapLoading ? (
-            <MiniCard>
-              <p className="text-sm text-[#A0A0B0]">No peer geo yet.</p>
-            </MiniCard>
-          ) : (
-            peerRows.map((p, i) => (
-              <MiniCard key={`${p.ip || p.address || i}`}>
-                <div className="flex justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm truncate">
-                      {p.city || p.country || "Unknown"}
-                      {p.country && p.city ? `, ${p.country}` : ""}
-                    </div>
-                    <div className="text-[10px] font-mono text-[#A0A0B0] truncate mt-0.5">
-                      {p.ip || p.address || "—"}
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-mono text-[#A0A0B0] shrink-0">
-                    {p.status || ""}
-                  </span>
-                </div>
+        <>
+          <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
+            {(["live", "all"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => {
+                  setNetFilter(f);
+                  void hapticImpact("light");
+                }}
+                className={`h-8 px-3 rounded-full text-[10px] font-mono tracking-wider ${
+                  netFilter === f
+                    ? "bg-white/10 text-white"
+                    : "text-[#A0A0B0]"
+                }`}
+              >
+                {f.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-2">
+            <p className="text-[11px] font-mono text-[#A0A0B0]">
+              {mapLoading
+                ? "Loading peers…"
+                : `${peerRows.length} peers · ${netFilter}${
+                    lowEnd ? " · lite" : ""
+                  }`}
+            </p>
+            {mapLoading ? (
+              <>
+                <Skeleton className="h-16" />
+                <Skeleton className="h-16" />
+                <Skeleton className="h-16" />
+              </>
+            ) : peerRows.length === 0 ? (
+              <MiniCard>
+                <p className="text-sm text-[#A0A0B0]">
+                  No peers in this filter.
+                </p>
               </MiniCard>
-            ))
-          )}
-        </div>
+            ) : (
+              peerRows.map((p, i) => (
+                <MiniCard
+                  key={`${p.ip || p.address || i}`}
+                  onClick={() => {
+                    onPeer(p);
+                    void hapticImpact("light");
+                  }}
+                >
+                  <div className="flex justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm truncate">
+                        {p.city || p.country || "Unknown"}
+                        {p.country && p.city ? `, ${p.country}` : ""}
+                      </div>
+                      <div className="text-[10px] font-mono text-[#A0A0B0] truncate mt-0.5">
+                        {p.ip || p.address || "—"}
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-[#A0A0B0] shrink-0">
+                      {p.status || "›"}
+                    </span>
+                  </div>
+                </MiniCard>
+              ))
+            )}
+          </div>
+        </>
       ) : (
         <div className="rounded-2xl border border-white/10 overflow-hidden h-[min(62dvh,520px)] bg-[#0C0C12]">
           <PeerMap
@@ -629,44 +859,100 @@ function NetworkBody({
 }
 
 function OraclesBody({
+  seg,
+  setSeg,
   feeds,
+  myFeeds,
   hasToken,
+  loading,
+  myBridgeConnected,
   onConnect,
 }: {
-  feeds: Array<{
-    id: string;
-    name?: string;
-    latestPrice?: number | null;
-    priceChange24h?: number | null;
-  }>;
+  seg: "network" | "my";
+  setSeg: (s: "network" | "my") => void;
+  feeds: OracleFeed[];
+  myFeeds: OracleFeed[];
   hasToken: boolean;
+  loading: boolean;
+  myBridgeConnected: boolean;
   onConnect: () => void;
 }) {
-  const usd = feeds.find((f) => f.id === "erg-usd");
-  const xau = feeds.find((f) => f.id === "erg-xau");
+  const active = seg === "my" ? myFeeds : feeds;
+  const usd = active.find((f) => f.id === "erg-usd");
+  const xau = active.find((f) => f.id === "erg-xau");
   return (
     <div className="space-y-3">
-      <h1 className="text-lg font-semibold tracking-tight">Oracles</h1>
-      <div className="grid grid-cols-1 gap-2">
-        <OracleTile title="ERG / USD" price={usd?.latestPrice} ch={usd?.priceChange24h} accent="#00E5FF" />
-        <OracleTile title="ERG / XAU" price={xau?.latestPrice} ch={xau?.priceChange24h} accent="#E8C547" />
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold tracking-tight">Oracles</h1>
+        <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
+          {(["network", "my"] as const).map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => {
+                setSeg(s);
+                void hapticImpact("light");
+              }}
+              className={`h-8 px-3 rounded-full text-[10px] font-mono tracking-wider ${
+                seg === s ? "bg-white/10 text-white" : "text-[#A0A0B0]"
+              }`}
+            >
+              {s === "network" ? "NETWORK" : "MY"}
+            </button>
+          ))}
+        </div>
       </div>
-      {!hasToken ? (
+
+      {seg === "my" && !hasToken ? (
         <MiniCard onClick={onConnect}>
-          <p className="text-sm">My Oracle</p>
+          <p className="text-sm">Connect bridge</p>
           <p className="text-[11px] text-[#A0A0B0] mt-1">
-            Connect bridge to see your operator view.
+            Your operator feeds need a bridge token.
           </p>
         </MiniCard>
+      ) : loading ? (
+        <>
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </>
       ) : (
-        <MiniCard>
-          <p className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
-            MY ORACLE
-          </p>
-          <p className="text-sm mt-1 text-[#E8E8F0]">
-            Use full site for dual constellation · token is ready.
-          </p>
-        </MiniCard>
+        <>
+          {seg === "my" ? (
+            <MiniCard>
+              <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
+                AGENT
+              </div>
+              <div
+                className={`mt-1 text-sm font-mono ${
+                  myBridgeConnected ? "text-[#10B981]" : "text-[#F59E0B]"
+                }`}
+              >
+                {myBridgeConnected ? "Bridge online" : "Bridge offline / no data"}
+              </div>
+            </MiniCard>
+          ) : null}
+          <div className="grid grid-cols-1 gap-2">
+            <OracleTile
+              title="ERG / USD"
+              price={usd?.latestPrice}
+              ch={usd?.priceChange24h}
+              accent="#00E5FF"
+            />
+            <OracleTile
+              title="ERG / XAU"
+              price={xau?.latestPrice}
+              ch={xau?.priceChange24h}
+              accent="#E8C547"
+            />
+          </div>
+          {seg === "my" && active.length === 0 && hasToken ? (
+            <MiniCard>
+              <p className="text-sm text-[#A0A0B0]">
+                No operator feeds yet — ensure oracle scope on the agent.
+              </p>
+            </MiniCard>
+          ) : null}
+        </>
       )}
     </div>
   );
@@ -715,12 +1001,14 @@ function MeBody({
   token,
   bridgeOnline,
   onOpenBridge,
+  onOpenAlerts,
   onClear,
 }: {
   mode: NodeMode;
   token: string;
   bridgeOnline: boolean;
   onOpenBridge: () => void;
+  onOpenAlerts: () => void;
   onClear: () => void;
 }) {
   const tail = token ? `…${token.slice(-6)}` : "—";
@@ -735,7 +1023,11 @@ function MeBody({
           {token ? (
             <>
               Token {tail} ·{" "}
-              <span className={bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"}>
+              <span
+                className={
+                  bridgeOnline ? "text-[#10B981]" : "text-[#F59E0B]"
+                }
+              >
                 {bridgeOnline ? "online" : "offline"}
               </span>
             </>
@@ -747,10 +1039,23 @@ function MeBody({
           Mode · {mode === "my" ? "My Node" : "lumen"}
         </div>
       </MiniCard>
+      <MiniCard onClick={onOpenAlerts}>
+        <div className="text-[10px] font-mono text-[#A0A0B0] tracking-wider">
+          ALERTS
+        </div>
+        <div className="mt-1 text-sm">Telegram watchdog</div>
+        <div className="text-[11px] text-[#A0A0B0] mt-0.5">
+          Bridge / oracle problem pings
+        </div>
+      </MiniCard>
       <MiniCard
         onClick={() => {
           try {
-            window.open("https://ergolumen.net", "_blank", "noopener,noreferrer");
+            window.open(
+              "https://ergolumen.net",
+              "_blank",
+              "noopener,noreferrer"
+            );
           } catch {
             /* */
           }
@@ -771,5 +1076,74 @@ function MeBody({
         </button>
       ) : null}
     </div>
+  );
+}
+
+function PeerSheet({
+  peer,
+  onClose,
+}: {
+  peer: PeerRow | null;
+  onClose: () => void;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <AnimatePresence>
+      {peer ? (
+        <>
+          <motion.button
+            type="button"
+            aria-label="Close"
+            className="fixed inset-0 z-[80] bg-black/55"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+          <motion.div
+            role="dialog"
+            className="fixed inset-x-0 bottom-0 z-[90] rounded-t-3xl border border-white/10 bg-[#12121A] px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            initial={reduce ? false : { y: "100%" }}
+            animate={{ y: 0 }}
+            exit={{ y: "100%" }}
+            transition={{ duration: reduce ? 0.01 : 0.26 }}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
+            <h2 className="text-base font-semibold mb-3">Peer</h2>
+            <dl className="space-y-2 text-sm font-mono">
+              <div className="flex justify-between gap-2">
+                <dt className="text-[#A0A0B0]">Place</dt>
+                <dd className="text-right">
+                  {[peer.city, peer.country].filter(Boolean).join(", ") || "—"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-[#A0A0B0]">IP</dt>
+                <dd className="text-right truncate max-w-[60%]">
+                  {peer.ip || peer.address || "—"}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-2">
+                <dt className="text-[#A0A0B0]">Status</dt>
+                <dd>{peer.status || "—"}</dd>
+              </div>
+              {peer.version ? (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-[#A0A0B0]">Version</dt>
+                  <dd className="truncate max-w-[60%]">{peer.version}</dd>
+                </div>
+              ) : null}
+            </dl>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-4 w-full h-11 rounded-xl border border-white/15 font-mono text-[11px] tracking-wider"
+            >
+              CLOSE
+            </button>
+          </motion.div>
+        </>
+      ) : null}
+    </AnimatePresence>
   );
 }
