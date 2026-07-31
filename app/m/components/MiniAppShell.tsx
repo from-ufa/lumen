@@ -61,13 +61,18 @@ type NodeInfoLite = {
 };
 
 type PeerRow = {
+  id?: string;
   address?: string;
   ip?: string;
   city?: string;
   country?: string;
+  /** UI label from API `state` */
   status?: string;
+  state?: string;
+  name?: string;
   lastMessage?: number;
-  version?: string;
+  version?: string | null;
+  connectionType?: string;
 };
 
 type OracleFeed = {
@@ -131,10 +136,40 @@ async function fetchPeersMap(mode: NodeMode, token: string) {
       : "";
   const res = await fetch(`/api/peers/map${q}`, { cache: "no-store" });
   if (!res.ok) throw new Error("map");
-  return res.json() as Promise<{
+  // API shape: { markers: PeerMapMarker[], me, links, … } — not `peers`
+  const data = (await res.json()) as {
+    markers?: Array<{
+      id?: string;
+      ip?: string;
+      address?: string;
+      city?: string;
+      country?: string;
+      state?: string;
+      name?: string;
+      lastMessage?: number;
+      version?: string | null;
+      connectionType?: string;
+    }>;
     peers?: PeerRow[];
-    me?: { city?: string; country?: string };
-  }>;
+    me?: { city?: string; country?: string; name?: string };
+    totalPeers?: number;
+    liveMapped?: number;
+  };
+  const markers = data.markers ?? data.peers ?? [];
+  const peers: PeerRow[] = markers.map((m) => ({
+    id: m.id,
+    ip: m.ip,
+    address: m.address,
+    city: m.city,
+    country: m.country,
+    state: m.state,
+    status: m.state,
+    name: m.name,
+    lastMessage: m.lastMessage,
+    version: m.version,
+    connectionType: m.connectionType,
+  }));
+  return { peers, me: data.me, totalPeers: data.totalPeers, liveMapped: data.liveMapped };
 }
 
 async function fetchMempoolSize(mode: NodeMode, token: string) {
@@ -385,14 +420,25 @@ export default function MiniAppShell() {
       netFilter === "all"
         ? list
         : list.filter((p) => {
-            const st = (p.status || "").toLowerCase();
-            if (st.includes("live") || st.includes("connected")) return true;
+            // API uses state: live | connected | seen | ghost | …
+            const st = (p.state || p.status || "").toLowerCase();
+            if (
+              st === "live" ||
+              st === "connected" ||
+              st.includes("live") ||
+              st.includes("connected")
+            ) {
+              return true;
+            }
             const lm = p.lastMessage;
             if (!lm) return false;
             const ms = lm > 1e12 ? lm : lm * 1000;
             return now - ms < 180_000;
           });
-    return filtered.slice(0, 100);
+    // Prefer recently active first
+    return [...filtered]
+      .sort((a, b) => (b.lastMessage || 0) - (a.lastMessage || 0))
+      .slice(0, 120);
   }, [mapData?.peers, netFilter]);
 
   const refreshAll = useCallback(async () => {
@@ -850,7 +896,7 @@ function NetworkBody({
             ) : (
               peerRows.map((p, i) => (
                 <MiniCard
-                  key={`${p.ip || p.address || i}`}
+                  key={`${p.id || p.ip || p.address || i}`}
                   onClick={() => {
                     onPeer(p);
                     void hapticImpact("light");
@@ -859,15 +905,19 @@ function NetworkBody({
                   <div className="flex justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-sm truncate">
-                        {p.city || p.country || "Unknown"}
-                        {p.country && p.city ? `, ${p.country}` : ""}
+                        {p.name ||
+                          [p.city, p.country].filter(Boolean).join(", ") ||
+                          "Unknown"}
                       </div>
                       <div className="text-[10px] font-mono text-[#A0A0B0] truncate mt-0.5">
-                        {p.ip || p.address || "—"}
+                        {[p.city, p.country].filter(Boolean).join(", ") ||
+                          p.ip ||
+                          p.address ||
+                          "—"}
                       </div>
                     </div>
-                    <span className="text-[10px] font-mono text-[#A0A0B0] shrink-0">
-                      {p.status || "›"}
+                    <span className="text-[10px] font-mono text-[#A0A0B0] shrink-0 uppercase">
+                      {p.state || p.status || "›"}
                     </span>
                   </div>
                 </MiniCard>
@@ -1170,6 +1220,12 @@ function PeerSheet({
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-white/20" />
             <h2 className="text-base font-semibold mb-3">Peer</h2>
             <dl className="space-y-2 text-sm font-mono">
+              {peer.name ? (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-[#A0A0B0]">Name</dt>
+                  <dd className="text-right truncate max-w-[60%]">{peer.name}</dd>
+                </div>
+              ) : null}
               <div className="flex justify-between gap-2">
                 <dt className="text-[#A0A0B0]">Place</dt>
                 <dd className="text-right">
@@ -1184,8 +1240,14 @@ function PeerSheet({
               </div>
               <div className="flex justify-between gap-2">
                 <dt className="text-[#A0A0B0]">Status</dt>
-                <dd>{peer.status || "—"}</dd>
+                <dd className="uppercase">{peer.state || peer.status || "—"}</dd>
               </div>
+              {peer.connectionType ? (
+                <div className="flex justify-between gap-2">
+                  <dt className="text-[#A0A0B0]">Link</dt>
+                  <dd>{peer.connectionType}</dd>
+                </div>
+              ) : null}
               {peer.version ? (
                 <div className="flex justify-between gap-2">
                   <dt className="text-[#A0A0B0]">Version</dt>
