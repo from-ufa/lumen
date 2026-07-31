@@ -34,7 +34,7 @@ import {
   type BridgeStatus,
   type NodeMode,
 } from "../../lib/node-api";
-import { fetchAvgBlockTime } from "../../lib/blocks";
+import { fetchAvgBlockTime, fetchRecentBlocks } from "../../lib/blocks";
 import {
   getStartParam,
   getWebApp,
@@ -52,6 +52,7 @@ import OracleFeedCard, {
   type OracleFeedRich,
 } from "./OracleFeedCards";
 import MempoolPanel, { type MiniMempoolTx } from "./MempoolPanel";
+import BlocksPanel, { type MiniBlock } from "./BlocksPanel";
 import OperatorsPanel from "./OperatorsPanel";
 import { tabFade } from "../lib/motion";
 import {
@@ -248,6 +249,70 @@ function mapNodeUnconfirmed(raw: unknown): MiniMempoolTx[] {
       pending: true,
     };
   });
+}
+
+async function fetchRecentBlocksMini(
+  mode: NodeMode,
+  token: string,
+  tipHeight: number | null
+): Promise<{ blocks: MiniBlock[]; source: string }> {
+  if (mode === "my" && !token) {
+    return { blocks: [], source: "—" };
+  }
+  // Lumen: rich chain feed with tx counts
+  if (mode === "lumen") {
+    try {
+      const res = await fetch("/api/chain/blocks?limit=12", {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = (await res.json()) as {
+          blocks?: Array<{
+            id?: string;
+            height?: number;
+            timestamp?: number;
+            txCount?: number;
+            size?: number;
+          }>;
+        };
+        const blocks: MiniBlock[] = (data.blocks || [])
+          .filter((b) => typeof b.height === "number")
+          .map((b) => ({
+            id: b.id || "",
+            height: b.height as number,
+            timestamp: b.timestamp ?? null,
+            txCount: b.txCount ?? null,
+            size: b.size ?? null,
+          }));
+        return { blocks, source: "chain" };
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  // My Node / fallback: real headers + tx counts from node
+  const tip = tipHeight && tipHeight > 0 ? tipHeight : 0;
+  if (!tip) return { blocks: [], source: "node" };
+  try {
+    const list = await fetchRecentBlocks(
+      resolveNodeBase(mode),
+      tip,
+      10,
+      nodeRequestHeaders(mode, token)
+    );
+    return {
+      blocks: list.map((b) => ({
+        id: b.id || "",
+        height: b.height,
+        timestamp: b.timestamp ?? null,
+        txCount: b.txCount ?? null,
+        size: null,
+      })),
+      source: "node",
+    };
+  } catch {
+    return { blocks: [], source: "—" };
+  }
 }
 
 async function fetchMempool(
@@ -525,6 +590,19 @@ function Shell() {
   });
   const mempoolSize = mempool.size;
 
+  const heightForBlocks =
+    nodeInfo?.fullHeight ?? nodeInfo?.headersHeight ?? null;
+  const {
+    data: recentBlocks = { blocks: [], source: "—" },
+    isLoading: blocksLoading,
+  } = useQuery({
+    queryKey: ["mini-blocks", mode, token, heightForBlocks],
+    queryFn: () => fetchRecentBlocksMini(mode, token, heightForBlocks),
+    refetchInterval: 12_000,
+    enabled: tab === "home" && (mode === "lumen" || !!token),
+    staleTime: 8_000,
+  });
+
   /** Real avg block time from last N headers (one node request) */
   const { data: avgBlock } = useQuery({
     queryKey: ["mini-avg-block", mode, token],
@@ -593,6 +671,7 @@ function Shell() {
         qc.invalidateQueries({ queryKey: ["mini-oracles"] }),
         qc.invalidateQueries({ queryKey: ["mini-peers-map"] }),
         qc.invalidateQueries({ queryKey: ["mini-mempool"] }),
+        qc.invalidateQueries({ queryKey: ["mini-blocks"] }),
         qc.invalidateQueries({ queryKey: ["mini-avg-block"] }),
       ]);
     } finally {
@@ -710,6 +789,9 @@ function Shell() {
                   mempoolTxs={mempool.txs}
                   mempoolSource={mempool.source}
                   mempoolLoading={mempoolLoading}
+                  blocks={recentBlocks.blocks}
+                  blocksSource={recentBlocks.source}
+                  blocksLoading={blocksLoading}
                   avgBlockTime={avgBlock?.avgSeconds ?? null}
                   avgBlockSamples={avgBlock?.samples ?? 0}
                   avgBlockWindow={AVG_BLOCK_WINDOW}
@@ -818,6 +900,9 @@ function HomeBody({
   mempoolTxs,
   mempoolSource,
   mempoolLoading,
+  blocks,
+  blocksSource,
+  blocksLoading,
   avgBlockTime,
   avgBlockSamples,
   avgBlockWindow,
@@ -842,6 +927,9 @@ function HomeBody({
   mempoolTxs: MiniMempoolTx[];
   mempoolSource: string;
   mempoolLoading: boolean;
+  blocks: MiniBlock[];
+  blocksSource: string;
+  blocksLoading: boolean;
   avgBlockTime: number | null;
   avgBlockSamples: number;
   avgBlockWindow: number;
@@ -859,7 +947,7 @@ function HomeBody({
   onToggleMode: () => void;
 }) {
   const { t } = useMiniI18n();
-  const [panel, setPanel] = useState<"dash" | "mempool">("dash");
+  const [panel, setPanel] = useState<"dash" | "blocks" | "mempool">("dash");
   const usd = feeds.find((f) => f.id === "erg-usd" || f.pair === "ERG/USD");
   const avgSub =
     avgBlockTime != null && avgBlockSamples > 0
@@ -868,39 +956,51 @@ function HomeBody({
         ? t("avg_sub_window", { w: avgBlockWindow })
         : t("avg_sub_loading");
 
+  const title =
+    panel === "dash"
+      ? t("tab_home")
+      : panel === "blocks"
+        ? t("blk_title")
+        : t("mp_title");
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <h1 className="text-lg font-semibold tracking-tight">
-          {panel === "dash" ? t("tab_home") : t("mp_title")}
+        <h1 className="text-lg font-semibold tracking-tight shrink-0">
+          {title}
         </h1>
-        <div className="inline-flex rounded-full border border-white/10 p-0.5 bg-black/20">
-          {(
-            [
-              { id: "dash" as const, label: t("home_seg_dash") },
-              {
-                id: "mempool" as const,
-                label: `${t("home_seg_mempool")}${
-                  mempoolSize > 0 ? ` ${mempoolSize}` : ""
-                }`,
-              },
-            ] as const
-          ).map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => {
-                setPanel(s.id);
-                void hapticImpact("light");
-              }}
-              className={`h-8 px-3 rounded-full text-[10px] font-mono tracking-wider ${
-                panel === s.id ? "bg-white/10 text-white" : "text-[#A0A0B0]"
-              }`}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
+      </div>
+      {/* Submenu: Overview · Blocks · Mempool */}
+      <div className="inline-flex w-full rounded-full border border-white/10 p-0.5 bg-black/20">
+        {(
+          [
+            { id: "dash" as const, label: t("home_seg_dash") },
+            {
+              id: "blocks" as const,
+              label: t("home_seg_blocks"),
+            },
+            {
+              id: "mempool" as const,
+              label: `${t("home_seg_mempool")}${
+                mempoolSize > 0 ? ` ${mempoolSize}` : ""
+              }`,
+            },
+          ] as const
+        ).map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => {
+              setPanel(s.id);
+              void hapticImpact("light");
+            }}
+            className={`flex-1 h-9 rounded-full text-[10px] font-mono tracking-wider ${
+              panel === s.id ? "bg-white/10 text-white" : "text-[#A0A0B0]"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
       </div>
 
       {panel === "mempool" ? (
@@ -909,6 +1009,13 @@ function HomeBody({
           txs={mempoolTxs}
           loading={mempoolLoading}
           source={mempoolSource}
+        />
+      ) : panel === "blocks" ? (
+        <BlocksPanel
+          blocks={blocks}
+          loading={blocksLoading}
+          tipHeight={height}
+          source={blocksSource}
         />
       ) : infoLoading ? (
         <div className="space-y-3">
@@ -966,14 +1073,24 @@ function HomeBody({
                   v: avgBlockTime != null ? `${avgBlockTime}s` : "—",
                 })}
               </span>
-              <span className="text-[10px] text-[#A0A0B0]/90 truncate">
-                {avgSub}
-              </span>
+              <button
+                type="button"
+                className="text-left text-[#FF7A3D]/90"
+                onClick={() => {
+                  setPanel("blocks");
+                  void hapticImpact("light");
+                }}
+              >
+                {t("home_blocks_link", { n: blocks.length || "—" })} ›
+              </button>
               {nodeName ? (
                 <span className="truncate col-span-2">
                   {t("node", { n: nodeName })}
                 </span>
               ) : null}
+              <span className="text-[10px] text-[#A0A0B0]/90 truncate col-span-2">
+                {avgSub}
+              </span>
               {token ? (
                 <span
                   className={`col-span-2 ${
