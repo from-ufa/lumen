@@ -1,88 +1,46 @@
-# Mini App — карта продукта (честно)
+# Mini App — product map (flush 2026-07-31)
 
 **URL:** https://m.ergolumen.net  
-**Web (не трогаем):** https://ergolumen.net  
-**Updated:** 2026-07-31  
+**Web:** https://ergolumen.net (unchanged Orbit/WebGL)  
+**Git:** main @ production mini (see flush session note)
 
 ---
 
-## Архитектура (как думать)
+## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│  TG chrome pad · brand · LIVE/OFF           │
-├─────────────────────────────────────────────┤
-│  HOME          │  NET        │  ORA  │  ME  │  ← 4 tabs only
-│  ───────────── │  ─────────  │  ───  │  ──  │
-│  Overview      │  MAP first  │  Net  │ Me   │
-│  Blocks   ←────│  LIST       │  My   │      │
-│  Mempool  ←────│  search     │  ───  │      │
-│                │             │ Pools │      │
-│                │             │ Ops   │      │
-└─────────────────────────────────────────────┘
-Sheets: Bridge · Alerts · Peer detail
-Watchdog: TG private alerts (node + oracle) every ~90s
+HOME  Overview | Blocks | Mempool
+NET   MAP first (full-bleed) | LIST + search
+ORA   NETWORK | MY  ·  Pools | Operators
+ME    Connection status · LUMEN|MY · DISCONNECT · Alerts · EN/RU
 ```
 
-**Правило:** не плодить 5-й tab. Всё «chain ops» — подменю Home.  
-**Правило:** web (Orbit / dual WebGL) не клонируем.
+Sheets: Bridge · Alerts · Peer  
+Bot `/start`: short text + **OPEN APP** → m.ergolumen.net  
+Watchdog: `lumen-tg-alerts.timer` ~90s (node + oracle)
+
+### Identity
+| Guest (no token) | Personal (token + MY + agent) |
+|------------------|-------------------------------|
+| All data **LUMEN** | Node/Net can be **YOUR** machine |
+| Labels never YOU | YOU only Ora→MY + scope mine |
+| Network API isMine = **host** | not the user |
 
 ---
 
-## Сейчас в приложении
+## Done
+- MVP 4 tabs · MAP full-bleed · i18n · rich ora · operators LIVE/OFF  
+- Home blocks + mempool + command center  
+- Node/oracle TG alerts · Me clear status + DISCONNECT  
+- LUMEN labels without bridge · laconic bot start  
 
-| Место | Что |
-|-------|-----|
-| **Home / Overview** | Height, last block ago, peers, avg block, bridge; **tiles** → Blocks / Mempool / Ora |
-| **Home / Blocks** | Last ~10–12 blocks, search, SigmaSpace |
-| **Home / Mempool** | Pending txs, Σ ERG, search, SigmaSpace |
-| **Net** | MAP full-bleed first · LIST + search · LIVE/ALL · peer sheet |
-| **Ora / Pools** | Rich cards: status, rewards $, claim/wallet, publish, gas |
-| **Ora / Operators** | LIVE/OFF/ALL, per-pool chips, YOU, idle keys |
-| **Me** | Bridge Docker/install, Alerts prefs, EN/RU, clear token |
-| **Alerts** | Node: offline, unreachable, peers, sync, stuck · Oracle: DOWN, lag, gas, refresh |
+## Later (optional)
+monorepo core · share PNG · quiet hours · MAP search · devnet full · iOS P2
 
-### Deploy
-- `m.ergolumen.net` · Caddy + host rewrite · `lumen.service`
-- Alerts: `lumen-tg-alerts.timer` ~90s
-- Secrets: `.env.local` only · no force-push main
+## Deploy
+```bash
+cd /home/lumen && npm run build && systemctl restart lumen
+git push origin main
+```
 
----
-
-## Что **не** делаем в mini
-
-| | |
-|--|--|
-| Orbit 3D / Boom / typewriters | web only |
-| Dual WebGL oracle panels | web only |
-| 5th bottom tab | no — submenus instead |
-| packages/core monorepo | later optional |
-| Share PNG / offline PWA | later |
-
----
-
-## Next (только если нужно)
-
-1. Home: optional **last N blocks preview strip** on Overview (3 mini rows)  
-2. Net MAP: compact peer search overlay (still no desktop HUD)  
-3. Alerts: quiet hours  
-4. Share card PNG  
-5. Devnet full blocks (parallel, Sasha)  
-
----
-
-## Как пользоваться
-
-| Хочешь | Куда |
-|--------|------|
-| Height / last block | **Home → Overview** |
-| Список блоков | **Home → Blocks** |
-| Pending txs | **Home → Mempool** |
-| Карта пиров | **Net** (MAP) |
-| Список пиров | **Net → LIST** |
-| Пулы + rewards | **Ora → Pools** |
-| Кто online/offline | **Ora → Operators** |
-| Docker / token | **Me → Bridge** |
-| Оповещения | **Me → Alerts** or Home chip |
-
-**BotFather Web App URL:** `https://m.ergolumen.net`
+Agent memory flush: `~/.grok/memory/from-ufa-lumen-515466fa/sessions/2026-07-31-full-flush-miniapp.md`
