@@ -3,6 +3,7 @@ import {
   getBotToken,
   getWebAppUrl,
   replyHtml,
+  startWelcomeHtml,
   webAppKeyboard,
 } from "@/app/lib/tg-bot";
 import {
@@ -84,28 +85,8 @@ async function handleCommand(
   const userId = fromId ?? chatId;
 
   if (cmd === "/start" || cmd === "/app") {
-    await replyHtml(
-      chatId,
-      [
-        "<b>lumen</b> — live Ergo node + oracles",
-        "Dashboard · map · dual oracle pools",
-        "",
-        "<b>New here</b>",
-        "1. <b>Open Lumen</b> (button below)",
-        "2. Settings → connect Bridge (Docker one-liner)",
-        "3. My Node / My Oracle — your machine, no open ports",
-        "",
-        "<b>Already set up in browser</b>",
-        "1. Browser Settings → <b>LINK TELEGRAM</b> → code",
-        "2. Here: <code>/link CODE</code>",
-        "3. Open Mini App again — same token, no reinstall",
-        "",
-        "<b>Alerts</b> (after Bridge is linked)",
-        "Mini App Settings → Telegram alerts · or <code>/alertstest</code>",
-        "",
-        "<b>Commands</b> · /help · /status · /oracles · /link · /alerts",
-      ].join("\n")
-    );
+    // One short message + single OPEN APP button (see webAppKeyboard)
+    await replyHtml(chatId, startWelcomeHtml(), true);
     return;
   }
 
@@ -113,16 +94,13 @@ async function handleCommand(
     await replyHtml(
       chatId,
       [
-        "<b>Commands</b>",
-        "/start — welcome + Open Lumen",
-        "/app — Mini App button",
-        "/status — node snapshot (public metrics)",
-        "/oracles — ERG/USD + ERG/XAU",
-        "/link CODE — import browser bridge settings",
-        "/alerts — alert status",
-        "/alertstest — test alert (no space)",
-        "/alerts on|off — enable / mute",
-        "/help — this list",
+        "⚡ <b>lumen</b> · help",
+        "",
+        "/start — open Mini App",
+        "/status — node snapshot",
+        "/oracles — prices",
+        "/link CODE — import browser token",
+        "/alerts — on · off · test",
       ].join("\n")
     );
     return;

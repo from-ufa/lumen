@@ -9,11 +9,12 @@ export function getBotToken(): string | null {
   return t && t.length > 10 ? t : null;
 }
 
+/** Mini App entry (prefer m.ergolumen.net). */
 export function getWebAppUrl(): string {
   return (
     process.env.TELEGRAM_WEBAPP_URL?.trim() ||
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    "https://ergolumen.net"
+    process.env.NEXT_PUBLIC_MINI_URL?.trim() ||
+    "https://m.ergolumen.net"
   ).replace(/\/$/, "");
 }
 
@@ -44,28 +45,30 @@ export async function tgApi<T = unknown>(
   }
 }
 
+/** Single CTA — OPEN APP (Mini App). */
 export function webAppKeyboard() {
   const url = getWebAppUrl();
   return {
     inline_keyboard: [
       [
         {
-          text: "Open Lumen",
+          text: "🚀 OPEN APP",
           web_app: { url },
-        },
-      ],
-      [
-        {
-          text: "Oracles",
-          web_app: { url: `${url}/oracles` },
-        },
-        {
-          text: "World Map",
-          web_app: { url: `${url}/?viz=map` },
         },
       ],
     ],
   };
+}
+
+/** Compact /start body — short, clear, emoji-friendly. */
+export function startWelcomeHtml(): string {
+  return [
+    "⚡ <b>lumen</b>",
+    "",
+    "Ergo · node · oracles · map · alerts",
+    "",
+    "👉 Tap below — that’s all.",
+  ].join("\n");
 }
 
 export async function replyHtml(

@@ -1,6 +1,7 @@
-start - Open Lumen
-app - Mini App
+start - Open Mini App
+app - Open Mini App
 status - Node snapshot
 oracles - Oracle prices
-alerts - Alerts status on off test
-help - Help
+alerts - Alerts on off test
+help - Commands
+link - Link browser token
