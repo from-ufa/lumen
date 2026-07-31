@@ -948,6 +948,7 @@ function HomeBody({
 }) {
   const { t } = useMiniI18n();
   const [panel, setPanel] = useState<"dash" | "blocks" | "mempool">("dash");
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const usd = feeds.find((f) => f.id === "erg-usd" || f.pair === "ERG/USD");
   const avgSub =
     avgBlockTime != null && avgBlockSamples > 0
@@ -955,6 +956,24 @@ function HomeBody({
       : avgBlockTime != null
         ? t("avg_sub_window", { w: avgBlockWindow })
         : t("avg_sub_loading");
+
+  // Live "last block ago" on Overview
+  useEffect(() => {
+    if (panel !== "dash") return;
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [panel]);
+
+  const tipBlock = blocks[0] ?? null;
+  const lastBlockAgo = (() => {
+    const ts = tipBlock?.timestamp;
+    if (ts == null) return null;
+    const ms = ts > 1e12 ? ts : ts * 1000;
+    const d = Math.max(0, nowTick - ms);
+    if (d < 60_000) return `${Math.max(1, Math.round(d / 1000))}s`;
+    if (d < 3_600_000) return `${Math.round(d / 60_000)}m`;
+    return `${Math.round(d / 3_600_000)}h`;
+  })();
 
   const title =
     panel === "dash"
@@ -970,15 +989,12 @@ function HomeBody({
           {title}
         </h1>
       </div>
-      {/* Submenu: Overview · Blocks · Mempool */}
+      {/* Submenu: Overview · Blocks · Mempool — chain ops under Home */}
       <div className="inline-flex w-full rounded-full border border-white/10 p-0.5 bg-black/20">
         {(
           [
             { id: "dash" as const, label: t("home_seg_dash") },
-            {
-              id: "blocks" as const,
-              label: t("home_seg_blocks"),
-            },
+            { id: "blocks" as const, label: t("home_seg_blocks") },
             {
               id: "mempool" as const,
               label: `${t("home_seg_mempool")}${
@@ -1021,15 +1037,15 @@ function HomeBody({
         <div className="space-y-3">
           <Skeleton className="h-14" />
           <Skeleton className="h-32" />
-          <div className="grid grid-cols-2 gap-2">
-            <Skeleton className="h-12" />
-            <Skeleton className="h-12" />
-            <Skeleton className="h-12" />
-            <Skeleton className="h-12" />
+          <div className="grid grid-cols-3 gap-2">
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
+            <Skeleton className="h-20" />
           </div>
         </div>
       ) : (
         <>
+          {/* Source strip */}
           <MiniCard onClick={onToggleMode}>
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
@@ -1041,54 +1057,124 @@ function HomeBody({
             </div>
           </MiniCard>
 
-          <MiniCard>
-            <div className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
-              {t("height")}
-            </div>
-            <div className="mt-1 font-mono text-3xl tracking-tight tabular-nums text-white">
-              {height != null ? height.toLocaleString() : "—"}
-            </div>
-            {headersH != null && height != null && headersH !== height ? (
-              <div className="mt-1 text-[10px] font-mono text-[#F59E0B]">
-                {t("headers_sync", {
-                  h: headersH.toLocaleString(),
-                  p: syncPct ?? "—",
-                })}
+          {/* Hero: tip height + last block age */}
+          <MiniCard
+            onClick={() => {
+              setPanel("blocks");
+              void hapticImpact("light");
+            }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-[10px] font-mono text-[#A0A0B0] tracking-[0.16em]">
+                  {t("height")}
+                </div>
+                <div className="mt-1 font-mono text-3xl tracking-tight tabular-nums text-white">
+                  {height != null ? height.toLocaleString() : "—"}
+                </div>
+                {headersH != null && height != null && headersH !== height ? (
+                  <div className="mt-1 text-[10px] font-mono text-[#F59E0B]">
+                    {t("headers_sync", {
+                      h: headersH.toLocaleString(),
+                      p: syncPct ?? "—",
+                    })}
+                  </div>
+                ) : null}
+                {nodeName ? (
+                  <div className="mt-1 text-[10px] font-mono text-[#6B6B78] truncate">
+                    {t("node", { n: nodeName })}
+                  </div>
+                ) : null}
               </div>
-            ) : null}
-            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] font-mono text-[#A0A0B0]">
+              <div className="text-right shrink-0">
+                <div className="text-[9px] font-mono text-[#6B6B78] uppercase tracking-wider">
+                  {t("home_last_block")}
+                </div>
+                <div className="mt-0.5 font-mono text-lg tabular-nums text-[#FF7A3D]">
+                  {lastBlockAgo != null ? lastBlockAgo : "—"}
+                </div>
+                <div className="text-[9px] font-mono text-[#6B6B78]">
+                  {tipBlock?.txCount != null
+                    ? `${tipBlock.txCount} tx`
+                    : t("home_tap_blocks")}
+                </div>
+              </div>
+            </div>
+          </MiniCard>
+
+          {/* Command tiles → submenus / other tabs */}
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setPanel("blocks");
+                void hapticImpact("light");
+              }}
+              className="rounded-2xl border border-[#FF7A3D]/25 bg-[#FF7A3D]/[0.07] px-2.5 py-3 text-left active:scale-[0.98] lumen-ui-transition"
+              style={{ background: "rgba(255,122,61,0.08)" }}
+            >
+              <div className="text-[9px] font-mono tracking-[0.14em] text-[#FF7A3D]">
+                {t("home_seg_blocks")}
+              </div>
+              <div className="mt-1 font-mono text-lg tabular-nums text-white">
+                {blocks.length || "—"}
+              </div>
+              <div className="text-[9px] font-mono text-[#A0A0B0] mt-0.5">
+                {t("home_tile_blocks_sub")}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPanel("mempool");
+                void hapticImpact("light");
+              }}
+              className="rounded-2xl border border-[#00E5FF]/25 px-2.5 py-3 text-left active:scale-[0.98] lumen-ui-transition"
+              style={{ background: "rgba(0,229,255,0.08)" }}
+            >
+              <div className="text-[9px] font-mono tracking-[0.14em] text-[#00E5FF]">
+                {t("home_seg_mempool")}
+              </div>
+              <div className="mt-1 font-mono text-lg tabular-nums text-white">
+                {mempoolSize}
+              </div>
+              <div className="text-[9px] font-mono text-[#A0A0B0] mt-0.5">
+                {t("home_tile_mempool_sub")}
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                onOracles();
+                void hapticImpact("light");
+              }}
+              className="rounded-2xl border border-[#10B981]/25 px-2.5 py-3 text-left active:scale-[0.98] lumen-ui-transition"
+              style={{ background: "rgba(16,185,129,0.08)" }}
+            >
+              <div className="text-[9px] font-mono tracking-[0.14em] text-[#10B981]">
+                {t("action_oracles")}
+              </div>
+              <div className="mt-1 font-mono text-[15px] tabular-nums text-white truncate">
+                {usd?.price != null
+                  ? `$${Number(usd.price).toFixed(2)}`
+                  : usd?.priceLabel || "—"}
+              </div>
+              <div className="text-[9px] font-mono text-[#A0A0B0] mt-0.5">
+                {t("home_tile_ora_sub")}
+              </div>
+            </button>
+          </div>
+
+          {/* Compact meta */}
+          <MiniCard>
+            <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-[#A0A0B0]">
               <span>{t("peers", { n: peersN ?? "—" })}</span>
-              <button
-                type="button"
-                className="text-left text-[#00E5FF]"
-                onClick={() => {
-                  setPanel("mempool");
-                  void hapticImpact("light");
-                }}
-              >
-                {t("mempool", { n: mempoolSize })} ›
-              </button>
               <span className="text-[#FF7A3D]">
                 {t("avg_block", {
                   v: avgBlockTime != null ? `${avgBlockTime}s` : "—",
                 })}
               </span>
-              <button
-                type="button"
-                className="text-left text-[#FF7A3D]/90"
-                onClick={() => {
-                  setPanel("blocks");
-                  void hapticImpact("light");
-                }}
-              >
-                {t("home_blocks_link", { n: blocks.length || "—" })} ›
-              </button>
-              {nodeName ? (
-                <span className="truncate col-span-2">
-                  {t("node", { n: nodeName })}
-                </span>
-              ) : null}
-              <span className="text-[10px] text-[#A0A0B0]/90 truncate col-span-2">
+              <span className="col-span-2 text-[10px] text-[#6B6B78] truncate">
                 {avgSub}
               </span>
               {token ? (
@@ -1118,11 +1204,7 @@ function HomeBody({
             <ActionChip label={t("action_bridge")} onClick={onOpenBridge} />
             <ActionChip label={t("action_alerts")} onClick={onAlerts} />
             <ActionChip
-              label={
-                usd?.price != null
-                  ? `$${Number(usd.price).toFixed(2)}`
-                  : usd?.priceLabel || t("action_oracles")
-              }
+              label={t("action_oracles")}
               onClick={onOracles}
             />
           </div>
