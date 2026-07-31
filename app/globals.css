@@ -1439,14 +1439,38 @@ body:has([data-mini-shell]) .lumen-tg-connect-pill {
   visibility: hidden !important;
 }
 
-/* Network MAP full-bleed: kill desktop min-heights on map container */
-html:has([data-mini-shell]) .mini-map-fill .lumen-viz,
-html:has([data-mini-shell]) .mini-map-fill .canvas-container {
-  min-height: 0 !important;
+/*
+ * Network MAP full-bleed (Mini App).
+ * Desktop .lumen-viz is height: min(52dvh, 420px) — that leaves a dead strip
+ * under the map. Kill it without relying on :has() (older TG WebViews).
+ */
+.mini-map-fill,
+.mini-map-fill > div {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
   height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+.mini-map-fill .lumen-viz,
+.mini-map-fill .canvas-container,
+.mini-map-fill .lumen-viz--fill,
+.lumen-viz.lumen-viz--fill {
+  min-height: 0 !important;
+  max-height: none !important;
+  height: 100% !important;
+  width: 100% !important;
   border-radius: 0 !important;
   border: none !important;
   box-shadow: none !important;
+}
+.mini-map-fill .lumen-map,
+.mini-map-fill .leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
 }
 
 html.tg-miniapp.tg-low-end .lumen-tg-connect-pill {

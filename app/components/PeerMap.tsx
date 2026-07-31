@@ -790,6 +790,11 @@ type PeerMapProps = {
   /** When "my", map peers come from Bridge (user node) */
   nodeMode?: "lumen" | "my";
   bridgeToken?: string;
+  /**
+   * Mini App / full-bleed: stretch to parent (ignore desktop .lumen-viz 52dvh).
+   * Parent must have a real height (flex-1 / absolute inset-0).
+   */
+  fillParent?: boolean;
 };
 
 function peerLastMs(lm?: number) {
@@ -943,12 +948,13 @@ function DefaultView({
   return null;
 }
 
-/** Keep leaflet size in sync with the lumen-viz container */
+/** Keep leaflet size in sync with the lumen-viz container (and parent fill box) */
 function MapResizeGuard() {
   const map = useMap();
 
   useEffect(() => {
     const container = map.getContainer();
+    const parent = container.parentElement;
     const run = () => {
       map.invalidateSize({ animate: false });
     };
@@ -959,16 +965,25 @@ function MapResizeGuard() {
         ? new ResizeObserver(() => run())
         : null;
     ro?.observe(container);
+    if (parent) ro?.observe(parent);
+    // Walk up a few levels — Mini App absolute fill chain
+    let el: HTMLElement | null = parent;
+    for (let i = 0; i < 4 && el; i++) {
+      ro?.observe(el);
+      el = el.parentElement;
+    }
     window.addEventListener("resize", run);
-    // Late layout (fonts / sticky header)
+    // Late layout (fonts / sticky header / TG viewport)
     const t1 = window.setTimeout(run, 120);
     const t2 = window.setTimeout(run, 400);
+    const t3 = window.setTimeout(run, 900);
 
     return () => {
       ro?.disconnect();
       window.removeEventListener("resize", run);
       window.clearTimeout(t1);
       window.clearTimeout(t2);
+      window.clearTimeout(t3);
     };
   }, [map]);
 
@@ -1524,6 +1539,7 @@ export default function PeerMap({
   hideControls = false,
   nodeMode = "lumen",
   bridgeToken = "",
+  fillParent = false,
 }: PeerMapProps) {
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ["peer-map", nodeMode, bridgeToken || ""],
@@ -2130,8 +2146,32 @@ export default function PeerMap({
     ) : null;
 
   return (
-    <div className="w-full h-full min-h-0">
-    <div className="canvas-container lumen-viz relative w-full h-full min-h-[280px] sm:min-h-[360px] bg-[#050508] overflow-hidden">
+    <div
+      className={
+        fillParent
+          ? "absolute inset-0 w-full h-full min-h-0"
+          : "w-full h-full min-h-0"
+      }
+    >
+    <div
+      className={
+        fillParent
+          ? "canvas-container lumen-viz lumen-viz--fill absolute inset-0 w-full h-full min-h-0 bg-[#050508] overflow-hidden !rounded-none !border-0"
+          : "canvas-container lumen-viz relative w-full h-full min-h-[280px] sm:min-h-[360px] bg-[#050508] overflow-hidden"
+      }
+      style={
+        fillParent
+          ? {
+              height: "100%",
+              minHeight: 0,
+              maxHeight: "none",
+              borderRadius: 0,
+              border: "none",
+              boxShadow: "none",
+            }
+          : undefined
+      }
+    >
       <div className="absolute inset-0 z-[1]">
         {!isLoading && !isError && (
           <MapContainer

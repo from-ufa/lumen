@@ -811,7 +811,7 @@ function ActionChip({
   );
 }
 
-/** Full-bleed map: toolbar + flex-1 map to tab bar (no dead space below). */
+/** Full-bleed map: toolbar + map to tab bar (no dead space below). */
 function NetworkMapFull({
   netView,
   setNetView,
@@ -826,19 +826,23 @@ function NetworkMapFull({
   height: number | null;
 }) {
   return (
-    <div className="flex flex-col flex-1 min-h-0 h-full">
-      <div className="shrink-0 flex items-center justify-between gap-2 px-3.5 py-2 border-b border-white/[0.06]">
+    <div className="grid grid-rows-[auto_minmax(0,1fr)] flex-1 min-h-0 h-full w-full">
+      <div className="shrink-0 z-10 flex items-center justify-between gap-2 px-3.5 py-2 border-b border-white/[0.06] bg-[#0A0A0F]">
         <h1 className="text-base font-semibold tracking-tight">Network</h1>
         <NetViewToggle netView={netView} setNetView={setNetView} />
       </div>
-      <div className="relative flex-1 min-h-0 w-full bg-[#0C0C12] overflow-hidden">
-        {/* PeerMap root is w-full only — force 100% height chain for full-bleed */}
-        <div className="absolute inset-0 mini-map-fill h-full w-full [&>div]:h-full [&>div]:w-full [&_.canvas-container]:!h-full [&_.canvas-container]:!min-h-full [&_.canvas-container]:!rounded-none [&_.canvas-container]:!border-0">
+      {/*
+        Real height from grid 1fr row — absolute fill kills .lumen-viz 52dvh
+        and any leftover gap above the tab bar.
+      */}
+      <div className="relative min-h-0 w-full h-full overflow-hidden bg-[#050508]">
+        <div className="absolute inset-0 mini-map-fill">
           <PeerMap
             blockHeight={height ?? undefined}
             hideControls={false}
             nodeMode={mode}
             bridgeToken={token}
+            fillParent
           />
         </div>
       </div>
