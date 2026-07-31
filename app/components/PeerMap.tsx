@@ -2130,8 +2130,8 @@ export default function PeerMap({
     ) : null;
 
   return (
-    <div className="w-full">
-    <div className="canvas-container lumen-viz relative w-full bg-[#050508] overflow-hidden">
+    <div className="w-full h-full min-h-0">
+    <div className="canvas-container lumen-viz relative w-full h-full min-h-[280px] sm:min-h-[360px] bg-[#050508] overflow-hidden">
       <div className="absolute inset-0 z-[1]">
         {!isLoading && !isError && (
           <MapContainer

@@ -831,8 +831,9 @@ function NetworkMapFull({
         <h1 className="text-base font-semibold tracking-tight">Network</h1>
         <NetViewToggle netView={netView} setNetView={setNetView} />
       </div>
-      <div className="relative flex-1 min-h-0 w-full bg-[#0C0C12]">
-        <div className="absolute inset-0">
+      <div className="relative flex-1 min-h-0 w-full bg-[#0C0C12] overflow-hidden">
+        {/* PeerMap root is w-full only — force 100% height chain for full-bleed */}
+        <div className="absolute inset-0 mini-map-fill h-full w-full [&>div]:h-full [&>div]:w-full [&_.canvas-container]:!h-full [&_.canvas-container]:!min-h-full [&_.canvas-container]:!rounded-none [&_.canvas-container]:!border-0">
           <PeerMap
             blockHeight={height ?? undefined}
             hideControls={false}
